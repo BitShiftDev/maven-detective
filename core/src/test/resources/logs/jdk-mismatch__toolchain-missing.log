@@ -1,0 +1,7 @@
+[INFO] --- toolchains:3.2.0:toolchain (default) @ legacy-adapter ---
+[INFO] Required toolchain: jdk [ version='11' ]
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-toolchains-plugin:3.2.0:toolchain (default) on project legacy-adapter: Cannot find matching toolchain definitions for the following toolchain types:
+[ERROR] jdk [ version='11' ]
+[ERROR] Please make sure you define the required toolchains in your ~/.m2/toolchains.xml file.
+[ERROR] -> [Help 1]

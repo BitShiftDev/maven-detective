@@ -1,0 +1,12 @@
+Apache Maven 3.9.9 (8e8579a9e76f7d015ee5ec7bfcdc97d260186937)
+Maven home: /opt/maven
+Java version: 17.0.13, vendor: Eclipse Adoptium, runtime: /usr/lib/jvm/temurin-17-jdk
+Default locale: de_DE, platform encoding: UTF-8
+OS name: "linux", version: "6.8.0", arch: "amd64", family: "unix"
+[INFO] Scanning for projects...
+[INFO] --- compiler:3.13.0:compile (default-compile) @ gateway ---
+[INFO] Compiling 18 source files with javac [debug release 21] to target/classes
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project gateway: Fatal error compiling: error: release version 21 not supported -> [Help 1]
+[ERROR]
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.

@@ -1,0 +1,4 @@
+[INFO] --- compiler:3.13.0:compile (default-compile) @ monolith ---
+[INFO] Compiling 6412 source files with javac [debug release 21] to target/classes
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project monolith: Fatal error compiling: java.lang.OutOfMemoryError: Java heap space -> [Help 1]

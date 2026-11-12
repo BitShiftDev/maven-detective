@@ -1,0 +1,10 @@
+.gradle/
+build/
+out/
+.idea/
+*.iml
+.intellijPlatform/
+.kotlin/
+target/
+.DS_Store
+.claude/

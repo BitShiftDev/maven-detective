@@ -1,0 +1,19 @@
+[INFO] --- enforcer:3.5.0:enforce (enforce) @ checkout ---
+[WARNING] Rule 0: org.apache.maven.enforcer.rules.dependency.DependencyConvergence failed with message:
+Failed while enforcing releasability.
+
+Dependency convergence error for com.google.guava:guava:jar:33.3.1-jre paths to dependency are:
++-com.acme:checkout:jar:1.0.0
+  +-com.google.cloud:google-cloud-storage:jar:2.45.0
+    +-com.google.guava:guava:jar:33.3.1-jre
+and
++-com.acme:checkout:jar:1.0.0
+  +-org.apache.curator:curator-framework:jar:5.7.1
+    +-com.google.guava:guava:jar:32.1.3-jre
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-enforcer-plugin:3.5.0:enforce (enforce) on project checkout:
+[ERROR] Rule 0: org.apache.maven.enforcer.rules.dependency.DependencyConvergence failed with message:
+[ERROR] Failed while enforcing releasability.
+[ERROR]
+[ERROR] Dependency convergence error for com.google.guava:guava:jar:33.3.1-jre paths to dependency are:
+[ERROR] +-com.acme:checkout:jar:1.0.0

@@ -1,0 +1,7 @@
+[INFO] --- enforcer:3.5.0:enforce (enforce-java) @ platform-parent ---
+[ERROR] Rule 1: org.apache.maven.enforcer.rules.version.RequireJavaVersion failed with message:
+[ERROR] Detected JDK version 17.0.13 (JAVA_HOME=/usr/lib/jvm/temurin-17-jdk) is not in the allowed range [21,).
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-enforcer-plugin:3.5.0:enforce (enforce-java) on project platform-parent:
+[ERROR] Rule 1: org.apache.maven.enforcer.rules.version.RequireJavaVersion failed with message:
+[ERROR] Detected JDK version 17.0.13 (JAVA_HOME=/usr/lib/jvm/temurin-17-jdk) is not in the allowed range [21,).

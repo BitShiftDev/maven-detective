@@ -1,0 +1,18 @@
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.acme.search.IndexerTest
+[ERROR] Tests run: 3, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.412 s <<< FAILURE! -- in com.acme.search.IndexerTest
+[ERROR] com.acme.search.IndexerTest.indexesDocument -- Time elapsed: 0.201 s <<< ERROR!
+java.lang.NoSuchMethodError: 'com.fasterxml.jackson.databind.ObjectMapper com.fasterxml.jackson.databind.ObjectMapper.findAndRegisterModules()'
+	at com.acme.search.Indexer.<init>(Indexer.java:31)
+	at com.acme.search.IndexerTest.indexesDocument(IndexerTest.java:18)
+[INFO]
+[INFO] Results:
+[INFO]
+[ERROR] Errors:
+[ERROR]   IndexerTest.indexesDocument:18 » NoSuchMethod 'com.fasterxml.jackson.databind.ObjectMapper com.fasterxml.jackson.databind.ObjectMapper.findAndRegisterModules()'
+[INFO]
+[ERROR] Tests run: 3, Failures: 0, Errors: 1, Skipped: 0
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project search: There are test failures.

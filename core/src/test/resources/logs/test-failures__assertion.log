@@ -1,0 +1,10 @@
+[INFO] Running com.acme.cart.CartTest
+[ERROR] Tests run: 7, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.05 s <<< FAILURE! -- in com.acme.cart.CartTest
+[ERROR] com.acme.cart.CartTest.addsVat -- Time elapsed: 0.004 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <119.00> but was: <100.00>
+[INFO] Results:
+[ERROR] Failures:
+[ERROR]   CartTest.addsVat:41 expected: <119.00> but was: <100.00>
+[ERROR] Tests run: 7, Failures: 1, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project cart: There are test failures.

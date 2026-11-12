@@ -1,0 +1,7 @@
+[INFO] Scanning for projects...
+[ERROR] [ERROR] Some problems were encountered while processing the POMs:
+[ERROR] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-surefire-plugin is missing. @ line 41, column 15
+[ERROR] The build could not read 1 project -> [Help 1]
+[ERROR]
+[ERROR]   The project com.acme:reporting:1.0.0-SNAPSHOT (/home/dev/project/pom.xml) has 1 error
+[ERROR]     'build.plugins.plugin.version' for org.apache.maven.plugins:maven-surefire-plugin is missing. @ line 41, column 15

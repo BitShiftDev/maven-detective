@@ -1,0 +1,54 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core-and-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit-Tests (Kern, Katalog, Prüfungen)
+        run: ./gradlew :core:test
+      - name: Extension bauen und Fixtures mit echtem Maven auslösen
+        run: ./gradlew :maven-extension:fixtureTest
+
+  # Maven 3.9 läuft noch auf Java 8 – Kern und Extension müssen dort laden
+  extension-on-java8:
+    needs: core-and-extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :maven-extension:jar
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 8
+      - name: Fixtures unter Java 8
+        run: bash fixtures/run-fixtures.sh maven-extension/build/libs/maven-detective-extension-*.jar
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Plugin bauen
+        run: ./gradlew :intellij-plugin:buildPlugin
+      - name: Gate 2 – Plugin Verifier gegen aktuelle IntelliJ-IDEA-Versionen
+        run: ./gradlew :intellij-plugin:verifyPlugin

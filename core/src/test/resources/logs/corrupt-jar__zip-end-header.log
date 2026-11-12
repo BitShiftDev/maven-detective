@@ -1,0 +1,13 @@
+[INFO] --- compiler:3.13.0:compile (default-compile) @ catalog-api ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 42 source files with javac [debug release 21] to target/classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR :
+[INFO] -------------------------------------------------------------
+[ERROR] error reading /home/dev/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar; zip END header not found
+[INFO] 1 error
+[INFO] -------------------------------------------------------------
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project catalog-api: Compilation failure
+[ERROR] error reading /home/dev/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.18.2/jackson-databind-2.18.2.jar; zip END header not found
+[ERROR] -> [Help 1]

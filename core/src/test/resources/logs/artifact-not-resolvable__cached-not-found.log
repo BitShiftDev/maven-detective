@@ -1,0 +1,3 @@
+[INFO] Scanning for projects...
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal on project web: Could not resolve dependencies for project com.acme:web:jar:1.0.0-SNAPSHOT: The following artifacts could not be resolved: org.webjars:bootstrap-icons:jar:1.11.9 (absent): org.webjars:bootstrap-icons:jar:1.11.9 was not found in https://repo.maven.apache.org/maven2 during a previous attempt. This failure was cached in the local repository and resolution is not reattempted until the update interval of central has elapsed or updates are forced -> [Help 1]

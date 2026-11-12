@@ -1,0 +1,13 @@
+[INFO] --- compiler:3.13.0:compile (default-compile) @ invoice ---
+[INFO] Compiling 12 source files with javac [debug release 21] to target/classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR :
+[INFO] -------------------------------------------------------------
+[ERROR] /home/dev/project/invoice/src/main/java/com/acme/invoice/PdfRenderer.java:[5,32] package org.apache.commons.lang3 does not exist
+[ERROR] /home/dev/project/invoice/src/main/java/com/acme/invoice/PdfRenderer.java:[22,16] cannot find symbol
+  symbol:   variable StringUtils
+  location: class com.acme.invoice.PdfRenderer
+[INFO] 2 errors
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project invoice: Compilation failure: Compilation failure:
+[ERROR] /home/dev/project/invoice/src/main/java/com/acme/invoice/PdfRenderer.java:[5,32] package org.apache.commons.lang3 does not exist

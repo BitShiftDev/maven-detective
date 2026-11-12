@@ -1,0 +1,36 @@
+<idea-plugin>
+    <!-- id, name, version und since-build setzt das IntelliJ Platform Gradle Plugin (build.gradle.kts) -->
+    <id>io.github.bitshiftdev.mavendetective</id>
+    <name>Maven Detective</name>
+    <vendor url="https://github.com/BitShiftDev">BitShiftDev</vendor>
+
+    <description><![CDATA[
+    <p>Erklärt, warum ein Maven-Build scheitert – in Klartext, mit Belegen und Quick-Fix.</p>
+    <ul>
+      <li><b>Build Doctor:</b> statt 500 Zeilen Log eine Karte mit Ursache, Belegen, Sicherheit und Ein-Klick-Behebung.</li>
+      <li>Erkennt u. a. gecachte Fehlversuche (.lastUpdated), fehlende Zugangsdaten in settings.xml,
+          blockierte http-Repositories, kaputte JARs, falsches JDK, fehlende Module und Parent-POMs.</li>
+      <li><b>Was hat sich geändert?</b> Jeder grüne Lauf wird Referenz; scheitert ein späterer, nennt die Karte
+          die Änderungen seitdem – JDK, Maven, Profile, Parent, Plugins, Dependencies.</li>
+      <li><b>IDE gegen Kommandozeile:</b> vergleicht Maven, JDK, settings.xml, Profile und .mvn/-Konfiguration
+          von IntelliJ und ./mvnw.</li>
+      <li>Ergänzt Maven Helper und den Dependency Analyzer: die zeigen Fakten, Maven Detective Ursache und Lösung.</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.idea.maven</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Maven Detective"
+                    anchor="bottom"
+                    icon="AllIcons.Toolwindows.ToolWindowProblems"
+                    factoryClass="io.github.bitshiftdev.mavendetective.idea.BuildDoctorToolWindowFactory"/>
+        <notificationGroup id="Maven Detective" displayType="BALLOON"/>
+    </extensions>
+
+    <projectListeners>
+        <listener class="io.github.bitshiftdev.mavendetective.idea.MavenRunListener"
+                  topic="com.intellij.execution.ExecutionListener"/>
+    </projectListeners>
+</idea-plugin>

@@ -1,0 +1,328 @@
+# Maven Detective – Fehlerkatalog für Build Doctor, Version 1
+#
+# Aufbau einer Regel
+#   id          eindeutig, kleinbuchstaben-mit-bindestrich
+#   number      Kategorie-Nummer aus dem Konzept (1–12; 13+ = Erweiterungen)
+#   category    Überschrift der Diagnose-Karte
+#   priority    höher gewinnt, wenn mehrere Regeln passen (spezifisch vor allgemein)
+#   confidence  certain | likely  – Sicherheit, wenn keine Prüfung etwas bestätigt
+#   patterns    Regex gegen jede Fehlerzeile; der erste Treffer in Listenreihenfolge zählt.
+#               Einträge sind Regex-Text oder ein Mapping mit regex/cause/fix/confidence.
+#               Benannte Gruppen (?<name>…) werden zu Variablen für cause und fix.
+#   extract     Regex nur zum Auslesen von Variablen (lösen die Regel nicht aus)
+#   unless      Regex, bei deren Treffer die Regel nicht greift
+#   checks      Prüfungen (Java, siehe core/check), in Reihenfolge. Die erste bestätigende
+#               Prüfung mit eigener Ursache ersetzt cause und liefert den ersten Quick-Fix.
+#   cause       Ursache in einem Satz. Platzhalter: {var}, {var|Ersatztext}, {a,b|Ersatz}
+#   fix         type + label (+ params). Typen: rebuild, delete-files, open-file,
+#               replace-in-file, switch-jdk, set-jvm-option, insert-plugin-version,
+#               show-dependency, pin-version, manual
+#
+# Regex immer in 'einfache Anführungszeichen' setzen (Backslashes bleiben erhalten,
+# ein Apostroph wird als '' geschrieben). Jede neue Regel braucht mindestens eine Logdatei
+# unter core/src/test/resources/logs/<regel-id>__<name>.log – der Test prüft sie automatisch.
+
+version: 1
+
+rules:
+
+  # ---------------------------------------------------------------- 3
+  - id: http-repository-blocked
+    number: 3
+    category: HTTP-Repository blockiert
+    priority: 95
+    confidence: certain
+    patterns:
+      - 'maven-default-http-blocker'
+      - 'Blocked mirror for repositories: \[(?<repoId>[\w.\-]+) \((?<repoUrl>http://[^,\s)]+)'
+    extract:
+      - 'Blocked mirror for repositories: \[(?<repoId>[\w.\-]+) \((?<repoUrl>http://[^,\s)]+)'
+      - 'resolved: (?<artifact>[^\s:,]+:[^\s:,]+:[^\s:,]+(?::[^\s:,]+)?:[^\s:,()]+)'
+    cause: 'Das Repository ''{repoId|?}'' ({repoUrl|http://…}) nutzt http://; Maven blockiert unverschlüsselte Repositories seit 3.8.1.'
+    checks: [http-repository, pom-location]
+    fix:
+      type: manual
+      label: 'Alternativ: in settings.xml einen https-Mirror für das Repository eintragen'
+
+  # ---------------------------------------------------------------- 2
+  - id: repository-access-denied
+    number: 2
+    category: Zugriff verweigert
+    priority: 92
+    patterns:
+      - 'status code: (?<status>40[13])'
+      - 'reason phrase: (?:Unauthorized|Forbidden) \((?<status>40[13])\)'
+      - 'Authentication failed for (?<repoUrl>\S+?),? status: (?<status>40[13])'
+      - 'Not authorized'
+      - 'Return code is: (?<status>40[13])'
+      - '\b(?<status>40[13]) (?:Unauthorized|Forbidden)\b'
+    extract:
+      - 'from/to (?<repoId>[\w.\-]+) \((?<repoUrl>[^)\s]+)\)'
+      - '(?:artifact|Could not transfer artifact) (?<artifact>[^\s:,]+:[^\s:,]+:[^\s:,]+(?::[^\s:,]+)?:[^\s:,()]+)'
+    cause: 'Das Repository {repoId|} antwortet mit {status|401/403}: Zugangsdaten fehlen, sind falsch oder das Konto hat keine Rechte.'
+    checks: [server-id, requested-repository]
+    fix:
+      type: manual
+      label: 'Zugangsdaten in settings.xml prüfen'
+
+  # ---------------------------------------------------------------- 4
+  - id: corrupt-jar
+    number: 4
+    category: Kaputtes JAR im lokalen Repo
+    priority: 90
+    patterns:
+      - 'zip END header not found'
+      - 'invalid LOC header'
+      - 'invalid CEN header'
+      - 'error in opening zip file'
+      - 'zip file is empty'
+      - 'error reading (?<file>\S+\.jar)'
+      - 'ZipException'
+      - 'Checksum validation failed'
+    extract:
+      - '(?<file>(?:[A-Za-z]:)?[\\/][^\s;:''"]*\.jar)'
+      - '(?:artifact|for) (?<artifact>[^\s:,]+:[^\s:,]+:jar(?::[^\s:,]+)?:[^\s:,()]+)'
+      - 'descriptor for (?<artifact>[^\s:,]+:[^\s:,]+:[^\s:,()]+)[:\s]'
+    cause: 'Ein JAR im lokalen Repository ist beschädigt ({file|Datei unbekannt}) – meist ein abgebrochener Download.'
+    checks: [corrupt-jar]
+    fix:
+      type: manual
+      label: 'Betroffene Datei im lokalen Repository löschen und neu bauen'
+
+  # ---------------------------------------------------------------- 8
+  - id: reactor-problem
+    number: 8
+    category: Reactor-Problem
+    priority: 88
+    confidence: certain
+    patterns:
+      - regex: 'Child module (?<module>\S+) of (?<file>\S+) does not exist'
+        cause: 'In {file} ist ein Modul eingetragen, dessen Verzeichnis fehlt: {moduleName,module}.'
+      - regex: 'contain a cyclic reference: .*cycle in the graph (?<cycle>.+?)(?: @|$)'
+        cause: 'Die Module hängen im Kreis voneinander ab: {cycle}.'
+        fix:
+          type: manual
+          label: 'Gemeinsamen Code in ein eigenes Modul auslagern, damit der Kreis aufbricht'
+      - regex: 'Could not find the selected project in the reactor: (?<selector>\S+)'
+        cause: 'Das mit -pl gewählte Projekt {selector} gibt es im Reactor nicht.'
+        fix:
+          type: manual
+          label: '-pl mit Pfad (z. B. -pl services/api) oder :artifactId aufrufen'
+      - regex: 'Project ''(?<project>[^'']+)'' is duplicated in the reactor'
+        cause: 'Zwei Module haben dieselben Koordinaten {project}.'
+      - regex: 'Duplicate project ID'
+    checks: [child-module, pom-location]
+
+  # ---------------------------------------------------------------- 7
+  - id: invalid-pom
+    number: 7
+    category: Ungültige POM
+    priority: 85
+    patterns:
+      - regex: 'Non-resolvable parent POM for (?<project>[^\s:]+:[^\s:]+:[^\s:]+): The following artifacts could not be resolved: (?<artifact>[^\s,:]+:[^\s,:]+:[^\s,:]+(?::[^\s,:]+)?:[^\s,:()]+)'
+        cause: 'Die Parent-POM {artifact} ist weder über relativePath ({relativePath|../pom.xml}) noch im lokalen Repository zu finden, und kein Repository liefert sie.'
+      - regex: 'Non-resolvable parent POM'
+        cause: 'Die Parent-POM ist weder über relativePath noch im Repository zu finden.'
+      - regex: 'Malformed POM (?<file>\S+?): (?<detail>.+?)\s+@'
+        cause: 'Die POM ist kein gültiges Maven-XML: {detail}.'
+        confidence: certain
+      - regex: 'Non-parseable POM (?<file>\S+?): (?<detail>.+?)\s+@'
+        cause: 'Die POM ist kein wohlgeformtes XML: {detail}.'
+        confidence: certain
+      - regex: '''(?<field>(?!build\.plugins)[\w.]+)'' for (?<artifact>\S+) is missing'
+        cause: 'In der POM fehlt {field} für {artifact} – weder direkt noch über dependencyManagement/BOM gesetzt.'
+        confidence: certain
+      - regex: '''(?<field>[\w.]+)'' for (?<artifact>\S+) must be one of'
+        cause: 'Ungültiger Wert für {field} bei {artifact}.'
+        confidence: certain
+      - regex: 'Invalid packaging for parent POM'
+        cause: 'Die Parent-POM muss packaging pom haben.'
+        confidence: certain
+    extract:
+      - 'from/to (?<repoId>[\w.\-]+) \((?<repoUrl>[^)\s]+)\)'
+      - 'Cannot access (?<repoId>[\w.\-]+) \((?<repoUrl>[^)\s]+)\) in offline mode'
+    checks: [offline-mode, network-failure, last-updated-files, parent-relative-path, pom-location]
+    fix:
+      type: manual
+      label: 'POM korrigieren'
+
+  # ---------------------------------------------------------------- 5
+  - id: jdk-mismatch
+    number: 5
+    category: JDK passt nicht
+    priority: 80
+    patterns:
+      - 'invalid target release: (?<required>[\d.]+)'
+      - 'release version (?<required>\d+) not supported'
+      - 'invalid source release: (?<required>[\d.]+)'
+      - 'class file version (?<classVersion>\d+)\.\d+\), this version of the Java Runtime only recognizes class file versions up to (?<runtimeClassVersion>\d+)'
+      - 'class file has wrong version (?<classVersion>\d+)\.\d+, should be (?<runtimeClassVersion>\d+)'
+      - 'UnsupportedClassVersionError'
+      - regex: '(?:Source|Target) option (?<required>\d+) is no longer supported'
+        cause: 'Das JDK des Maven-Laufs (Java {runner|neu}) kann Java {required} nicht mehr als Ziel erzeugen; das Projekt muss ein höheres Release setzen.'
+        confidence: certain
+      - regex: 'Cannot find matching toolchain definitions'
+        cause: 'Das Projekt verlangt per Toolchains ein bestimmtes JDK, in ~/.m2/toolchains.xml ist aber keins passend eingetragen.'
+        confidence: certain
+        fix:
+          type: manual
+          label: 'Passendes JDK in ~/.m2/toolchains.xml eintragen'
+    cause: 'Das Projekt verlangt Java {required|eine neuere Version}, Maven läuft aber mit JDK {runner|einer älteren Version}.'
+    checks: [jdk-version]
+
+  # ---------------------------------------------------------------- 6
+  - id: plugin-missing
+    number: 6
+    category: Plugin fehlt oder ohne Version
+    priority: 75
+    confidence: certain
+    patterns:
+      - regex: 'No plugin found for prefix ''(?<prefix>[^'']+)'''
+        cause: 'Für den Prefix ''{prefix}'' findet Maven kein Plugin: Tippfehler, Plugin nicht im Projekt eingebunden oder groupId fehlt in <pluginGroups>.'
+        fix:
+          type: manual
+          label: 'Plugin vollständig aufrufen (groupId:artifactId:version:goal) oder seine groupId in <pluginGroups> eintragen'
+      - regex: '''build\.plugins\.plugin\.version'' for (?<plugin>\S+) is missing'
+        cause: 'Für {plugin} ist keine Version festgelegt; der Build ist dadurch nicht reproduzierbar.'
+        fix:
+          type: manual
+          label: 'Version für {plugin} in <pluginManagement> des Parents festlegen'
+      - regex: 'Could not find goal ''(?<goal>[^'']+)'' in plugin (?<plugin>\S+)'
+        cause: 'Das Plugin {plugin} kennt kein Goal ''{goal}'' – Tippfehler oder Goal erst in neuerer Plugin-Version.'
+      - regex: 'Unknown lifecycle phase "(?<phase>[^"]+)"'
+        cause: '''{phase}'' ist weder eine Lifecycle-Phase noch prefix:goal.'
+        fix:
+          type: manual
+          label: 'Phase prüfen (validate, compile, test, package, verify, install, deploy) oder als prefix:goal angeben'
+    checks: [plugin-prefix, plugin-version, pom-location]
+
+  # ---------------------------------------------------------------- 11
+  - id: enforcer-rule-failed
+    number: 11
+    category: Enforcer-Regel verletzt
+    priority: 70
+    confidence: certain
+    patterns:
+      - regex: 'Detected JDK [Vv]ersion (?<runner>[\d._]+).* is not in the allowed range (?<range>\S+?)\.?$'
+        cause: 'Der Enforcer verlangt Java {range}, gebaut wird aber mit {runner}.'
+        fix:
+          type: switch-jdk
+          label: 'Runner-JDK auf Java {required,range} umstellen'
+          params:
+            required: '{required,range}'
+      - regex: 'Detected Maven Version: (?<found>\S+) is not in the allowed range (?<range>\S+?)\.?$'
+        cause: 'Der Enforcer verlangt Maven {range}, gebaut wird mit {found}.'
+        fix:
+          type: manual
+          label: 'Maven Wrapper verwenden oder Maven aktualisieren'
+      - regex: 'Dependency convergence error for (?<artifact>\S+)'
+        cause: 'Dependency-Konvergenz verletzt: {artifact} kommt über verschiedene Pfade in unterschiedlichen Versionen.'
+      - regex: 'Found Banned Dependency: (?<artifact>\S+)'
+        cause: 'Die verbotene Dependency {artifact} ist im Baum.'
+      - regex: 'Require upper bound dependencies error for (?<artifact>\S+)'
+        cause: 'Für {artifact} gewinnt eine niedrigere Version, als ein anderer Pfad verlangt.'
+      - 'Rule (?<ruleIndex>\d+): (?<rule>[\w.$]+) failed'
+      - 'Some Enforcer rules have failed'
+    extract:
+      - 'Rule \d+: (?<rule>[\w.$]+) failed'
+      - 'JDK [Vv]ersion .* is not in the allowed range [\[(](?<required>\d+)'
+    cause: 'Die Enforcer-Regel {ruleName,rule|?} ist verletzt.'
+    checks: [enforcer-rule]
+
+  # ---------------------------------------------------------------- 12
+  - id: out-of-memory
+    number: 12
+    category: Speicher
+    priority: 65
+    patterns:
+      - regex: 'OutOfMemoryError: (?<kind>Java heap space|Metaspace|GC overhead limit exceeded|unable to create native thread|unable to create new native thread)'
+        cause: 'Der {memoryTarget|JVM} geht der Speicher aus ({kind}).'
+        confidence: certain
+      - 'java\.lang\.OutOfMemoryError'
+      - regex: 'There is insufficient memory for the Java Runtime Environment'
+        cause: 'Das Betriebssystem kann der JVM nicht genug Speicher geben – Rechner oder Container hat zu wenig RAM.'
+        confidence: certain
+      - regex: 'The forked VM terminated without properly saying goodbye'
+        cause: 'Die Test-JVM wurde abrupt beendet – meist Speichermangel (OOM-Killer) oder System.exit() im Test.'
+    cause: 'Der {memoryTarget|JVM} geht der Speicher aus.'
+    checks: [memory-settings]
+
+  # ---------------------------------------------------------------- 10
+  - id: runtime-class-conflict
+    number: 10
+    category: Laufzeitkonflikt in Tests
+    priority: 60
+    patterns:
+      - 'NoSuchMethodError: (?<member>.+?)\s*$'
+      - 'NoSuchFieldError: (?<member>\S+)'
+      - 'NoClassDefFoundError: (?<class>[\w/.$]+)'
+      - 'AbstractMethodError'
+      - 'IncompatibleClassChangeError'
+      - 'ClassNotFoundException: (?<class>[\w.$]+)'
+    cause: 'Zur Laufzeit passt {class,member|eine Klasse} nicht zu der Version, gegen die kompiliert wurde – typischerweise ein Versionskonflikt im Classpath.'
+    fix:
+      type: manual
+      label: 'Gewinnende Version prüfen und pinnen (Modul A „Why this version?“)'
+
+  # ---------------------------------------------------------------- 9
+  - id: compile-missing-dependency
+    number: 9
+    category: Compiler-Fehler durch Dependency
+    priority: 55
+    patterns:
+      - regex: 'package (?<package>[\w.]+) does not exist'
+        cause: 'Das Paket {package} ist beim Kompilieren nicht im Classpath: Dependency fehlt, hat den falschen Scope oder wurde per Exclusion entfernt.'
+      - regex: 'class file for (?<class>[\w.$]+) not found'
+        cause: 'Der Compiler braucht {class}, die Klasse liegt aber in keiner Dependency im Classpath – oft fehlt eine transitive Dependency.'
+      - regex: 'cannot access (?<class>[\w.$]+)'
+        cause: 'Der Compiler kann {class} nicht laden – fehlende oder unpassende Dependency.'
+      - regex: 'cannot find symbol'
+        cause: 'Der Compiler findet {symbol|ein Symbol}. Stammt es aus einer Bibliothek, fehlt die Dependency oder hat den falschen Scope; sonst ist es ein Fehler im Code.'
+    extract:
+      - 'symbol:\s+(?:class|variable|method) (?<symbol>[\w$]+)'
+    checks: [source-location]
+
+  # ---------------------------------------------------------------- 1
+  - id: artifact-not-resolvable
+    number: 1
+    category: Artifact nicht auflösbar
+    priority: 50
+    patterns:
+      - 'The following artifacts could not be resolved: (?<artifact>[^\s,:]+:[^\s,:]+:[^\s,:]+(?::[^\s,:]+)?:[^\s,:()]+)'
+      - 'Could not find artifact (?<artifact>\S+) in (?<repoId>[\w.\-]+) \((?<repoUrl>[^)\s]+)\)'
+      - 'Could not transfer artifact (?<artifact>\S+) from/to (?<repoId>[\w.\-]+) \((?<repoUrl>[^)\s]+)\)'
+      - 'Plugin (?<artifact>\S+) or one of its dependencies could not be resolved'
+      - 'Cannot access (?<repoId>[\w.\-]+) \((?<repoUrl>[^)\s]+)\) in offline mode and the artifact (?<artifact>\S+) has not been downloaded'
+      - 'Failed to read artifact descriptor for (?<artifact>\S+)'
+      - 'Could not resolve dependencies for project (?<project>\S+?):'
+      - 'was cached in the local repository'
+      - 'Failed to collect dependencies at'
+      - 'Non-resolvable import POM'
+    extract:
+      - 'from/to (?<repoId>[\w.\-]+) \((?<repoUrl>[^)\s]+)\)'
+      - 'was not found in (?<repoUrl>\S+) during a previous attempt'
+      - 'update interval of (?<repoId>[\w.\-]+) has elapsed'
+    cause: 'Maven konnte {artifact|ein Artifact} nicht aus {repoId|einem Repository} laden.'
+    checks: [offline-mode, reactor-sibling, network-failure, last-updated-files, requested-repository, pom-location]
+    fix:
+      type: rebuild
+      label: 'Mit -U neu bauen (Update erzwingen)'
+      params:
+        args: '-U'
+
+  # ---------------------------------------------------------------- 13 (Erweiterung)
+  - id: test-failures
+    number: 13
+    category: Tests fehlgeschlagen
+    priority: 10
+    confidence: certain
+    description: Kein Build-Problem, aber der häufigste Grund für BUILD FAILURE – damit es nicht als „unbekannt“ endet.
+    patterns:
+      - 'There are test failures'
+      - 'There were test failures'
+      - 'Tests run: \d+, Failures: (?<failures>[1-9]\d*)'
+      - 'Tests run: \d+, Failures: \d+, Errors: (?<errors>[1-9]\d*)'
+    cause: 'Tests sind fehlgeschlagen – das ist ein Testergebnis, kein Problem mit Maven oder Dependencies.'
+    fix:
+      type: manual
+      label: 'Fehlgeschlagene Tests in target/surefire-reports ansehen'

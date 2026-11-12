@@ -1,0 +1,192 @@
+package io.github.bitshiftdev.mavendetective.core.report;
+
+import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
+import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
+import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
+import io.github.bitshiftdev.mavendetective.core.model.BuildFailure;
+import io.github.bitshiftdev.mavendetective.core.model.SessionInfo;
+import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotDiff;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** Darstellung von Diagnosen: als Konsolen-Karte (CLI, Extension) und als Markdown („Bericht kopieren“). */
+public final class Reports {
+
+    private static final int MAX_EVIDENCE = 6;
+    private static final int MAX_CHANGES = 6;
+
+    private Reports() {
+    }
+
+    /** Karte für die Konsole, eine Zeile pro Eintrag – ohne Farben, damit CI-Logs lesbar bleiben. */
+    public static List<String> consoleCard(List<Diagnosis> diagnoses) {
+        return consoleCard(diagnoses, null);
+    }
+
+    /** Wie {@link #consoleCard(List)}, plus „Seit dem letzten grünen Build“, wenn ein Vergleich vorliegt. */
+    public static List<String> consoleCard(List<Diagnosis> diagnoses, SnapshotDiff changes) {
+        List<String> out = new ArrayList<String>();
+        if (diagnoses.isEmpty()) {
+            return out;
+        }
+        Diagnosis d = diagnoses.get(0);
+        out.add("+-- Maven Detective · Build Doctor ----------------------------");
+        out.add("| " + headline(d));
+        out.add("| Ursache: " + d.getCause());
+        int shown = 0;
+        for (Evidence e : d.getEvidence()) {
+            if (shown++ >= MAX_EVIDENCE) {
+                break;
+            }
+            out.add("|   - " + evidence(e));
+        }
+        if (!d.getFixes().isEmpty()) {
+            out.add("| Behebung: " + fixLine(d.getFixes().get(0)));
+            for (int i = 1; i < d.getFixes().size() && i < 3; i++) {
+                out.add("|   oder: " + fixLine(d.getFixes().get(i)));
+            }
+        }
+        if (diagnoses.size() > 1) {
+            StringBuilder more = new StringBuilder("| Weitere Treffer: ");
+            for (int i = 1; i < diagnoses.size(); i++) {
+                more.append(i > 1 ? ", " : "").append(diagnoses.get(i).getCategory());
+            }
+            out.add(more.toString());
+        }
+        if (changes != null && !changes.isEmpty()) {
+            out.add("| " + changes.headline() + ":");
+            for (String line : changes.lines(MAX_CHANGES)) {
+                out.add("|   - " + line);
+            }
+        }
+        out.add("+--------------------------------------------------------------");
+        return out;
+    }
+
+    /**
+     * Ersetzt Zeichen, die eine Konsole ohne Unicode nicht darstellen kann (Umlaute → ae/oe/ue …),
+     * damit im CI-Log kein "?" steht.
+     */
+    public static String transliterate(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case 'ä': sb.append("ae"); break;
+                case 'ö': sb.append("oe"); break;
+                case 'ü': sb.append("ue"); break;
+                case 'Ä': sb.append("Ae"); break;
+                case 'Ö': sb.append("Oe"); break;
+                case 'Ü': sb.append("Ue"); break;
+                case 'ß': sb.append("ss"); break;
+                case '·': case '–': case '—': sb.append('-'); break;
+                case '…': sb.append("..."); break;
+                case '→': sb.append("->"); break;
+                case '„': case '“': case '”': sb.append('"'); break;
+                default: sb.append(c < 128 ? c : '?');
+            }
+        }
+        return sb.toString();
+    }
+
+    /** {@code true}, wenn die Konsole Umlaute und Sonderzeichen der Karte darstellen kann. */
+    public static boolean consoleSupportsUnicode() {
+        String enc = System.getProperty("stdout.encoding");
+        if (enc == null) {
+            enc = System.getProperty("sun.stdout.encoding");
+        }
+        try {
+            java.nio.charset.Charset cs = enc != null ? java.nio.charset.Charset.forName(enc) : java.nio.charset.Charset.defaultCharset();
+            return cs.newEncoder().canEncode("äöüß·…→");
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    public static String headline(Diagnosis d) {
+        return (d.getNumber() > 0 ? "#" + d.getNumber() + " " : "") + d.getCategory() + " · " + d.getConfidence().label();
+    }
+
+    public static String evidence(Evidence e) {
+        String text = shorten(e.getText(), 220);
+        if (e.getFile() == null) {
+            return text;
+        }
+        return text + " -> " + e.getFile() + (e.getLine() > 0 ? ":" + e.getLine() : "");
+    }
+
+    /** Für Konsole: Label plus, wenn sinnvoll, der konkrete Befehl. */
+    public static String fixLine(FixAction f) {
+        String label = f.getLabel();
+        if (FixAction.REBUILD.equals(f.getType()) && f.param("args") != null && !f.param("args").isEmpty()) {
+            return label + "  (mvn … " + f.param("args") + ")";
+        }
+        if (FixAction.DELETE_FILES.equals(f.getType())) {
+            String[] files = f.param("files").split("\n");
+            return label + "  (" + files.length + (files.length == 1 ? " Datei: " + files[0] : " Dateien") + ")";
+        }
+        if (FixAction.OPEN_FILE.equals(f.getType())) {
+            return label + "  (" + f.param("file") + (f.param("line") != null && !"-1".equals(f.param("line")) ? ":" + f.param("line") : "") + ")";
+        }
+        return label;
+    }
+
+    /** Markdown für Ticket oder Chat: Fehler, Ursache, Belege, Umgebung. */
+    public static String markdown(List<Diagnosis> diagnoses, BuildFailure failure) {
+        return markdown(diagnoses, failure, null);
+    }
+
+    /** Markdown mit Abschnitt „Was hat sich geändert?“, wenn ein Vergleich vorliegt. */
+    public static String markdown(List<Diagnosis> diagnoses, BuildFailure failure, SnapshotDiff changes) {
+        StringBuilder sb = new StringBuilder();
+        if (diagnoses.isEmpty()) {
+            return "Build ohne Fehler.\n";
+        }
+        Diagnosis d = diagnoses.get(0);
+        sb.append("### Maven-Build fehlgeschlagen: ").append(d.getCategory()).append('\n').append('\n');
+        sb.append("**Ursache** (").append(d.getConfidence().label()).append("): ").append(d.getCause()).append("\n\n");
+        sb.append("**Belege**\n\n");
+        for (Evidence e : d.getEvidence()) {
+            if (e.getKind() == Evidence.Kind.LOG_LINE) {
+                sb.append("- `").append(shorten(e.getText(), 300).replace("`", "'")).append("`\n");
+            } else {
+                sb.append("- ").append(evidence(e)).append('\n');
+            }
+        }
+        if (!d.getFixes().isEmpty()) {
+            sb.append("\n**Vorgeschlagene Behebung:** ").append(fixLine(d.getFixes().get(0))).append('\n');
+        }
+        if (changes != null && !changes.isEmpty()) {
+            sb.append("\n**").append(changes.headline()).append("**\n\n");
+            for (String line : changes.lines(MAX_CHANGES * 2)) {
+                sb.append("- ").append(line).append('\n');
+            }
+        }
+        sb.append("\n**Umgebung**\n\n");
+        SessionInfo s = failure.getSession();
+        appendIf(sb, "Maven", s.getMavenVersion());
+        appendIf(sb, "JDK", s.getJavaVersion() == null ? null
+                : s.getJavaVersion() + (s.getJavaHome() == null ? "" : " (" + s.getJavaHome() + ")"));
+        appendIf(sb, "Offline", s.getOffline() == null ? null : String.valueOf(s.getOffline()));
+        appendIf(sb, "settings.xml", s.getUserSettings());
+        appendIf(sb, "Profile", s.getActiveProfiles().isEmpty() ? null : String.valueOf(s.getActiveProfiles()));
+        appendIf(sb, "Goals", s.getGoals().isEmpty() ? null : String.join(" ", s.getGoals()));
+        appendIf(sb, "OS", System.getProperty("os.name") + " " + System.getProperty("os.version"));
+        sb.append("\n_Erstellt mit Maven Detective_\n");
+        return sb.toString();
+    }
+
+    private static void appendIf(StringBuilder sb, String key, String value) {
+        if (value != null && !value.isEmpty()) {
+            sb.append("- ").append(key).append(": ").append(value).append('\n');
+        }
+    }
+
+    private static String shorten(String s, int max) {
+        if (s == null) {
+            return "";
+        }
+        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
+    }
+}

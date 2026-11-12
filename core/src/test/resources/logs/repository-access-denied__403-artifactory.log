@@ -1,0 +1,5 @@
+2026-11-11T07:02:13.4412870Z [INFO] --- resources:3.3.1:resources (default-resources) @ billing ---
+2026-11-11T07:02:15.1029334Z [INFO] BUILD FAILURE
+2026-11-11T07:02:15.1035512Z [ERROR] Failed to execute goal on project billing: Could not resolve dependencies for project com.acme:billing:jar:1.0.0: The following artifacts could not be resolved: com.acme.internal:tax-rules:jar:5.2.0 (absent): Could not transfer artifact com.acme.internal:tax-rules:jar:5.2.0 from/to artifactory-internal (https://acme.jfrog.example/artifactory/libs-release): status code: 403, reason phrase: Forbidden (403) -> [Help 1]
+2026-11-11T07:02:15.1040021Z [ERROR]
+2026-11-11T07:02:15.1040555Z [ERROR] Re-run Maven using the -X switch to enable full debug logging.

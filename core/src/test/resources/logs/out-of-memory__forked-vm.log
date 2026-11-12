@@ -1,0 +1,11 @@
+[INFO] --- surefire:3.5.2:test (default-test) @ ingest ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project ingest:
+[ERROR]
+[ERROR] Please refer to /home/dev/project/target/surefire-reports for the individual test results.
+[ERROR] Please refer to dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] The forked VM terminated without properly saying goodbye. VM crash or System.exit called?
+[ERROR] Command was /bin/sh -c cd /home/dev/project && /usr/lib/jvm/temurin-21-jdk/bin/java -Xmx256m -jar /home/dev/project/target/surefire/surefirebooter.jar
+[ERROR] Error occurred in starting fork, check output in log
+[ERROR] Process Exit Code: 137
