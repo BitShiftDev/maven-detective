@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -250,6 +251,39 @@ final class IdeMaven {
         } catch (RuntimeException e) {
             LOG.warn("Maven Detective: Dependency-Baum nicht lesbar", e);
             return null;
+        }
+    }
+
+    /** Bäume aller Module (Stand des letzten Imports), je {@code groupId:artifactId} des Moduls. */
+    static Map<String, DepNode> dependencyTrees(@NotNull Project project) {
+        Map<String, DepNode> out = new LinkedHashMap<>();
+        try {
+            ReadAction.run(() -> {
+                for (MavenProject p : MavenProjectsManager.getInstance(project).getProjects()) {
+                    MavenId id = p.getMavenId();
+                    List<MavenArtifactNode> nodes = p.getDependencyTree();
+                    if (id.getArtifactId() == null || nodes.isEmpty() && !p.getDependencies().isEmpty()) {
+                        continue; // nicht aufgelöst: lieber ohne Baum (POM-Fallback) als mit leerem
+                    }
+                    DepNode root = new DepNode(id.getGroupId(), id.getArtifactId(), p.getPackaging(), null, id.getVersion(), null);
+                    for (MavenArtifactNode n : nodes) {
+                        convert(root, n, 0);
+                    }
+                    out.put(root.ga(), root);
+                }
+            });
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: Dependency-Bäume nicht lesbar", e);
+        }
+        return out;
+    }
+
+    /** Maven-Projekte neu importieren, z. B. nach einer Änderung an der POM durch einen Quick-Fix. */
+    static void reimport(@NotNull Project project) {
+        try {
+            MavenProjectsManager.getInstance(project).forceUpdateAllProjectsOrFindAllAvailablePomFiles();
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("Maven Detective: Maven-Import nicht anstoßbar", e);
         }
     }
 

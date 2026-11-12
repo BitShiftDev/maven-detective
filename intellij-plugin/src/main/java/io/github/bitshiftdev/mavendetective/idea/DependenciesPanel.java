@@ -266,17 +266,22 @@ public final class DependenciesPanel extends JPanel implements Disposable {
     /** Erklärung berechnen (Hintergrund-Thread; liest nur Dateien). */
     static @Nullable VersionExplanation explainNow(Project project, Path pom, String groupId, String artifactId, @Nullable DepNode tree) {
         Path root = IdeMaven.reactorRoot(project);
-        Path repo = IdeMaven.localRepository(project);
-        if (repo == null) {
-            repo = Environment.builder().projectDirectory(root).userHome(Paths.get(System.getProperty("user.home")))
-                    .env(System.getenv()).build().getLocalRepository();
-        }
-        PomLocator locator = new PomLocator(root, repo);
+        PomLocator locator = locator(project, root);
         PomFile module = locator.load(pom);
         if (module == null) {
             return null;
         }
         return new VersionExplainer(locator, root).explain(module, groupId, artifactId, tree);
+    }
+
+    /** POM-Zugriff für den Reactor; lokales Repository aus dem IDE-Modell, sonst wie Maven es fände. */
+    static PomLocator locator(Project project, @Nullable Path root) {
+        Path repo = IdeMaven.localRepository(project);
+        if (repo == null) {
+            repo = Environment.builder().projectDirectory(root).userHome(Paths.get(System.getProperty("user.home")))
+                    .env(System.getenv()).build().getLocalRepository();
+        }
+        return new PomLocator(root, repo);
     }
 
     private static String render(VersionExplanation x) {

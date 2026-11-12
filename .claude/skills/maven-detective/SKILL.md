@@ -1,6 +1,6 @@
 ---
 name: maven-detective
-description: Projektwissen zu Maven Detective (IntelliJ-Plugin + Maven-Core-Extension + Java-8-Kern, der gescheiterte Maven-Builds diagnostiziert). Nutze diesen Skill bei jeder Arbeit in diesem Repo – neue Regel im Fehlerkatalog, neue Prüfung (Check), neuer Quick-Fix-Typ, Log-Parser, Schnappschuss-Diff, IDE-gegen-Kommandozeile, Fixtures, CLI (diagnose/evaluate/changes/validate-catalog/why), IntelliJ-Plugin oder CI – und wenn von Build Doctor, Diagnose-Karte, Gate 1/2 oder Modul A (Warum diese Version?, Konflikt-Matrix, Exclusions) die Rede ist.
+description: Projektwissen zu Maven Detective (IntelliJ-Plugin + Maven-Core-Extension + Java-8-Kern, der gescheiterte Maven-Builds diagnostiziert). Nutze diesen Skill bei jeder Arbeit in diesem Repo – neue Regel im Fehlerkatalog, neue Prüfung (Check), neuer Quick-Fix-Typ, Log-Parser, Schnappschuss-Diff, IDE-gegen-Kommandozeile, Fixtures, CLI (diagnose/evaluate/changes/validate-catalog/why/matrix), IntelliJ-Plugin oder CI – und wenn von Build Doctor, Diagnose-Karte, Gate 1/2 oder Modul A (Warum diese Version?, Konflikt-Matrix, Exclusions) die Rede ist.
 ---
 
 # Maven Detective
@@ -63,7 +63,7 @@ Datei: `core/src/main/resources/io/github/bitshiftdev/mavendetective/core/catalo
 
 ## Quick-Fix-Typen
 
-Konstanten in `core/diagnosis/FixAction` (Javadoc-Tabelle listet Parameter): `rebuild`, `delete-files`, `open-file`, `replace-in-file`, `switch-jdk`, `set-jvm-option`, `insert-plugin-version`, `show-dependency`, `pin-version` (beide Modul A), `manual`. `core/fix/FixExecutor` führt nur dateibasierte aus (`delete-files`, `replace-in-file`, `set-jvm-option`); der Rest läuft im Plugin (`FixRunner`). Neuer Typ ⇒ FixAction-Konstante + Javadoc + Katalog-Kopfkommentar + Ausführung in Executor/Plugin.
+Konstanten in `core/diagnosis/FixAction` (Javadoc-Tabelle listet Parameter): `rebuild`, `delete-files`, `open-file`, `replace-in-file`, `switch-jdk`, `set-jvm-option`, `insert-plugin-version`, `show-dependency`, `pin-version` (Modul A; `file`, `artifact`, `version`), `manual`. `core/fix/FixExecutor` führt nur dateibasierte aus (`delete-files`, `replace-in-file`, `set-jvm-option`, `pin-version`); der Rest läuft im Plugin (`FixRunner`). Neuer Typ ⇒ FixAction-Konstante + Javadoc + Katalog-Kopfkommentar + Ausführung in Executor/Plugin.
 
 ## Schnappschüsse („Was hat sich geändert?“)
 
@@ -77,6 +77,7 @@ java -jar core/build/libs/maven-detective-core-*.jar evaluate logs/ [--catalog e
 java -jar core/build/libs/maven-detective-core-*.jar validate-catalog extra.yaml
 java -jar core/build/libs/maven-detective-core-*.jar changes [--project DIR]
 java -jar core/build/libs/maven-detective-core-*.jar why g:a [--project DIR] [--module DIR] [--tree tree.txt|-] [--markdown] [--local-repo DIR]
+java -jar core/build/libs/maven-detective-core-*.jar matrix [--project DIR] [--tree tree.txt|-] [--all] [--markdown] [--pin g:a[:version]]
 ```
 
 Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFile=…`, `-DmavenDetective.report=false`.
@@ -88,10 +89,13 @@ Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFi
 - `EffectiveModel`: Mavens Reihenfolge nachbauen – erben (Kind gewinnt), im Kontext des **Kindes** interpolieren, dann BOM-Importe (erster gewinnt, BOM interpoliert im **eigenen** Kontext). Jede Angabe behält Datei+Zeile.
 - `VersionExplainer` → `VersionExplanation` (Stationen mit `Kind`, Datei, Zeile, Level; `Source` DIRECT/MANAGED/BOM/TRANSITIVE/UNKNOWN). Baum optional (`DepNode`, aus IDE `IdeMaven.dependencyTree` oder `DependencyTreeParser` für `dependency:tree -Dverbose`).
 - Tests bauen Projekt + lokales Repo in `@TempDir` (`VersionExplainerTest`). Plugin: `DependenciesPanel`, `WhyThisVersionAction` (EditorPopupMenu, nur `pom.xml`).
+- **A2** `ConflictMatrix.build(locator, root, poms, trees)`: Zelle je Modul aus Baum (INCLUDED, BFS), ohne Baum nur direkte Deps (`isPartial`). Abweichende Zeile → `Pin` im **nächsten gemeinsamen Parent innerhalb des Projekts**, Version = `MavenVersion.max`; `Blocker` = direkte `<version>` oder Management näher am Modul (BOM-Importe blockieren nie). Spalten ohne Zellen bei `packaging pom` fallen weg.
+- `PomEditor.pinManagedVersion` → `Edit` (offset/length/text/line): eigener Tag-Scanner, nur Pfade direkt unter `project` (Profile unberührt), behält Einrückung/Zeilenenden; vorhandener Eintrag → Version bzw. `${prop}` derselben POM ändern. Kein DOM-Roundtrip. Plugin wendet `Edit` aufs `Document` an (Undo), `FixExecutor` auf die Datei.
+- Plugin: Tab `ConflictMatrixPanel` („Konflikt-Matrix“), Doppelklick → `DependenciesPanel.show`; nach Pin `IdeMaven.reimport`. CLI: `matrix [--tree …] [--all] [--markdown] [--pin g:a[:version]]`.
 
 ## Offene Punkte (Stand README)
 
-Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1 fertig, A2–A6 offen. Vor größeren Features README „Nächste Schritte“ prüfen.
+Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1, A2 fertig (beide nicht in `runIde` geklickt), A3–A6 offen. Vor größeren Features README „Nächste Schritte“ prüfen.
 
 ## Git
 

@@ -12,11 +12,11 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 [ERROR] +--------------------------------------------------------------
 ```
 
-## Stand: Phase 3 – Modul A begonnen
+## Stand: Phase 3 – Modul A (A1, A2 fertig)
 
 | Baustein | Status |
 | --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 56 Unit-Tests |
+| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 73 Unit-Tests |
 | Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ |
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 10 Fixture-Projekten getestet |
@@ -25,7 +25,8 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option. **In `runIde` noch nicht durchgeklickt** |
 | Gate 1 (30 eigene Logs) | **offen** – braucht deine Logs, siehe unten |
 | A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Tab „Dependencies“, Rechtsklick in der `pom.xml`). **In `runIde` noch nicht durchgeklickt** |
-| A2–A6 (Konflikt-Matrix, doppelte Klassen, Exclusions, unused/undeclared, Upgrade-Simulator) | offen |
+| A2 Konflikt-Matrix | fertig in Kern, CLI (`matrix`, `--pin`) und IDE (Tab „Konflikt-Matrix“ mit Quick-Fix „im Parent festlegen“). **In `runIde` noch nicht durchgeklickt** |
+| A3–A6 (doppelte Klassen, Exclusions, unused/undeclared, Upgrade-Simulator) | offen |
 
 ## Schnellstart
 
@@ -52,6 +53,11 @@ java -jar core/build/libs/maven-detective-core-*.jar diagnose build.log --markdo
 java -jar core/build/libs/maven-detective-core-*.jar changes --project .
 # Woher kommt die Version dieser Dependency? (Modul A1)
 java -jar core/build/libs/maven-detective-core-*.jar why com.fasterxml.jackson.core:jackson-databind --project .
+# Welche Module nutzen welche Version? (Modul A2)
+mvn dependency:tree -Dverbose > tree.txt
+java -jar core/build/libs/maven-detective-core-*.jar matrix --project . --tree tree.txt
+# … und die Version im gemeinsamen Parent festlegen (ohne Version: die höchste)
+java -jar core/build/libs/maven-detective-core-*.jar matrix --project . --pin com.google.guava:guava
 ```
 
 ### Extension in Maven-Läufen
@@ -146,14 +152,35 @@ Dazu gehört immer ein Testlog unter `core/src/test/resources/logs/<regel-id>__<
 
 Vorhandene Prüfungen: `offline-mode`, `network-failure`, `last-updated-files`, `reactor-sibling`, `requested-repository`, `server-id`, `http-repository`, `corrupt-jar`, `pom-location`, `parent-relative-path`, `child-module`, `plugin-prefix`, `plugin-version`, `jdk-version`, `source-location`, `enforcer-rule`, `memory-settings`. Prüfungen lesen nur Dateien und Einstellungen und gehen nie ins Netz.
 
+## Konflikt-Matrix
+
+Modul A2 zeigt für den ganzen Reactor, welches Modul welche Version im Classpath hat – Zeile = Artifact, Spalte = Modul. Abweichungen stehen oben, mit Herkunft je Zelle und einem Vorschlag:
+
+```
+Konflikt-Matrix: 3 Module, 41 Artifacts, 1 mit abweichenden Versionen
+
+com.google.guava:guava  – 2 Versionen
+    32.1.3-jre: billing (direkt angegeben)
+    33.3.1-jre: api (dependencyManagement), web (transitiv (Tiefe 2))
+    Vorschlag: 33.3.1-jre in parent (/…/pom.xml) unter dependencyManagement festlegen
+      ! Direkte Angabe <version>32.1.3-jre</version> in billing überstimmt dependencyManagement – nach dem Pin dort die Version entfernen  → /…/billing/pom.xml:31
+```
+
+- **Vorschlag:** die höchste Version (Vergleich nach Mavens Regeln: `rc < SNAPSHOT < Release < sp`) im nächsten gemeinsamen Parent unter `dependencyManagement`. Ein Eintrag dort gilt auch für transitive Vorkommen und gewinnt gegen jedes importierte BOM.
+- **Was den Pin überstimmt**, steht dabei: direkte `<version>`-Angaben in Modulen und `dependencyManagement` in Modulen oder Zwischen-Parents – jeweils mit Datei und Zeile.
+- **Quick-Fix `pin-version`** ändert genau eine Stelle und lässt Formatierung und Kommentare stehen: vorhandenen Eintrag anpassen (steht dort `${prop}` aus derselben POM, die Property), sonst Eintrag ergänzen, sonst `<dependencyManagement>` anlegen. Haben die Module keinen gemeinsamen Parent im Projekt, sagt die Matrix das statt zu raten.
+- **Ohne Baum** (CLI ohne `--tree`, IDE vor dem ersten Import) enthält die Matrix nur direkt deklarierte Dependencies und sagt das.
+- **In der IDE:** Tab „Konflikt-Matrix“ mit Suche und „Nur Abweichungen“; abweichende Zellen sind hinterlegt. Unten Herkunft (klickbar), Versionsauswahl und „In <parent> festlegen“ – als ein Undo-Schritt, danach lädt IntelliJ das Maven-Projekt neu. Doppelklick auf eine Zelle öffnet „Warum diese Version?“ für dieses Modul.
+
 ## Aufbau
 
 ```
 core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, Prüfungen, Fix-Ausführung, CLI,
                    Schnappschüsse + Diff (snapshot/), IDE-gegen-Kommandozeile (env/BuildSetup, SetupComparison),
-                   Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser)
+                   Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser,
+                   ConflictMatrix, PomEditor für textgenaue POM-Änderungen, MavenVersion)
 maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
-intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies), Listener auf Maven-Läufe, Quick-Fixes,
+intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies, Konflikt-Matrix), Listener auf Maven-Läufe, Quick-Fixes,
                    Editor-Aktion „Warum diese Version?“;
                    IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht)
 fixtures/          Je Fehlerkategorie ein Projekt, das den Fehler absichtlich auslöst (fixtures.txt),
@@ -169,8 +196,10 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
 - Preflight-Check und Log-Navigator aus dem Konzept.
 - Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.
-- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A2 Konflikt-Matrix über den Reactor (nutzt dieselben Bäume), A4 Exclusion-Hygiene, A5 Unused/undeclared, A3 doppelte Klassen, A6 Upgrade-Simulator.
+- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A4 Exclusion-Hygiene, A5 Unused/undeclared, A3 doppelte Klassen, A6 Upgrade-Simulator.
 - A1 in `runIde` an einem Spring-Boot-Projekt durchklicken (Abnahme laut Konzept: Herkunft jeder Dependency korrekt).
+- A2 in `runIde` an einem Multi-Modul-Projekt durchklicken: Abweichung pinnen, Re-Import, Matrix aktualisieren.
+- A2-Pin auch als Karte im Build Doctor anbieten (Regel 10 „Laufzeitkonflikt“: verschiedene Versionen über die Module).
 
 ## Lizenz
 

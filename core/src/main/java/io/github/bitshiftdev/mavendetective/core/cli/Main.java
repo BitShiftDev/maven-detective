@@ -4,6 +4,7 @@ import io.github.bitshiftdev.mavendetective.core.BuildDoctor;
 import io.github.bitshiftdev.mavendetective.core.catalog.RuleCatalog;
 import io.github.bitshiftdev.mavendetective.core.check.Checks;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
+import io.github.bitshiftdev.mavendetective.core.deps.ConflictMatrix;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.DependencyTreeParser;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
@@ -11,7 +12,9 @@ import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplanation;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
+import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
+import io.github.bitshiftdev.mavendetective.core.fix.FixExecutor;
 import io.github.bitshiftdev.mavendetective.core.io.EventLog;
 import io.github.bitshiftdev.mavendetective.core.io.MavenLogParser;
 import io.github.bitshiftdev.mavendetective.core.model.BuildFailure;
@@ -49,6 +52,7 @@ import java.util.TreeMap;
  * java -jar maven-detective-core.jar validate-catalog extra.yaml
  * java -jar maven-detective-core.jar changes [--project DIR]
  * java -jar maven-detective-core.jar why groupId:artifactId [--project DIR] [--module DIR] [--tree tree.txt | -] [--markdown]
+ * java -jar maven-detective-core.jar matrix [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--pin groupId:artifactId[:version]]
  * </pre>
  *
  * {@code evaluate} ist das Werkzeug für Gate 1: alle Logs eines Ordners einordnen und, falls
@@ -82,6 +86,9 @@ public final class Main {
             }
             if ("why".equals(command) && o.target != null) {
                 return why(o, out, err, stdin);
+            }
+            if ("matrix".equals(command)) {
+                return matrix(o, out, err, stdin);
             }
             if ("evaluate".equals(command) && o.target != null) {
                 return evaluate(o, out);
@@ -170,26 +177,9 @@ public final class Main {
             err.println("Erwartet groupId:artifactId, z. B. com.fasterxml.jackson.core:jackson-databind");
             return 2;
         }
-        Path root = Paths.get(o.project != null ? o.project : "").toAbsolutePath().normalize();
-        Path localRepo = o.localRepo != null ? Paths.get(o.localRepo)
-                : Environment.builder().projectDirectory(root).userHome(Paths.get(System.getProperty("user.home")))
-                .env(System.getenv()).build().getLocalRepository();
-        Map<String, DepNode> trees = new HashMap<String, DepNode>();
-        if (o.tree != null) {
-            Reader r = "-".equals(o.tree) ? new InputStreamReader(stdin, StandardCharsets.UTF_8)
-                    : Files.newBufferedReader(Paths.get(o.tree), StandardCharsets.UTF_8);
-            try {
-                for (DepNode n : DependencyTreeParser.parse(r)) {
-                    trees.put(n.ga(), n);
-                }
-            } finally {
-                r.close();
-            }
-            if (trees.isEmpty()) {
-                err.println("Kein Baum in " + o.tree + " gefunden (erwartet: Ausgabe von mvn dependency:tree -Dverbose).");
-            }
-        }
-        PomLocator locator = new PomLocator(root, localRepo);
+        Path root = projectRoot(o);
+        Map<String, DepNode> trees = trees(o, err, stdin);
+        PomLocator locator = new PomLocator(root, localRepository(o, root));
         VersionExplainer explainer = new VersionExplainer(locator, root);
         List<PomFile> modules = new ArrayList<PomFile>();
         if (o.module != null) {
@@ -236,6 +226,99 @@ public final class Main {
             }
         }
         return 0;
+    }
+
+    private static Path projectRoot(Options o) {
+        return Paths.get(o.project != null ? o.project : "").toAbsolutePath().normalize();
+    }
+
+    private static Path localRepository(Options o, Path root) {
+        return o.localRepo != null ? Paths.get(o.localRepo)
+                : Environment.builder().projectDirectory(root).userHome(Paths.get(System.getProperty("user.home")))
+                .env(System.getenv()).build().getLocalRepository();
+    }
+
+    /** Bäume aus {@code --tree} (Datei oder stdin) je {@code groupId:artifactId} des Moduls. */
+    private static Map<String, DepNode> trees(Options o, PrintStream err, InputStream stdin) throws IOException {
+        Map<String, DepNode> trees = new HashMap<String, DepNode>();
+        if (o.tree == null) {
+            return trees;
+        }
+        Reader r = "-".equals(o.tree) ? new InputStreamReader(stdin, StandardCharsets.UTF_8)
+                : Files.newBufferedReader(Paths.get(o.tree), StandardCharsets.UTF_8);
+        try {
+            for (DepNode n : DependencyTreeParser.parse(r)) {
+                trees.put(n.ga(), n);
+            }
+        } finally {
+            r.close();
+        }
+        if (trees.isEmpty()) {
+            err.println("Kein Baum in " + o.tree + " gefunden (erwartet: Ausgabe von mvn dependency:tree -Dverbose).");
+        }
+        return trees;
+    }
+
+    /**
+     * Modul A2: Konflikt-Matrix über den Reactor. Mit {@code --pin g:a[:version]} wird die Version
+     * im gemeinsamen Parent unter dependencyManagement festgelegt (ohne Version: die höchste).
+     */
+    private static int matrix(Options o, PrintStream out, PrintStream err, InputStream stdin) throws IOException {
+        Path root = projectRoot(o);
+        Map<String, DepNode> trees = trees(o, err, stdin);
+        PomLocator locator = new PomLocator(root, localRepository(o, root));
+        List<PomFile> poms = new ArrayList<PomFile>();
+        for (ProjectPoms.Pom p : new ProjectPoms(root).all()) {
+            PomFile m = locator.load(p.file);
+            if (m != null) {
+                poms.add(m);
+            }
+        }
+        if (poms.isEmpty()) {
+            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            return 1;
+        }
+        ConflictMatrix matrix = ConflictMatrix.build(locator, root, poms, trees);
+        if (o.pin != null) {
+            return pin(matrix, o.pin, out, err);
+        }
+        if (o.markdown) {
+            out.print(matrix.markdown(o.all));
+        } else {
+            for (String line : matrix.lines(o.all)) {
+                out.println(line);
+            }
+        }
+        return 0;
+    }
+
+    private static int pin(ConflictMatrix matrix, String spec, PrintStream out, PrintStream err) throws IOException {
+        String[] parts = spec.split(":");
+        if (parts.length < 2) {
+            err.println("--pin erwartet groupId:artifactId[:version]");
+            return 2;
+        }
+        for (ConflictMatrix.Row row : matrix.getRows()) {
+            if (!row.getGroupId().equals(parts[0]) || !row.getArtifactId().equals(parts[1])) {
+                continue;
+            }
+            ConflictMatrix.Pin pin = row.getPin();
+            if (pin == null) {
+                err.println(row.isDivergent() ? row.getPinProblem() : row.ga() + " hat in allen Modulen dieselbe Version " + row.versions());
+                return 1;
+            }
+            FixAction fix = pin.fix(row.getGroupId(), row.getArtifactId(), parts.length > 2 ? parts[2] : pin.getVersion());
+            FixExecutor.Outcome outcome = new FixExecutor(Collections.<Path>emptyList()).execute(fix);
+            for (String a : outcome.actions) {
+                out.println(a);
+            }
+            for (ConflictMatrix.Blocker b : pin.getBlockers()) {
+                out.println("! " + b.getText() + "  → " + b.getFile() + (b.getLine() > 0 ? ":" + b.getLine() : ""));
+            }
+            return 0;
+        }
+        err.println(spec + " kommt in keinem Modul vor.");
+        return 1;
     }
 
     private static int evaluate(Options o, PrintStream out) throws IOException {
@@ -336,6 +419,8 @@ public final class Main {
         err.println("  validate-catalog <extra.yaml>");
         err.println("  why <groupId:artifactId> [--project DIR] [--module DIR] [--tree tree.txt | -] [--markdown] [--local-repo DIR]");
         err.println("      (Modul A: woher kommt die Version? Baum: mvn dependency:tree -Dverbose > tree.txt)");
+        err.println("  matrix [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--pin groupId:artifactId[:version]]");
+        err.println("      (Modul A2: welche Module nutzen welche Version? --pin legt sie im gemeinsamen Parent fest)");
     }
 
     private static final class Options {
@@ -345,7 +430,9 @@ public final class Main {
         String module;
         String tree;
         String localRepo;
+        String pin;
         boolean markdown;
+        boolean all;
         boolean idOnly;
 
         static Options parse(String[] args) {
@@ -362,6 +449,10 @@ public final class Main {
                     o.tree = args[++i];
                 } else if ("--local-repo".equals(a) && i + 1 < args.length) {
                     o.localRepo = args[++i];
+                } else if ("--pin".equals(a) && i + 1 < args.length) {
+                    o.pin = args[++i];
+                } else if ("--all".equals(a)) {
+                    o.all = true;
                 } else if ("--markdown".equals(a)) {
                     o.markdown = true;
                 } else if ("--id".equals(a)) {

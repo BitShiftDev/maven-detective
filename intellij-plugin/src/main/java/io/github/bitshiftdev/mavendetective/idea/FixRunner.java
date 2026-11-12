@@ -14,6 +14,7 @@ import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.fix.FixExecutor;
 import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
@@ -41,8 +42,8 @@ final class FixRunner {
         return switch (fix.getType()) {
             case FixAction.OPEN_FILE, FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE,
                  FixAction.SET_JVM_OPTION, FixAction.REBUILD, FixAction.SWITCH_JDK,
-                 FixAction.INSERT_PLUGIN_VERSION -> true;
-            // show-dependency, pin-version: Modul A
+                 FixAction.INSERT_PLUGIN_VERSION, FixAction.PIN_VERSION -> true;
+            // show-dependency: Modul A
             default -> false;
         };
     }
@@ -60,6 +61,11 @@ final class FixRunner {
                 case FixAction.REBUILD -> rebuild(project, result, fix.param("args"));
                 case FixAction.SWITCH_JDK -> switchJdk(project, result, fix.param("required"));
                 case FixAction.INSERT_PLUGIN_VERSION -> insertPluginVersion(project, result, fix);
+                case FixAction.PIN_VERSION -> {
+                    if (pinVersion(project, fix)) {
+                        rebuild(project, result, null);
+                    }
+                }
                 default -> notify(project, fix.getLabel(), NotificationType.INFORMATION);
             }
         } catch (IOException | RuntimeException e) {
@@ -175,6 +181,43 @@ final class FixRunner {
         openLocation(project, file + ":" + (lineNo + 2));
         notify(project, "Version " + version + " für " + plugin + " eingetragen.", NotificationType.INFORMATION);
         rebuild(project, result, null);
+    }
+
+    /**
+     * Modul A2: Version unter {@code dependencyManagement} der POM aus {@code file} festlegen – als ein
+     * Undo-Schritt im Dokument, danach Maven-Import anstoßen. {@code false}, wenn nichts geändert wurde.
+     */
+    static boolean pinVersion(Project project, FixAction fix) {
+        String file = fix.param("file");
+        String artifact = fix.param("artifact");
+        String version = fix.param("version");
+        int colon = artifact == null ? -1 : artifact.indexOf(':');
+        if (file == null || colon < 0 || version == null) {
+            notify(project, fix.getLabel(), NotificationType.INFORMATION);
+            return false;
+        }
+        VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Paths.get(file));
+        Document doc = vf == null ? null : FileDocumentManager.getInstance().getDocument(vf);
+        if (doc == null) {
+            notify(project, "Datei nicht gefunden: " + file, NotificationType.WARNING);
+            return false;
+        }
+        PomEditor.Edit edit;
+        try {
+            edit = PomEditor.pinManagedVersion(doc.getText(), artifact.substring(0, colon), artifact.substring(colon + 1), version);
+        } catch (IllegalArgumentException e) {
+            openLocation(project, file);
+            notify(project, vf.getName() + " lässt sich nicht automatisch bearbeiten (" + e.getMessage() + "). Bitte "
+                    + artifact + ":" + version + " selbst unter dependencyManagement eintragen.", NotificationType.WARNING);
+            return false;
+        }
+        WriteCommandAction.runWriteCommandAction(project, "Version festlegen (Maven Detective)", null,
+                () -> doc.replaceString(edit.offset, edit.offset + edit.length, edit.text));
+        FileDocumentManager.getInstance().saveDocument(doc);
+        openLocation(project, file + ":" + edit.line);
+        notify(project, edit.description + " (" + vf.getName() + "). Maven-Projekt wird neu geladen.", NotificationType.INFORMATION);
+        IdeMaven.reimport(project);
+        return true;
     }
 
     private static int parseInt(String s) {

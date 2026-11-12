@@ -1,0 +1,372 @@
+package io.github.bitshiftdev.mavendetective.core.deps;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Textgenaue Änderungen an einer POM: Formatierung, Kommentare und Reihenfolge bleiben stehen, es
+ * wird genau eine Stelle ersetzt oder eingefügt. Ergebnis ist ein {@link Edit}, das die IDE als
+ * einen Undo-Schritt auf das Dokument anwendet und der {@code FixExecutor} auf die Datei.
+ *
+ * <p>Bewusst kein DOM-Roundtrip: der würde Einrückung, Kommentare und Zeilenenden verändern.
+ */
+public final class PomEditor {
+
+    /** Eine Textänderung: an {@code offset} werden {@code length} Zeichen durch {@code text} ersetzt. */
+    public static final class Edit {
+        public final int offset;
+        public final int length;
+        public final String text;
+        /** Zeile (ab 1) im geänderten Text, an der die Änderung steht – zum Hinspringen. */
+        public final int line;
+        /** Was getan wird, als Satz. */
+        public final String description;
+
+        Edit(int offset, int length, String text, int line, String description) {
+            this.offset = offset;
+            this.length = length;
+            this.text = text;
+            this.line = line;
+            this.description = description;
+        }
+
+        public String apply(String content) {
+            return content.substring(0, offset) + text + content.substring(offset + length);
+        }
+    }
+
+    private PomEditor() {
+    }
+
+    /**
+     * Legt die Version von {@code groupId:artifactId} im {@code dependencyManagement} dieser POM fest.
+     * Gibt es dort schon einen Eintrag, wird dessen Version geändert – steht da {@code ${prop}} und
+     * ist die Property in derselben POM definiert, ändert sich die Property. Sonst kommt ein neuer
+     * Eintrag dazu, bei Bedarf samt {@code <dependencyManagement>}.
+     *
+     * @throws IllegalArgumentException wenn die Datei keine POM ist oder sich nicht zerlegen lässt
+     */
+    public static Edit pinManagedVersion(String xml, String groupId, String artifactId, String version) {
+        Scan s = Scan.of(xml);
+        if (s.projectEnd < 0) {
+            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+        }
+        String nl = xml.contains("\r\n") ? "\r\n" : "\n";
+        String unit = s.indentUnit(xml);
+
+        for (ManagedEntry e : s.managed) {
+            if (!groupId.equals(e.fields.get("groupId")) || !artifactId.equals(e.fields.get("artifactId"))) {
+                continue;
+            }
+            String type = e.fields.get("type");
+            String classifier = e.fields.get("classifier");
+            if (type != null && !"jar".equals(type) || classifier != null && !classifier.isEmpty()) {
+                continue;
+            }
+            Range v = e.ranges.get("version");
+            if (v == null) {
+                Range a = e.ranges.get("artifactId");
+                String indent = lineIndent(xml, a.tagStart);
+                String text = nl + indent + "<version>" + version + "</version>";
+                return new Edit(a.tagEnd, 0, text, lineOf(xml, a.tagEnd) + 1,
+                        "Version " + version + " im vorhandenen dependencyManagement-Eintrag ergänzt");
+            }
+            String current = xml.substring(v.contentStart, v.contentEnd).trim();
+            if (current.startsWith("${") && current.endsWith("}") && current.indexOf('}') == current.length() - 1) {
+                String prop = current.substring(2, current.length() - 1);
+                Range p = s.properties.get(prop);
+                if (p != null) {
+                    return new Edit(p.contentStart, p.contentEnd - p.contentStart, version, lineOf(xml, p.contentStart),
+                            "Property ${" + prop + "} von " + xml.substring(p.contentStart, p.contentEnd).trim() + " auf " + version
+                                    + " gesetzt (wirkt auf alle Stellen, die sie nutzen)");
+                }
+            }
+            return new Edit(v.contentStart, v.contentEnd - v.contentStart, version, lineOf(xml, v.contentStart),
+                    "Version im vorhandenen dependencyManagement-Eintrag von " + current + " auf " + version + " geändert");
+        }
+
+        if (s.dmDependenciesEnd >= 0) {
+            int at = s.dmDependenciesEnd;
+            String closingIndent = lineIndent(xml, at);
+            String block = dependency(groupId, artifactId, version, closingIndent + unit, unit, nl);
+            return insertBefore(xml, at, block, closingIndent, nl,
+                    groupId + ":" + artifactId + ":" + version + " in dependencyManagement eingetragen");
+        }
+        if (s.dmEnd >= 0) {
+            int at = s.dmEnd;
+            String closingIndent = lineIndent(xml, at);
+            String inner = closingIndent + unit;
+            String block = inner + "<dependencies>" + nl
+                    + dependency(groupId, artifactId, version, inner + unit, unit, nl)
+                    + inner + "</dependencies>" + nl;
+            return insertBefore(xml, at, block, closingIndent, nl,
+                    groupId + ":" + artifactId + ":" + version + " in dependencyManagement eingetragen");
+        }
+        int at = s.dependenciesStart >= 0 ? s.dependenciesStart : s.buildStart >= 0 ? s.buildStart : s.projectEnd;
+        String indent = at == s.projectEnd ? lineIndent(xml, at) + unit : lineIndent(xml, at);
+        String block = indent + "<dependencyManagement>" + nl
+                + indent + unit + "<dependencies>" + nl
+                + dependency(groupId, artifactId, version, indent + unit + unit, unit, nl)
+                + indent + unit + "</dependencies>" + nl
+                + indent + "</dependencyManagement>" + nl;
+        if (at != s.projectEnd) {
+            block += nl;
+        }
+        String followIndent = at == s.projectEnd ? lineIndent(xml, at) : indent;
+        return insertBefore(xml, at, block, followIndent, nl,
+                "<dependencyManagement> mit " + groupId + ":" + artifactId + ":" + version + " angelegt");
+    }
+
+    private static String dependency(String g, String a, String v, String indent, String unit, String nl) {
+        return indent + "<dependency>" + nl
+                + indent + unit + "<groupId>" + g + "</groupId>" + nl
+                + indent + unit + "<artifactId>" + a + "</artifactId>" + nl
+                + indent + unit + "<version>" + v + "</version>" + nl
+                + indent + "</dependency>" + nl;
+    }
+
+    /**
+     * Fügt {@code block} (fertig eingerückt, endet mit Zeilenumbruch) vor dem Tag bei {@code at} ein.
+     * Steht vor dem Tag nur Einrückung, beginnt der Block am Zeilenanfang; sonst bekommt er eine
+     * eigene Zeile und das Tag danach die Einrückung {@code followIndent}.
+     */
+    private static Edit insertBefore(String xml, int at, String block, String followIndent, String nl, String description) {
+        int lineStart = lineStart(xml, at);
+        if (xml.substring(lineStart, at).trim().isEmpty()) {
+            return new Edit(lineStart, 0, block, lineOf(xml, lineStart) + firstContentLine(block), description);
+        }
+        String text = nl + block + followIndent;
+        return new Edit(at, 0, text, lineOf(xml, at) + 1 + firstContentLine(block), description);
+    }
+
+    /** Zeile (ab 0) im Block, auf der {@code <dependency>} steht – dahin soll der Sprung gehen. */
+    private static int firstContentLine(String block) {
+        int idx = block.indexOf("<dependency>");
+        int n = 0;
+        for (int i = 0; i < idx; i++) {
+            if (block.charAt(i) == '\n') {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    static int lineOf(String xml, int offset) {
+        int line = 1;
+        for (int i = 0; i < offset && i < xml.length(); i++) {
+            if (xml.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        return line;
+    }
+
+    private static int lineStart(String xml, int offset) {
+        int i = offset;
+        while (i > 0 && xml.charAt(i - 1) != '\n') {
+            i--;
+        }
+        return i;
+    }
+
+    private static String lineIndent(String xml, int offset) {
+        int start = lineStart(xml, offset);
+        int end = start;
+        while (end < xml.length() && (xml.charAt(end) == ' ' || xml.charAt(end) == '\t')) {
+            end++;
+        }
+        return xml.substring(start, end);
+    }
+
+    /** Ein Element: Start des öffnenden Tags, Ende des öffnenden Tags, Inhalt, Ende des schließenden Tags. */
+    static final class Range {
+        int tagStart;
+        int contentStart;
+        int contentEnd;
+        int tagEnd;
+    }
+
+    /** Ein {@code <dependency>} in {@code project/dependencyManagement/dependencies}. */
+    static final class ManagedEntry {
+        final Map<String, String> fields = new HashMap<String, String>();
+        final Map<String, Range> ranges = new HashMap<String, Range>();
+    }
+
+    /**
+     * Ein Durchlauf über die Tags. Kommentare, CDATA, Processing Instructions und DOCTYPE werden
+     * übersprungen; Profile zählen nicht, weil nur Pfade direkt unter {@code project} ausgewertet werden.
+     */
+    static final class Scan {
+        final List<ManagedEntry> managed = new ArrayList<ManagedEntry>();
+        final Map<String, Range> properties = new HashMap<String, Range>();
+        int dmEnd = -1;
+        int dmDependenciesEnd = -1;
+        int dependenciesStart = -1;
+        int buildStart = -1;
+        int projectEnd = -1;
+        int firstChildStart = -1;
+
+        static Scan of(String xml) {
+            Scan s = new Scan();
+            List<String> stack = new ArrayList<String>();
+            List<Integer> starts = new ArrayList<Integer>();
+            List<Integer> contentStarts = new ArrayList<Integer>();
+            ManagedEntry entry = null;
+            int i = 0;
+            int n = xml.length();
+            while (i < n) {
+                int lt = xml.indexOf('<', i);
+                if (lt < 0) {
+                    break;
+                }
+                if (xml.startsWith("<!--", lt)) {
+                    i = skip(xml, lt, "-->");
+                    continue;
+                }
+                if (xml.startsWith("<![CDATA[", lt)) {
+                    i = skip(xml, lt, "]]>");
+                    continue;
+                }
+                if (xml.startsWith("<?", lt)) {
+                    i = skip(xml, lt, "?>");
+                    continue;
+                }
+                if (xml.startsWith("<!", lt)) {
+                    i = skip(xml, lt, ">");
+                    continue;
+                }
+                int gt = tagEnd(xml, lt);
+                if (gt < 0) {
+                    throw new IllegalArgumentException("Unvollständiges Tag ab Zeichen " + lt);
+                }
+                boolean closing = xml.charAt(lt + 1) == '/';
+                boolean empty = xml.charAt(gt - 1) == '/';
+                String name = tagName(xml, closing ? lt + 2 : lt + 1, gt);
+                if (closing) {
+                    if (stack.isEmpty() || !stack.get(stack.size() - 1).equals(name)) {
+                        throw new IllegalArgumentException("Schließendes </" + name + "> passt nicht (Zeichen " + lt + ")");
+                    }
+                    String path = join(stack);
+                    int contentStart = contentStarts.get(contentStarts.size() - 1);
+                    Range r = new Range();
+                    r.tagStart = starts.get(starts.size() - 1);
+                    r.contentStart = contentStart;
+                    r.contentEnd = lt;
+                    r.tagEnd = gt + 1;
+                    s.onClose(path, name, r, xml, entry);
+                    if ("project/dependencyManagement/dependencies/dependency".equals(path)) {
+                        if (entry != null) {
+                            s.managed.add(entry);
+                        }
+                        entry = null;
+                    }
+                    stack.remove(stack.size() - 1);
+                    starts.remove(starts.size() - 1);
+                    contentStarts.remove(contentStarts.size() - 1);
+                } else {
+                    stack.add(name);
+                    String path = join(stack);
+                    if (stack.size() == 2 && s.firstChildStart < 0) {
+                        s.firstChildStart = lt;
+                    }
+                    if ("project/dependencies".equals(path) && s.dependenciesStart < 0) {
+                        s.dependenciesStart = lt;
+                    } else if ("project/build".equals(path) && s.buildStart < 0) {
+                        s.buildStart = lt;
+                    } else if ("project/dependencyManagement/dependencies/dependency".equals(path)) {
+                        entry = new ManagedEntry();
+                    }
+                    if (empty) {
+                        stack.remove(stack.size() - 1);
+                    } else {
+                        starts.add(lt);
+                        contentStarts.add(gt + 1);
+                    }
+                }
+                i = gt + 1;
+            }
+            return s;
+        }
+
+        private void onClose(String path, String name, Range r, String xml, ManagedEntry entry) {
+            if ("project".equals(path)) {
+                projectEnd = r.contentEnd;
+            } else if ("project/dependencyManagement".equals(path)) {
+                dmEnd = r.contentEnd;
+            } else if ("project/dependencyManagement/dependencies".equals(path)) {
+                dmDependenciesEnd = r.contentEnd;
+            } else if (entry != null && path.startsWith("project/dependencyManagement/dependencies/dependency/")
+                    && path.indexOf('/', "project/dependencyManagement/dependencies/dependency/".length()) < 0) {
+                entry.fields.put(name, xml.substring(r.contentStart, r.contentEnd).trim());
+                entry.ranges.put(name, r);
+            } else if (path.startsWith("project/properties/") && path.indexOf('/', "project/properties/".length()) < 0
+                    && !properties.containsKey(name)) {
+                properties.put(name, r);
+            }
+        }
+
+        /** Einrückungsschritt aus dem ersten Kind von {@code project}; sonst zwei Leerzeichen. */
+        String indentUnit(String xml) {
+            if (firstChildStart >= 0) {
+                String indent = lineIndent(xml, firstChildStart);
+                if (!indent.isEmpty() && xml.substring(lineStart(xml, firstChildStart), firstChildStart).trim().isEmpty()) {
+                    return indent;
+                }
+            }
+            return "  ";
+        }
+
+        private static int skip(String xml, int from, String end) {
+            int e = xml.indexOf(end, from);
+            if (e < 0) {
+                throw new IllegalArgumentException("Nicht geschlossen ab Zeichen " + from + ": " + end);
+            }
+            return e + end.length();
+        }
+
+        /** Ende des Tags; {@code >} in Attributwerten zählt nicht. */
+        private static int tagEnd(String xml, int lt) {
+            char quote = 0;
+            for (int i = lt + 1; i < xml.length(); i++) {
+                char c = xml.charAt(i);
+                if (quote != 0) {
+                    if (c == quote) {
+                        quote = 0;
+                    }
+                } else if (c == '"' || c == '\'') {
+                    quote = c;
+                } else if (c == '>') {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private static String tagName(String xml, int from, int gt) {
+            int end = from;
+            while (end < gt) {
+                char c = xml.charAt(end);
+                if (Character.isWhitespace(c) || c == '/' || c == '>') {
+                    break;
+                }
+                end++;
+            }
+            String name = xml.substring(from, end);
+            int colon = name.indexOf(':');
+            return colon >= 0 ? name.substring(colon + 1) : name;
+        }
+
+        private static String join(List<String> stack) {
+            StringBuilder sb = new StringBuilder();
+            for (String s : stack) {
+                if (sb.length() > 0) {
+                    sb.append('/');
+                }
+                sb.append(s);
+            }
+            return sb.toString();
+        }
+    }
+}

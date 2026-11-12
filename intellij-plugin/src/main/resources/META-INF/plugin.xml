@@ -19,6 +19,9 @@
       <li><b>Why this version?</b> Right-click a dependency in pom.xml to see the decision chain:
           direct declaration, dependencyManagement in the module or parent, imported BOM, the property that sets it,
           path in the tree (nearest wins) and overridden versions – every step jumps to the right POM line.</li>
+      <li><b>Conflict matrix:</b> one table for the whole reactor – artifact by module, resolved version in each cell,
+          deviations highlighted. One click pins the version in the common parent's dependencyManagement and lists
+          the declarations that would still override it.</li>
       <li>Complements Maven Helper and the Dependency Analyzer: they show facts, Maven Detective shows cause and fix.</li>
     </ul>
     ]]></description>

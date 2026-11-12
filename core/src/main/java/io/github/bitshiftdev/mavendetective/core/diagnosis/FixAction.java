@@ -17,7 +17,8 @@ import java.util.Map;
  * <tr><td>{@code set-jvm-option}</td><td>{@code file} (.mvn/jvm.config), {@code option}</td></tr>
  * <tr><td>{@code insert-plugin-version}</td><td>{@code file}, {@code line}, {@code plugin}</td></tr>
  * <tr><td>{@code show-dependency}</td><td>{@code artifact} (Modul A)</td></tr>
- * <tr><td>{@code pin-version}</td><td>{@code artifact} (Modul A)</td></tr>
+ * <tr><td>{@code pin-version}</td><td>{@code file} (POM, meist der gemeinsame Parent), {@code artifact} (groupId:artifactId),
+ *     {@code version} – setzt die Version unter {@code dependencyManagement} (Modul A2)</td></tr>
  * <tr><td>{@code manual}</td><td>nur Beschreibung im Label</td></tr>
  * </table>
  */
