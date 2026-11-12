@@ -4,20 +4,22 @@
     <name>Maven Detective</name>
     <vendor url="https://github.com/BitShiftDev">BitShiftDev</vendor>
 
+    <!-- Englisch Pflicht: Plugin Verifier und Marketplace verlangen eine Beschreibung, die mit
+         mindestens 40 lateinischen Zeichen beginnt (Umlaute zählen nicht) -->
     <description><![CDATA[
-    <p>Erklärt, warum ein Maven-Build scheitert – in Klartext, mit Belegen und Quick-Fix.</p>
+    <p>Explains why a Maven build fails – in plain language, with evidence and a quick fix.</p>
     <ul>
-      <li><b>Build Doctor:</b> statt 500 Zeilen Log eine Karte mit Ursache, Belegen, Sicherheit und Ein-Klick-Behebung.</li>
-      <li>Erkennt u. a. gecachte Fehlversuche (.lastUpdated), fehlende Zugangsdaten in settings.xml,
-          blockierte http-Repositories, kaputte JARs, falsches JDK, fehlende Module und Parent-POMs.</li>
-      <li><b>Was hat sich geändert?</b> Jeder grüne Lauf wird Referenz; scheitert ein späterer, nennt die Karte
-          die Änderungen seitdem – JDK, Maven, Profile, Parent, Plugins, Dependencies.</li>
-      <li><b>IDE gegen Kommandozeile:</b> vergleicht Maven, JDK, settings.xml, Profile und .mvn/-Konfiguration
-          von IntelliJ und ./mvnw.</li>
-      <li><b>Warum diese Version?</b> Rechtsklick auf eine Dependency in der pom.xml zeigt die Entscheidungskette:
-          direkte Angabe, dependencyManagement im Modul oder Parent, importiertes BOM, setzende Property,
-          Pfad im Baum (nearest wins) und verdrängte Versionen – jede Station springt zur richtigen POM-Zeile.</li>
-      <li>Ergänzt Maven Helper und den Dependency Analyzer: die zeigen Fakten, Maven Detective Ursache und Lösung.</li>
+      <li><b>Build Doctor:</b> instead of 500 lines of log, a card with cause, evidence, confidence and one-click fix.</li>
+      <li>Detects, among others, cached failed downloads (.lastUpdated), missing credentials in settings.xml,
+          blocked http repositories, corrupt JARs, wrong JDK, missing modules and parent POMs.</li>
+      <li><b>What changed?</b> Every green run becomes the reference; when a later one fails, the card lists
+          the changes since then – JDK, Maven, profiles, parent, plugins, dependencies.</li>
+      <li><b>IDE vs. command line:</b> compares Maven, JDK, settings.xml, profiles and .mvn/ configuration
+          between IntelliJ and ./mvnw.</li>
+      <li><b>Why this version?</b> Right-click a dependency in pom.xml to see the decision chain:
+          direct declaration, dependencyManagement in the module or parent, imported BOM, the property that sets it,
+          path in the tree (nearest wins) and overridden versions – every step jumps to the right POM line.</li>
+      <li>Complements Maven Helper and the Dependency Analyzer: they show facts, Maven Detective shows cause and fix.</li>
     </ul>
     ]]></description>
 

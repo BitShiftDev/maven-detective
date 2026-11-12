@@ -42,6 +42,14 @@ jobs:
   plugin:
     runs-on: ubuntu-latest
     steps:
+      # Gate 2 entpackt fünf IDEs plus Verifier-Cache (~33 GB); der Runner hat ab Werk nur ~14 GB frei
+      - name: Platz schaffen (vorinstallierte Toolchains entfernen)
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo docker image prune --all --force > /dev/null
+          df -h /
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
