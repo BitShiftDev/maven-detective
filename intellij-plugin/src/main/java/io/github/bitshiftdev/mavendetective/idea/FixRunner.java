@@ -2,7 +2,10 @@ package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.execution.impl.RunDialog;
 import com.intellij.execution.runners.ExecutionUtil;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.options.SearchableConfigurable;
@@ -17,12 +20,14 @@ import com.intellij.openapi.vfs.VirtualFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.fix.FixExecutor;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
 import org.jetbrains.idea.maven.execution.MavenRunConfigurationType;
 import org.jetbrains.idea.maven.execution.MavenRunnerParameters;
 
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -52,12 +57,7 @@ final class FixRunner {
         try {
             switch (fix.getType()) {
                 case FixAction.OPEN_FILE -> openLocation(project, fix.param("file") + ":" + fix.param("line"));
-                case FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE, FixAction.SET_JVM_OPTION -> {
-                    FixExecutor.Outcome o = executor(result).execute(fix);
-                    refresh(fix);
-                    notify(project, String.join("\n", o.actions), NotificationType.INFORMATION);
-                    rebuild(project, result, o.rebuildArgs);
-                }
+                case FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE, FixAction.SET_JVM_OPTION -> runFileFix(project, fix, result);
                 case FixAction.REBUILD -> rebuild(project, result, fix.param("args"));
                 case FixAction.SWITCH_JDK -> switchJdk(project, result, fix.param("required"));
                 case FixAction.INSERT_PLUGIN_VERSION -> insertPluginVersion(project, result, fix);
@@ -68,8 +68,81 @@ final class FixRunner {
                 }
                 default -> notify(project, fix.getLabel(), NotificationType.INFORMATION);
             }
-        } catch (IOException | RuntimeException e) {
+        } catch (RuntimeException e) {
             notify(project, "Quick-Fix fehlgeschlagen: " + e.getMessage(), NotificationType.ERROR);
+        }
+    }
+
+    /**
+     * Dateibasierte Fixes des Kerns. Vorher werden offene, ungespeicherte Dokumente der Zieldateien
+     * gespeichert – sonst schriebe der Kern an ihnen vorbei und die IDE meldete einen
+     * Cache-Konflikt. Die Dateiarbeit (Löschen ganzer Artefaktbäume) läuft im Hintergrund, der
+     * VFS-Refresh asynchron; Meldung und Neubau folgen danach auf dem EDT.
+     */
+    private static void runFileFix(Project project, FixAction fix, BuildDoctorService.Result result) {
+        List<Path> targets = paths(fix);
+        saveDocuments(targets);
+        new Task.Backgroundable(project, "Maven Detective: " + fix.getLabel(), false) {
+            private FixExecutor.Outcome outcome;
+
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
+                try {
+                    outcome = executor(result).execute(fix);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            }
+
+            @Override
+            public void onSuccess() {
+                List<Path> dirs = new ArrayList<>();
+                for (Path p : targets) {
+                    dirs.add(p.getParent() != null ? p.getParent() : p);
+                }
+                FixExecutor.Outcome o = outcome;
+                LocalFileSystem.getInstance().refreshNioFiles(dirs, true, true, () ->
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            FixRunner.notify(project, String.join("\n", o.actions), NotificationType.INFORMATION);
+                            rebuild(project, result, o.rebuildArgs);
+                        }, project.getDisposed()));
+            }
+
+            @Override
+            public void onThrowable(@NotNull Throwable error) {
+                Throwable cause = error instanceof UncheckedIOException u ? u.getCause() : error;
+                // qualifiziert: im anonymen Task verdeckt Object.notify() die statische Methode
+                FixRunner.notify(project, "Quick-Fix fehlgeschlagen: " + cause.getMessage(), NotificationType.ERROR);
+            }
+        }.queue();
+    }
+
+    /** Ziel-Dateien eines Fixes aus {@code file} bzw. {@code files} (eine je Zeile). */
+    private static List<Path> paths(FixAction fix) {
+        List<Path> out = new ArrayList<>();
+        for (String key : new String[] {"file", "files"}) {
+            String v = fix.param(key);
+            if (v == null) {
+                continue;
+            }
+            for (String p : v.split("\n")) {
+                if (!p.isBlank()) {
+                    out.add(Paths.get(p.trim()));
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Ungespeicherte Editor-Inhalte dieser Dateien auf die Platte bringen (EDT). */
+    private static void saveDocuments(List<Path> files) {
+        FileDocumentManager fdm = FileDocumentManager.getInstance();
+        for (Path p : files) {
+            VirtualFile vf = LocalFileSystem.getInstance().findFileByNioFile(p);
+            Document doc = vf == null ? null : fdm.getCachedDocument(vf);
+            if (doc != null && fdm.isDocumentUnsaved(doc)) {
+                fdm.saveDocument(doc);
+            }
         }
     }
 
@@ -162,12 +235,13 @@ final class FixRunner {
         String tag = "<artifactId>" + artifactId + "</artifactId>";
         CharSequence text = doc.getCharsSequence();
         int from = line > 0 && line <= doc.getLineCount() ? doc.getLineStartOffset(line - 1) : 0;
-        int at = text.toString().indexOf(tag, from);
-        if (at < 0) {
-            at = text.toString().indexOf(tag);
-        }
+        // Bewusst keine Suche ab Dateianfang als Rückfall: Der erste Treffer könnte eine Dependency,
+        // Exclusion oder ein anderer Plugin-Eintrag sein
+        int at = pluginArtifactIdWithoutVersion(text.toString(), tag, from);
         if (at < 0) {
             openLocation(project, file + ":" + line);
+            notify(project, "Plugin-Eintrag für " + plugin + " ohne <version> nicht eindeutig gefunden. "
+                    + "Bitte Version " + version + " selbst eintragen.", NotificationType.WARNING);
             return;
         }
         int lineNo = doc.getLineNumber(at);
@@ -181,6 +255,25 @@ final class FixRunner {
         openLocation(project, file + ":" + (lineNo + 2));
         notify(project, "Version " + version + " für " + plugin + " eingetragen.", NotificationType.INFORMATION);
         rebuild(project, result, null);
+    }
+
+    /**
+     * Offset von {@code tag} ab {@code from}, wenn er direkt in einem {@code <plugin>} steht, das noch
+     * keine {@code <version>} hat; sonst -1. Konservativ: Steht irgendwo im Plugin-Block eine
+     * {@code <version>} (auch in dessen Dependencies), wird nichts eingefügt – lieber selbst
+     * eintragen lassen als eine doppelte Version erzeugen.
+     */
+    static int pluginArtifactIdWithoutVersion(String text, String tag, int from) {
+        int at = text.indexOf(tag, from);
+        if (at < 0) {
+            return -1;
+        }
+        int start = text.lastIndexOf("<plugin>", at);
+        int end = text.indexOf("</plugin>", at);
+        if (start < 0 || end < 0 || text.lastIndexOf("</plugin>", at) > start) {
+            return -1;   // Treffer liegt nicht in einem <plugin>-Block
+        }
+        return text.substring(start, end).contains("<version>") ? -1 : at;
     }
 
     /**
@@ -261,22 +354,6 @@ final class FixRunner {
                     NotificationType.INFORMATION);
         } catch (IOException e) {
             notify(project, "Testfall konnte nicht gespeichert werden: " + e.getMessage(), NotificationType.ERROR);
-        }
-    }
-
-    private static void refresh(FixAction fix) {
-        for (String key : new String[] {"file", "files"}) {
-            String v = fix.param(key);
-            if (v == null) {
-                continue;
-            }
-            for (String p : v.split("\n")) {
-                Path path = Paths.get(p.trim());
-                VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path.getParent() != null ? path.getParent() : path);
-                if (vf != null) {
-                    vf.refresh(false, true);
-                }
-            }
         }
     }
 

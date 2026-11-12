@@ -36,10 +36,16 @@ public final class WhyThisVersionAction extends AnAction implements DumbAware {
 
     @Override
     public void update(@NotNull AnActionEvent e) {
-        VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
-        boolean pom = e.getProject() != null && e.getData(CommonDataKeys.EDITOR) != null
-                && file != null && "pom.xml".equals(file.getName());
-        e.getPresentation().setEnabledAndVisible(pom);
+        e.getPresentation().setEnabledAndVisible(e.getProject() != null && e.getData(CommonDataKeys.EDITOR) != null
+                && isProjectPom(e.getData(CommonDataKeys.VIRTUAL_FILE)));
+    }
+
+    /**
+     * Nur POMs auf der Platte: Die {@code pom.xml} unter {@code META-INF/maven/…} in einem Library-JAR
+     * heißt genauso, liegt aber im JarFileSystem, und dort wirft {@code toNioPath()}.
+     */
+    static boolean isProjectPom(@Nullable VirtualFile file) {
+        return file != null && file.isInLocalFileSystem() && "pom.xml".equals(file.getName());
     }
 
     @Override
@@ -47,7 +53,7 @@ public final class WhyThisVersionAction extends AnAction implements DumbAware {
         Project project = e.getProject();
         Editor editor = e.getData(CommonDataKeys.EDITOR);
         VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
-        if (project == null || editor == null || file == null) {
+        if (project == null || editor == null || !isProjectPom(file)) {
             return;
         }
         String[] ga = dependencyAt(editor.getDocument().getText(), editor.getCaretModel().getOffset());

@@ -3,10 +3,12 @@ package io.github.bitshiftdev.mavendetective.idea;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.ColoredListCellRenderer;
 import com.intellij.ui.DocumentAdapter;
 import com.intellij.ui.JBSplitter;
@@ -14,6 +16,7 @@ import com.intellij.ui.SearchTextField;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.PomCache;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
@@ -68,6 +71,10 @@ public final class DependenciesPanel extends JPanel implements Disposable {
     private DepNode tree;
     private VersionExplanation shown;
     private boolean loading;
+    /** Zähler je Hintergrund-Aufgabe (nur EDT): Ein älteres Ergebnis überschreibt kein neueres. */
+    private int treeGeneration;
+    private int explainGeneration;
+    private volatile boolean disposed;
 
     public DependenciesPanel(@NotNull Project project) {
         super(new BorderLayout());
@@ -177,10 +184,16 @@ public final class DependenciesPanel extends JPanel implements Disposable {
             showText("<p>Kein Maven-Projekt importiert. Nach dem Maven-Import „Aktualisieren“ klicken.</p>");
             return;
         }
+        int generation = ++treeGeneration;
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             DepNode t = IdeMaven.dependencyTree(project, module.pom());
             List<Entry> entries = entries(t);
+            // Nicht ModalityState.any(): explain() speichert Dokumente, und das verlangt einen
+            // write-safe Kontext (TransactionGuard), den any() nie bietet
             ApplicationManager.getApplication().invokeLater(() -> {
+                if (generation != treeGeneration) {
+                    return;   // inzwischen ein anderes Modul gewählt
+                }
                 tree = t;
                 all = entries;
                 applyFilter();
@@ -190,7 +203,7 @@ public final class DependenciesPanel extends JPanel implements Disposable {
                 } else if (entries.isEmpty()) {
                     showText("<p>Für dieses Modul liegt kein aufgelöster Baum vor. Maven-Projekt neu laden und „Aktualisieren“ klicken.</p>");
                 }
-            }, ModalityState.any(), project.getDisposed());
+            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
         });
     }
 
@@ -251,17 +264,36 @@ public final class DependenciesPanel extends JPanel implements Disposable {
             return;
         }
         // Ungespeicherte Änderungen an POMs sollen in die Erklärung eingehen
-        FileDocumentManager.getInstance().saveAllDocuments();
+        saveUnsavedPoms();
         DepNode t = tree;
+        int generation = ++explainGeneration;
         showText("<p>Ermittle, woher die Version von " + esc(groupId + ":" + artifactId) + " kommt …</p>");
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             VersionExplanation x = explainNow(project, module.pom(), groupId, artifactId, t);
             ApplicationManager.getApplication().invokeLater(() -> {
+                if (generation != explainGeneration) {
+                    return;   // inzwischen eine andere Dependency gewählt
+                }
                 shown = x;
                 copy.setEnabled(x != null);
                 showText(x == null ? "<p>Die POM des Moduls ist nicht lesbar.</p>" : render(x));
-            }, ModalityState.any(), project.getDisposed());
+            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
         });
+    }
+
+    /**
+     * Nur ungespeicherte {@code pom.xml} speichern, nicht alle Dokumente: {@code saveAllDocuments()}
+     * löste bei jedem Klick „Actions on Save“ (Reformat, Optimize Imports, Build) und File-Watcher aus.
+     * Braucht einen write-safe Kontext (EDT, nicht {@code ModalityState.any()}).
+     */
+    static void saveUnsavedPoms() {
+        FileDocumentManager fdm = FileDocumentManager.getInstance();
+        for (Document d : fdm.getUnsavedDocuments()) {
+            VirtualFile f = fdm.getFile(d);
+            if (f != null && "pom.xml".equals(f.getName())) {
+                fdm.saveDocument(d);
+            }
+        }
     }
 
     /** Erklärung berechnen (Hintergrund-Thread; liest nur Dateien). */
@@ -277,17 +309,20 @@ public final class DependenciesPanel extends JPanel implements Disposable {
 
     /** POM-Zugriff für den Reactor; lokales Repository aus dem IDE-Modell, sonst wie Maven es fände. */
     static PomLocator locator(Project project, @Nullable Path root) {
-        return locator(project, root, null);
+        return locator(project, root, null, Cancellation.NONE);
     }
 
-    /** Wie oben, mit langlebigem POM-Cache (Inspection, läuft bei jeder Änderung). */
-    static PomLocator locator(Project project, @Nullable Path root, @Nullable PomCache cache) {
+    /**
+     * Wie oben, mit langlebigem POM-Cache und Abbruchpunkt (Inspection: {@code ProgressManager::checkCanceled},
+     * damit sie beim nächsten Tastendruck abbricht statt die Read-Action festzuhalten).
+     */
+    static PomLocator locator(Project project, @Nullable Path root, @Nullable PomCache cache, Cancellation cancellation) {
         Path repo = IdeMaven.localRepository(project);
         if (repo == null) {
             repo = Environment.builder().projectDirectory(root).userHome(Paths.get(System.getProperty("user.home")))
                     .env(System.getenv()).build().getLocalRepository();
         }
-        return new PomLocator(root, repo, cache);
+        return new PomLocator(root, repo, cache, cancellation);
     }
 
     private static String render(VersionExplanation x) {
@@ -362,6 +397,6 @@ public final class DependenciesPanel extends JPanel implements Disposable {
 
     @Override
     public void dispose() {
-        // nichts zu lösen; Hintergrund-Aufgaben prüfen project.getDisposed()
+        disposed = true;   // laufende Hintergrund-Aufgaben verwerfen ihr Ergebnis
     }
 }

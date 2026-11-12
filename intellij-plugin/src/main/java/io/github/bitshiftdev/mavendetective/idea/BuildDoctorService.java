@@ -4,8 +4,11 @@ import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.notification.NotificationAction;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
@@ -78,12 +81,10 @@ public final class BuildDoctorService {
         return last;
     }
 
-    public void addListener(Listener l) {
+    /** Meldet sich ab, sobald {@code parent} entsorgt wird – kein Panel bleibt am Service hängen. */
+    public void addListener(@NotNull Listener l, @NotNull Disposable parent) {
         listeners.add(l);
-    }
-
-    public void removeListener(Listener l) {
-        listeners.remove(l);
+        Disposer.register(parent, () -> listeners.remove(l));
     }
 
     /**
@@ -92,13 +93,26 @@ public final class BuildDoctorService {
      */
     public void analyzeLog(String log, @Nullable ExecutionEnvironment env, boolean notify) {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            BuildFailure failure = MavenLogParser.parse(log);
-            List<Diagnosis> diagnoses = doctor.diagnose(failure, Environment.forBuild(failure, projectDir()));
-            LOG.info("Maven Detective: Analyse " + (env == null ? "Zwischenablage" : "Lauf") + ", " + failure.getErrors().size()
-                    + " Fehlerblöcke, Diagnose: " + (diagnoses.isEmpty() ? "keine" : diagnoses.get(0).getRuleId()));
-            MavenRunConfiguration cfg = env != null && env.getRunProfile() instanceof MavenRunConfiguration c ? c : null;
-            SnapshotDiff changes = env == null ? null : changesSinceGreen(cfg);
-            Result result = new Result(failure, diagnoses, log, env, changes, compareSetups(cfg));
+            Result result;
+            try {
+                BuildFailure failure = MavenLogParser.parse(log);
+                List<Diagnosis> diagnoses = doctor.diagnose(failure, Environment.forBuild(failure, projectDir()));
+                LOG.info("Maven Detective: Analyse " + (env == null ? "Zwischenablage" : "Lauf") + ", " + failure.getErrors().size()
+                        + " Fehlerblöcke, Diagnose: " + (diagnoses.isEmpty() ? "keine" : diagnoses.get(0).getRuleId()));
+                MavenRunConfiguration cfg = env != null && env.getRunProfile() instanceof MavenRunConfiguration c ? c : null;
+                SnapshotDiff changes = env == null ? null : changesSinceGreen(cfg);
+                result = new Result(failure, diagnoses, log, env, changes, compareSetups(cfg));
+            } catch (ProcessCanceledException e) {
+                throw e;
+            } catch (RuntimeException e) {
+                // Ohne diese Meldung täte der Knopf „Log aus Zwischenablage analysieren“ scheinbar nichts
+                LOG.warn("Maven Detective: Analyse fehlgeschlagen", e);
+                ApplicationManager.getApplication().invokeLater(() -> NotificationGroupManager.getInstance()
+                        .getNotificationGroup(TOOL_WINDOW_ID)
+                        .createNotification("Maven Detective: Analyse fehlgeschlagen", String.valueOf(e.getMessage()), NotificationType.ERROR)
+                        .notify(project), project.getDisposed());
+                return;
+            }
             ApplicationManager.getApplication().invokeLater(() -> publish(result, notify), project.getDisposed());
         });
     }

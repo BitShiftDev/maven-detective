@@ -1,5 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
+
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -91,12 +93,19 @@ public final class ProjectPoms {
     }
 
     private final Path root;
+    private final Cancellation cancellation;
     private List<Pom> poms;
     private final Map<Path, Pom> cache = new HashMap<Path, Pom>();
 
     public ProjectPoms(Path root) {
+        this(root, Cancellation.NONE);
+    }
+
+    /** Wie oben; {@code cancellation} wird je durchsuchtem Verzeichnis geprüft (IDE). */
+    public ProjectPoms(Path root, Cancellation cancellation) {
         // absolut, damit relativize() gegen die (absoluten) POM-Pfade funktioniert
         this.root = root == null ? null : root.toAbsolutePath().normalize();
+        this.cancellation = cancellation == null ? Cancellation.NONE : cancellation;
     }
 
     public Path root() { return root; }
@@ -112,6 +121,7 @@ public final class ProjectPoms {
     }
 
     private void scan(Path dir, int depth) {
+        cancellation.check();
         if (poms.size() >= MAX_POMS) {
             return;
         }

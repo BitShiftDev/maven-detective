@@ -21,4 +21,20 @@ class MavenRunListenerTest {
         assertTrue(MavenRunListener.userAborted(true, -1));
         assertFalse(MavenRunListener.userAborted(false, 143));
     }
+
+    @Test
+    void ueberlangerLogBehaeltKopfUndEnde() {
+        StringBuilder log = new StringBuilder();
+        MavenRunListener.append(log, "[INFO] Apache Maven 3.9.11\n");
+        String zeile = "[INFO] Running test …………………………………………………………………………\n";
+        for (long geschrieben = 0; geschrieben < MavenRunListener.MAX_CHARS * 2L; geschrieben += zeile.length()) {
+            MavenRunListener.append(log, zeile);
+            assertTrue(log.length() <= MavenRunListener.MAX_CHARS);
+        }
+        MavenRunListener.append(log, "[INFO] BUILD FAILURE\n[ERROR] Failed to execute goal x\n");
+        String text = log.toString();
+        assertTrue(text.startsWith("[INFO] Apache Maven 3.9.11\n"));
+        assertTrue(text.endsWith("[ERROR] Failed to execute goal x\n"));
+        assertTrue(text.contains(MavenRunListener.CUT_MARKER));
+    }
 }

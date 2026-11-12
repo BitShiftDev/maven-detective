@@ -7,10 +7,14 @@ import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.util.CachedValueProvider;
+import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
 import io.github.bitshiftdev.mavendetective.core.deps.ExclusionAudit;
@@ -20,7 +24,6 @@ import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -50,19 +53,11 @@ public final class StaleExclusionInspection extends LocalInspectionTool {
         if (project == null || !"project".equals(project.getLocalName()) || vf == null || !vf.isInLocalFileSystem()) {
             return null;
         }
-        List<ExclusionAudit.Finding> findings;
-        try {
-            Path path = vf.toNioPath();
-            PomLocator locator = DependenciesPanel.locator(file.getProject(), IdeMaven.reactorRoot(file.getProject()), CACHE);
-            PomFile pom = locator.load(path);
-            if (pom == null) {
-                return null;
-            }
-            findings = ExclusionAudit.audit(locator, pom, null);
-        } catch (ProcessCanceledException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            LOG.warn("Maven Detective: Exclusions in " + vf.getPath() + " nicht prüfbar", e);
+        // Die Analyse liest nur gespeicherte Dateien: Tippen ändert ihr Ergebnis nicht, erst Speichern
+        // oder ein VFS-Refresh. Deshalb gecacht bis zur nächsten VFS-Änderung statt pro Highlighting-Lauf.
+        List<ExclusionAudit.Finding> findings = CachedValuesManager.getCachedValue(xml,
+                () -> CachedValueProvider.Result.create(audit(xml), VirtualFileManager.getInstance()));
+        if (findings.isEmpty()) {
             return null;
         }
         List<ProblemDescriptor> problems = new ArrayList<>();
@@ -82,6 +77,26 @@ public final class StaleExclusionInspection extends LocalInspectionTool {
                     stale ? ProblemHighlightType.LIKE_UNUSED_SYMBOL : ProblemHighlightType.WEAK_WARNING));
         }
         return problems.isEmpty() ? null : problems.toArray(ProblemDescriptor.EMPTY_ARRAY);
+    }
+
+    /**
+     * Befunde der gespeicherten POM. Läuft in der Read-Action des Daemons; jeder Dateizugriff im Kern
+     * prüft {@link ProgressManager#checkCanceled()}, damit ein Tastendruck die Analyse abbricht.
+     */
+    private static List<ExclusionAudit.Finding> audit(PsiFile file) {
+        VirtualFile vf = file.getVirtualFile();
+        try {
+            Project project = file.getProject();
+            PomLocator locator = DependenciesPanel.locator(project, IdeMaven.reactorRoot(project), CACHE,
+                    ProgressManager::checkCanceled);
+            PomFile pom = locator.load(vf.toNioPath());
+            return pom == null ? List.of() : ExclusionAudit.audit(locator, pom, null);
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: Exclusions in " + vf.getPath() + " nicht prüfbar", e);
+            return List.of();
+        }
     }
 
     /** Das {@code <exclusion>}-Tag zum Befund; bei doppelten Einträgen das erste noch nicht gemeldete. */

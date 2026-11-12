@@ -3,7 +3,6 @@ package io.github.bitshiftdev.mavendetective.idea;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
@@ -73,6 +72,9 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
     private final ComboBox<String> versions = new ComboBox<>();
     private final JButton pin = new JButton("Im Parent festlegen");
     private ConflictMatrix matrix;
+    /** Zähler der Neuberechnungen (nur EDT): Ein älteres Ergebnis überschreibt kein neueres. */
+    private int generation;
+    private volatile boolean disposed;
 
     public ConflictMatrixPanel(@NotNull Project project) {
         super(new BorderLayout());
@@ -150,14 +152,18 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
 
     private void reload() {
         status.setText("Lese Module …");
-        FileDocumentManager.getInstance().saveAllDocuments();
+        DependenciesPanel.saveUnsavedPoms();
+        int gen = ++generation;
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             ConflictMatrix m = compute(project);
             ApplicationManager.getApplication().invokeLater(() -> {
+                if (gen != generation) {
+                    return;   // „Aktualisieren“ wurde inzwischen erneut geklickt
+                }
                 matrix = m;
                 copy.setEnabled(m != null);
                 applyFilter();
-            }, ModalityState.any(), project.getDisposed());
+            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
         });
     }
 
@@ -338,7 +344,7 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
 
     @Override
     public void dispose() {
-        // nichts zu lösen; Hintergrund-Aufgaben prüfen project.getDisposed()
+        disposed = true;   // laufende Neuberechnung verwirft ihr Ergebnis
     }
 
     /** Spalte 0 = Artifact, danach je Modul eine Spalte. */

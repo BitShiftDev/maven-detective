@@ -96,7 +96,7 @@ public final class BuildDoctorPanel extends JPanel implements Disposable, BuildD
         add(new JBScrollPane(card), BorderLayout.CENTER);
         add(fixes, BorderLayout.SOUTH);
 
-        service.addListener(this);
+        service.addListener(this, this);
         BuildDoctorService.Result last = service.getLast();
         if (last != null) {
             resultChanged(last);
@@ -289,6 +289,6 @@ public final class BuildDoctorPanel extends JPanel implements Disposable, BuildD
 
     @Override
     public void dispose() {
-        service.removeListener(this);
+        // Abmelden beim Service erledigt Disposer (addListener mit diesem Panel als Parent)
     }
 }

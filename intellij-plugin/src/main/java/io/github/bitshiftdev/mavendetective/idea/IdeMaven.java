@@ -3,6 +3,7 @@ package io.github.bitshiftdev.mavendetective.idea;
 import com.intellij.execution.ExecutionException;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
@@ -36,6 +37,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Adapter-Schicht zu IntelliJs Maven-Plugin. Alles, was dessen (teils interne) API anfasst, steht
@@ -47,6 +49,16 @@ final class IdeMaven {
     private static final Logger LOG = Logger.getInstance(IdeMaven.class);
 
     private IdeMaven() {
+    }
+
+    /**
+     * Einzige Stelle mit {@code ReadAction.compute}: ab 2026.2 veraltet, der Ersatz
+     * {@code ReadAction.computeBlocking} fehlt aber in 2025.3 (since-build 253). Wird since-build
+     * angehoben, nur hier umstellen.
+     */
+    @SuppressWarnings("deprecation")
+    static <T> T read(@NotNull Supplier<T> action) {
+        return ReadAction.compute(action::get);
     }
 
     /** Schnappschuss aus dem Maven-Modell der IDE (Stand des letzten Imports) und den Runner-Einstellungen. */
@@ -64,7 +76,7 @@ final class IdeMaven {
         try {
             MavenProjectsManager manager = MavenProjectsManager.getInstance(project);
             s.setOffline(manager.getGeneralSettings().isWorkOffline());
-            List<MavenProject> projects = ReadAction.compute(manager::getProjects);
+            List<MavenProject> projects = read(manager::getProjects);
             for (MavenProject p : projects) {
                 MavenId id = p.getMavenId();
                 BuildSnapshot.Module m = s.module(id.getGroupId() + ":" + id.getArtifactId()).setVersion(id.getVersion());
@@ -89,6 +101,8 @@ final class IdeMaven {
                             + (classifier == null || classifier.isEmpty() ? "" : ":" + classifier), a.getVersion());
                 }
             }
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (RuntimeException e) {
             LOG.warn("Maven Detective: Maven-Modell nicht lesbar", e);
         }
@@ -115,6 +129,8 @@ final class IdeMaven {
                 }
                 s.setMavenSource(home.getClass().getSimpleName().startsWith("Bundled") ? "gebündelt (IntelliJ)" : String.valueOf(path));
             }
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("Maven Detective: Maven-Version der IDE nicht ermittelbar", e);
         }
@@ -125,6 +141,8 @@ final class IdeMaven {
                 String v = BuildSetup.javaVersionOf(Paths.get(jdk.getHomePath()));
                 s.setJavaVersion(v != null ? v : jdk.getVersionString());
             }
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (ExecutionException | RuntimeException e) {
             s.getNotes().add("Runner-JDK nicht auflösbar: " + e.getMessage());
         }
@@ -137,9 +155,10 @@ final class IdeMaven {
                 s.setUserSettings(def.toString());
             }
         }
-        String repo = general.getLocalRepository();
-        if (repo != null && !repo.isBlank()) {
-            s.setLocalRepository(repo.trim());
+        // Effektives Repository aus dem letzten Import (öffentliche API); MavenGeneralSettings.getLocalRepository() ist intern
+        Path repo = localRepository(project);
+        if (repo != null) {
+            s.setLocalRepository(repo.toString());
         }
         s.getProfiles().addAll(profiles(manager, cfg));
         // .mvn/maven.config und .mvn/jvm.config liest Maven selbst – in IDE und Terminal gleich
@@ -168,6 +187,8 @@ final class IdeMaven {
                     }
                 }
             }
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (RuntimeException e) {
             LOG.warn("Maven Detective: Plugin-Version nicht ermittelbar", e);
         }
@@ -186,7 +207,7 @@ final class IdeMaven {
     static List<ModuleRef> modules(@NotNull Project project) {
         List<ModuleRef> out = new ArrayList<>();
         try {
-            for (MavenProject p : ReadAction.compute(() -> MavenProjectsManager.getInstance(project).getProjects())) {
+            for (MavenProject p : read(() -> MavenProjectsManager.getInstance(project).getProjects())) {
                 MavenId id = p.getMavenId();
                 if (id.getArtifactId() == null) {
                     continue;
@@ -194,6 +215,8 @@ final class IdeMaven {
                 out.add(new ModuleRef(Paths.get(p.getPath()), String.valueOf(id.getGroupId()), id.getArtifactId(),
                         p.getDisplayName() + " (" + id.getGroupId() + ":" + id.getArtifactId() + ")"));
             }
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (RuntimeException e) {
             LOG.warn("Maven Detective: Module nicht lesbar", e);
         }
@@ -203,10 +226,12 @@ final class IdeMaven {
     /** Wurzel des Reactors (Verzeichnis der obersten POM), sonst das Projektverzeichnis. */
     static @Nullable Path reactorRoot(@NotNull Project project) {
         try {
-            List<MavenProject> roots = ReadAction.compute(() -> MavenProjectsManager.getInstance(project).getRootProjects());
+            List<MavenProject> roots = read(() -> MavenProjectsManager.getInstance(project).getRootProjects());
             if (!roots.isEmpty()) {
                 return Paths.get(roots.get(0).getDirectoryFile().getPath());
             }
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (RuntimeException e) {
             LOG.warn("Maven Detective: Reactor-Wurzel nicht ermittelbar", e);
         }
@@ -216,12 +241,14 @@ final class IdeMaven {
     /** Lokales Repository laut IDE-Modell; {@code null}, wenn unbekannt. */
     static @Nullable Path localRepository(@NotNull Project project) {
         try {
-            for (MavenProject p : ReadAction.compute(() -> MavenProjectsManager.getInstance(project).getProjects())) {
+            for (MavenProject p : read(() -> MavenProjectsManager.getInstance(project).getProjects())) {
                 Path repo = p.getLocalRepositoryPath();
                 if (repo != null) {
                     return repo;
                 }
             }
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (RuntimeException e) {
             LOG.warn("Maven Detective: lokales Repository nicht ermittelbar", e);
         }
@@ -234,7 +261,7 @@ final class IdeMaven {
      */
     static @Nullable DepNode dependencyTree(@NotNull Project project, @NotNull Path pom) {
         try {
-            return ReadAction.compute(() -> {
+            return read(() -> {
                 for (MavenProject p : MavenProjectsManager.getInstance(project).getProjects()) {
                     if (!Paths.get(p.getPath()).equals(pom)) {
                         continue;
@@ -248,6 +275,8 @@ final class IdeMaven {
                 }
                 return null;
             });
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (RuntimeException e) {
             LOG.warn("Maven Detective: Dependency-Baum nicht lesbar", e);
             return null;
@@ -258,7 +287,7 @@ final class IdeMaven {
     static Map<String, DepNode> dependencyTrees(@NotNull Project project) {
         Map<String, DepNode> out = new LinkedHashMap<>();
         try {
-            ReadAction.run(() -> {
+            read(() -> {
                 for (MavenProject p : MavenProjectsManager.getInstance(project).getProjects()) {
                     MavenId id = p.getMavenId();
                     List<MavenArtifactNode> nodes = p.getDependencyTree();
@@ -271,7 +300,10 @@ final class IdeMaven {
                     }
                     out.put(root.ga(), root);
                 }
+                return null;
             });
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (RuntimeException e) {
             LOG.warn("Maven Detective: Dependency-Bäume nicht lesbar", e);
         }
@@ -282,6 +314,8 @@ final class IdeMaven {
     static void reimport(@NotNull Project project) {
         try {
             MavenProjectsManager.getInstance(project).forceUpdateAllProjectsOrFindAllAvailablePomFiles();
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("Maven Detective: Maven-Import nicht anstoßbar", e);
         }

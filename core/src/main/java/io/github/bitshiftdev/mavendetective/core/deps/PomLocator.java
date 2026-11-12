@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 
 import java.nio.file.Files;
@@ -19,6 +20,7 @@ import java.util.Set;
 public final class PomLocator {
 
     private final ProjectPoms reactor;
+    private final Cancellation cancellation;
     private final Path localRepository;
     private final PomCache shared;
     private final Map<Path, PomFile> cache = new HashMap<Path, PomFile>();
@@ -35,7 +37,16 @@ public final class PomLocator {
 
     /** Wie oben, liest POMs aber über einen langlebigen {@link PomCache} (IDE). */
     public PomLocator(Path projectRoot, Path localRepository, PomCache shared) {
-        this.reactor = new ProjectPoms(projectRoot);
+        this(projectRoot, localRepository, shared, Cancellation.NONE);
+    }
+
+    /**
+     * Wie oben; {@code cancellation} wird vor jedem Dateizugriff geprüft, damit eine IDE-Inspection
+     * abbrechen kann (die Exception des Aufrufers geht unverändert durch).
+     */
+    public PomLocator(Path projectRoot, Path localRepository, PomCache shared, Cancellation cancellation) {
+        this.cancellation = cancellation == null ? Cancellation.NONE : cancellation;
+        this.reactor = new ProjectPoms(projectRoot, this.cancellation);
         this.localRepository = localRepository;
         this.shared = shared;
     }
@@ -56,6 +67,8 @@ public final class PomLocator {
         if (cache.containsKey(key)) {
             return cache.get(key);
         }
+        // vor dem try/catch(Exception) unten, sonst würde ein Abbruch geschluckt
+        cancellation.check();
         PomFile pom = null;
         if (shared != null) {
             pom = shared.load(key);

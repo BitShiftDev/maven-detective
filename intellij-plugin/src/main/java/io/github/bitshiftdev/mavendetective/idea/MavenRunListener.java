@@ -35,8 +35,16 @@ public final class MavenRunListener implements ExecutionListener {
 
     private static final Logger LOG = Logger.getInstance(MavenRunListener.class);
 
-    /** Obergrenze, damit ein endloser Log den Speicher nicht füllt (~8 MB Text). */
-    private static final int MAX_CHARS = 8_000_000;
+    /** Obergrenze, damit ein endloser Log den Speicher nicht füllt (~8 Mio. Zeichen). */
+    static final int MAX_CHARS = 8_000_000;
+
+    /**
+     * Wird die Obergrenze erreicht, bleiben Kopf (Maven-Version, Reactor, Einstellungen) und Ende
+     * (BUILD FAILURE, {@code [ERROR]}-Block) erhalten; die Mitte fällt weg.
+     */
+    static final int HEAD_CHARS = 200_000;
+
+    static final String CUT_MARKER = "\n[INFO] … Maven Detective: Mitte des Logs gekürzt …\n";
 
     private final Project project;
     private final Map<ProcessHandler, Run> runs = new ConcurrentHashMap<>();
@@ -78,9 +86,7 @@ public final class MavenRunListener implements ExecutionListener {
             @Override
             public void onTextAvailable(@NotNull ProcessEvent event, @NotNull Key outputType) {
                 synchronized (run.log) {
-                    if (run.log.length() < MAX_CHARS) {
-                        run.log.append(event.getText());
-                    }
+                    append(run.log, event.getText());
                 }
             }
 
@@ -94,6 +100,17 @@ public final class MavenRunListener implements ExecutionListener {
                 finish(handler, event.getExitCode(), "ProcessListener");
             }
         });
+    }
+
+    /**
+     * Hängt Text an und kürzt bei Überlauf die Mitte, nicht das Ende – dort stehen Mavens Fehler.
+     * Danach ist wieder rund die Hälfte frei, das Kürzen kostet also amortisiert O(1) je Zeichen.
+     */
+    static void append(StringBuilder log, String text) {
+        log.append(text);
+        if (log.length() > MAX_CHARS) {
+            log.replace(HEAD_CHARS, log.length() - MAX_CHARS / 2, CUT_MARKER);
+        }
     }
 
     @Override
