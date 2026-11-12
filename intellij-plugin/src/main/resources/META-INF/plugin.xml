@@ -22,12 +22,15 @@
       <li><b>Conflict matrix:</b> one table for the whole reactor – artifact by module, resolved version in each cell,
           deviations highlighted. One click pins the version in the common parent's dependencyManagement and lists
           the declarations that would still override it.</li>
+      <li><b>Exclusion hygiene:</b> an inspection in pom.xml greys out exclusions that no longer exclude anything
+          (typically after an upgrade) or that another exclusion already covers; quick fix removes them.</li>
       <li>Complements Maven Helper and the Dependency Analyzer: they show facts, Maven Detective shows cause and fix.</li>
     </ul>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.idea.maven</depends>
+    <depends>com.intellij.modules.xml</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Maven Detective"
@@ -35,6 +38,14 @@
                     icon="AllIcons.Toolwindows.ToolWindowProblems"
                     factoryClass="io.github.bitshiftdev.mavendetective.idea.BuildDoctorToolWindowFactory"/>
         <notificationGroup id="Maven Detective" displayType="BALLOON"/>
+        <!-- Modul A4: Beschreibung in inspectionDescriptions/MavenDetectiveStaleExclusion.html -->
+        <localInspection language="XML"
+                         shortName="MavenDetectiveStaleExclusion"
+                         displayName="Veraltete Exclusion"
+                         groupName="Maven Detective"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="io.github.bitshiftdev.mavendetective.idea.StaleExclusionInspection"/>
     </extensions>
 
     <actions>

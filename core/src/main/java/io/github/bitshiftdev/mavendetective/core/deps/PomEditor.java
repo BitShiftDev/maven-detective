@@ -56,7 +56,7 @@ public final class PomEditor {
         String nl = xml.contains("\r\n") ? "\r\n" : "\n";
         String unit = s.indentUnit(xml);
 
-        for (ManagedEntry e : s.managed) {
+        for (DepEntry e : s.managed) {
             if (!groupId.equals(e.fields.get("groupId")) || !artifactId.equals(e.fields.get("artifactId"))) {
                 continue;
             }
@@ -117,6 +117,62 @@ public final class PomEditor {
         String followIndent = at == s.projectEnd ? lineIndent(xml, at) : indent;
         return insertBefore(xml, at, block, followIndent, nl,
                 "<dependencyManagement> mit " + groupId + ":" + artifactId + ":" + version + " angelegt");
+    }
+
+    /**
+     * Entfernt {@code <exclusion>} {@code exclusion} (groupId:artifactId) bei der Dependency
+     * {@code groupId:artifactId} unter {@code project/dependencies} bzw. – mit {@code managed} –
+     * unter {@code project/dependencyManagement/dependencies}. Ist es die letzte Exclusion, geht
+     * {@code <exclusions>} mit. Ganze Zeilen werden entfernt, wenn das Element allein darauf steht.
+     *
+     * @throws IllegalArgumentException wenn Dependency oder Exclusion nicht zu finden sind
+     */
+    public static Edit removeExclusion(String xml, String groupId, String artifactId, String exclusion, boolean managed) {
+        Scan s = Scan.of(xml);
+        if (s.projectEnd < 0) {
+            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+        }
+        int colon = exclusion.indexOf(':');
+        if (colon < 0) {
+            throw new IllegalArgumentException("Exclusion erwartet groupId:artifactId: " + exclusion);
+        }
+        String eg = exclusion.substring(0, colon);
+        String ea = exclusion.substring(colon + 1);
+        String where = managed ? "dependencyManagement" : "dependencies";
+        DepEntry found = null;
+        ExclusionEntry target = null;
+        for (DepEntry d : s.deps) {
+            if (d.managed != managed || !groupId.equals(d.fields.get("groupId")) || !artifactId.equals(d.fields.get("artifactId"))) {
+                continue;
+            }
+            for (ExclusionEntry e : d.exclusions) {
+                if (target == null && eg.equals(e.fields.get("groupId")) && ea.equals(e.fields.get("artifactId"))) {
+                    found = d; // bei doppelter Angabe die erste – die zweite wirkt danach weiter
+                    target = e;
+                }
+            }
+        }
+        if (target == null) {
+            throw new IllegalArgumentException("Exclusion " + exclusion + " bei " + groupId + ":" + artifactId + " unter " + where
+                    + " nicht gefunden");
+        }
+        Range r = found.exclusions.size() == 1 && found.exclusionsRange != null ? found.exclusionsRange : target.range;
+        int start = r.tagStart;
+        int end = r.tagEnd;
+        int lineStart = lineStart(xml, start);
+        int lineEnd = lineEnd(xml, end);
+        if (xml.substring(lineStart, start).trim().isEmpty() && xml.substring(end, lineEnd).trim().isEmpty()) {
+            start = lineStart;
+            end = lineEnd < xml.length() ? lineEnd + 1 : lineEnd;
+        }
+        String what = r == target.range ? "<exclusion> " + exclusion : "<exclusions> mit " + exclusion;
+        return new Edit(start, end - start, "", lineOf(xml, start), what + " bei " + groupId + ":" + artifactId + " entfernt");
+    }
+
+    /** Position des Zeilenumbruchs nach {@code offset} (bzw. Textende). */
+    private static int lineEnd(String xml, int offset) {
+        int i = xml.indexOf('\n', offset);
+        return i < 0 ? xml.length() : i;
     }
 
     private static String dependency(String g, String a, String v, String indent, String unit, String nl) {
@@ -188,18 +244,35 @@ public final class PomEditor {
         int tagEnd;
     }
 
-    /** Ein {@code <dependency>} in {@code project/dependencyManagement/dependencies}. */
-    static final class ManagedEntry {
+    /** Ein {@code <dependency>} in {@code project/dependencies} oder {@code project/dependencyManagement/dependencies}. */
+    static final class DepEntry {
+        final boolean managed;
         final Map<String, String> fields = new HashMap<String, String>();
         final Map<String, Range> ranges = new HashMap<String, Range>();
+        final List<ExclusionEntry> exclusions = new ArrayList<ExclusionEntry>();
+        Range exclusionsRange;
+
+        DepEntry(boolean managed) {
+            this.managed = managed;
+        }
     }
+
+    /** Ein {@code <exclusion>} einer {@link DepEntry}. */
+    static final class ExclusionEntry {
+        final Map<String, String> fields = new HashMap<String, String>();
+        Range range;
+    }
+
+    private static final String DEPENDENCY = "project/dependencies/dependency";
+    private static final String MANAGED_DEPENDENCY = "project/dependencyManagement/dependencies/dependency";
 
     /**
      * Ein Durchlauf über die Tags. Kommentare, CDATA, Processing Instructions und DOCTYPE werden
      * übersprungen; Profile zählen nicht, weil nur Pfade direkt unter {@code project} ausgewertet werden.
      */
     static final class Scan {
-        final List<ManagedEntry> managed = new ArrayList<ManagedEntry>();
+        final List<DepEntry> managed = new ArrayList<DepEntry>();
+        final List<DepEntry> deps = new ArrayList<DepEntry>();
         final Map<String, Range> properties = new HashMap<String, Range>();
         int dmEnd = -1;
         int dmDependenciesEnd = -1;
@@ -213,7 +286,8 @@ public final class PomEditor {
             List<String> stack = new ArrayList<String>();
             List<Integer> starts = new ArrayList<Integer>();
             List<Integer> contentStarts = new ArrayList<Integer>();
-            ManagedEntry entry = null;
+            DepEntry entry = null;
+            ExclusionEntry exclusion = null;
             int i = 0;
             int n = xml.length();
             while (i < n) {
@@ -255,12 +329,18 @@ public final class PomEditor {
                     r.contentStart = contentStart;
                     r.contentEnd = lt;
                     r.tagEnd = gt + 1;
-                    s.onClose(path, name, r, xml, entry);
-                    if ("project/dependencyManagement/dependencies/dependency".equals(path)) {
-                        if (entry != null) {
+                    s.onClose(path, name, r, xml, entry, exclusion);
+                    if (entry != null && (DEPENDENCY.equals(path) || MANAGED_DEPENDENCY.equals(path))) {
+                        s.deps.add(entry);
+                        if (entry.managed) {
                             s.managed.add(entry);
                         }
                         entry = null;
+                    } else if (entry != null && exclusion != null && (DEPENDENCY + "/exclusions/exclusion").equals(path)
+                            || entry != null && exclusion != null && (MANAGED_DEPENDENCY + "/exclusions/exclusion").equals(path)) {
+                        exclusion.range = r;
+                        entry.exclusions.add(exclusion);
+                        exclusion = null;
                     }
                     stack.remove(stack.size() - 1);
                     starts.remove(starts.size() - 1);
@@ -275,8 +355,11 @@ public final class PomEditor {
                         s.dependenciesStart = lt;
                     } else if ("project/build".equals(path) && s.buildStart < 0) {
                         s.buildStart = lt;
-                    } else if ("project/dependencyManagement/dependencies/dependency".equals(path)) {
-                        entry = new ManagedEntry();
+                    } else if (DEPENDENCY.equals(path) || MANAGED_DEPENDENCY.equals(path)) {
+                        entry = new DepEntry(MANAGED_DEPENDENCY.equals(path));
+                    } else if (entry != null && ((DEPENDENCY + "/exclusions/exclusion").equals(path)
+                            || (MANAGED_DEPENDENCY + "/exclusions/exclusion").equals(path))) {
+                        exclusion = new ExclusionEntry();
                     }
                     if (empty) {
                         stack.remove(stack.size() - 1);
@@ -290,21 +373,29 @@ public final class PomEditor {
             return s;
         }
 
-        private void onClose(String path, String name, Range r, String xml, ManagedEntry entry) {
+        private void onClose(String path, String name, Range r, String xml, DepEntry entry, ExclusionEntry exclusion) {
             if ("project".equals(path)) {
                 projectEnd = r.contentEnd;
             } else if ("project/dependencyManagement".equals(path)) {
                 dmEnd = r.contentEnd;
             } else if ("project/dependencyManagement/dependencies".equals(path)) {
                 dmDependenciesEnd = r.contentEnd;
-            } else if (entry != null && path.startsWith("project/dependencyManagement/dependencies/dependency/")
-                    && path.indexOf('/', "project/dependencyManagement/dependencies/dependency/".length()) < 0) {
+            } else if (entry != null && isChild(path, entry.managed ? MANAGED_DEPENDENCY : DEPENDENCY)) {
                 entry.fields.put(name, xml.substring(r.contentStart, r.contentEnd).trim());
                 entry.ranges.put(name, r);
+                if ("exclusions".equals(name)) {
+                    entry.exclusionsRange = r;
+                }
+            } else if (exclusion != null && isChild(path, (entry.managed ? MANAGED_DEPENDENCY : DEPENDENCY) + "/exclusions/exclusion")) {
+                exclusion.fields.put(name, xml.substring(r.contentStart, r.contentEnd).trim());
             } else if (path.startsWith("project/properties/") && path.indexOf('/', "project/properties/".length()) < 0
                     && !properties.containsKey(name)) {
                 properties.put(name, r);
             }
+        }
+
+        private static boolean isChild(String path, String parent) {
+            return path.startsWith(parent + "/") && path.indexOf('/', parent.length() + 1) < 0;
         }
 
         /** Einrückungsschritt aus dem ersten Kind von {@code project}; sonst zwei Leerzeichen. */

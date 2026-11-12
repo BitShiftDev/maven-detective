@@ -12,11 +12,11 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 [ERROR] +--------------------------------------------------------------
 ```
 
-## Stand: Phase 3 – Modul A (A1, A2 fertig)
+## Stand: Phase 3 – Modul A (A1, A2, A4 fertig)
 
 | Baustein | Status |
 | --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 73 Unit-Tests |
+| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 82 Unit-Tests |
 | Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ |
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 10 Fixture-Projekten getestet |
@@ -26,7 +26,8 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | Gate 1 (30 eigene Logs) | **offen** – braucht deine Logs, siehe unten |
 | A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Tab „Dependencies“, Rechtsklick in der `pom.xml`). **In `runIde` noch nicht durchgeklickt** |
 | A2 Konflikt-Matrix | fertig in Kern, CLI (`matrix`, `--pin`) und IDE (Tab „Konflikt-Matrix“ mit Quick-Fix „im Parent festlegen“). **In `runIde` noch nicht durchgeklickt** |
-| A3–A6 (doppelte Klassen, Exclusions, unused/undeclared, Upgrade-Simulator) | offen |
+| A4 Exclusion-Hygiene | fertig in Kern, CLI (`exclusions`, `--remove`) und IDE (Inspection „Veraltete Exclusion“ in der `pom.xml` mit Quick-Fix). **In `runIde` noch nicht durchgeklickt** |
+| A3, A5, A6 (doppelte Klassen, unused/undeclared, Upgrade-Simulator) | offen |
 
 ## Schnellstart
 
@@ -58,6 +59,10 @@ mvn dependency:tree -Dverbose > tree.txt
 java -jar core/build/libs/maven-detective-core-*.jar matrix --project . --tree tree.txt
 # … und die Version im gemeinsamen Parent festlegen (ohne Version: die höchste)
 java -jar core/build/libs/maven-detective-core-*.jar matrix --project . --pin com.google.guava:guava
+# Welche Exclusions schließen nichts mehr aus? (Modul A4; Exit-Code 3 = es gibt welche)
+java -jar core/build/libs/maven-detective-core-*.jar exclusions --project .
+# … und veraltete/doppelte entfernen
+java -jar core/build/libs/maven-detective-core-*.jar exclusions --project . --remove
 ```
 
 ### Extension in Maven-Läufen
@@ -172,16 +177,34 @@ com.google.guava:guava  – 2 Versionen
 - **Ohne Baum** (CLI ohne `--tree`, IDE vor dem ersten Import) enthält die Matrix nur direkt deklarierte Dependencies und sagt das.
 - **In der IDE:** Tab „Konflikt-Matrix“ mit Suche und „Nur Abweichungen“; abweichende Zellen sind hinterlegt. Unten Herkunft (klickbar), Versionsauswahl und „In <parent> festlegen“ – als ein Undo-Schritt, danach lädt IntelliJ das Maven-Projekt neu. Doppelklick auf eine Zelle öffnet „Warum diese Version?“ für dieses Modul.
 
+## Exclusion-Hygiene
+
+Modul A4 findet Exclusions, die nichts mehr ausschließen – typisch nach einem Upgrade, wenn die Dependency das ausgeschlossene Artifact gar nicht mehr mitbringt:
+
+```
+Exclusion-Hygiene: 7 Exclusions in 4 POMs – 2 veraltet, 1 doppelt, 0 nicht prüfbar
+
+veraltet  /…/web/pom.xml:42
+    Exclusion commons-logging:commons-logging schließt nichts aus: org.springframework:spring-core:6.2.1 bringt commons-logging:commons-logging nicht (mehr) transitiv mit – kann weg.
+doppelt  /…/web/pom.xml:46
+    Exclusion org.deep:deep ist doppelt: org.deep:deep käme nur über org.web:web:1.0 → org.mid:mid:1.0 → org.deep:deep:1.0, und den Pfad kappt schon org.mid:mid.
+```
+
+- **So wird geprüft:** Der transitive Baum der Dependency wird aus den POMs im lokalen Repository nachgebaut – ohne die geprüfte Exclusion. Regeln wie bei Maven: nur `compile`/`runtime`, keine `optional`en Dependencies, Exclusions tiefer im Baum gelten weiter, der erste Fund gewinnt, Versionen aus dem `dependencyManagement` des Moduls gehen vor. Parents, Properties und BOM-Importe der Dependency-POMs werden aufgelöst.
+- **Befunde:** *veraltet* (Artifact kommt nicht vor), *doppelt* (kommt nur über einen Pfad, den eine andere Exclusion derselben Dependency schon kappt), *wirkt* (mit Pfad; mit `--tree` auch der Hinweis, wenn das Artifact über einen anderen Pfad trotzdem im Classpath landet), *offen* (POMs fehlen lokal – keine Aussage statt einer falschen). Geprüft werden Exclusions unter `dependencies` und `dependencyManagement`, Platzhalter `*` inklusive.
+- **Quick-Fix `remove-exclusion`** entfernt genau das `<exclusion>` (bei der letzten samt `<exclusions>`) und lässt den Rest der Datei stehen; Profile bleiben unberührt. `--remove` entfernt eine nach der anderen und prüft nach jeder Änderung neu.
+- **In der IDE:** Inspection „Veraltete Exclusion“ (Gruppe Maven Detective) graut veraltete Exclusions in der `pom.xml` aus, doppelte werden schwach markiert; Alt+Enter → „Exclusion … entfernen“ als ein Undo-Schritt. Projektweit über *Code | Inspect Code*. Repository-POMs werden zwischen den Läufen gecacht (`PomCache`, prüft Änderungszeit).
+
 ## Aufbau
 
 ```
 core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, Prüfungen, Fix-Ausführung, CLI,
                    Schnappschüsse + Diff (snapshot/), IDE-gegen-Kommandozeile (env/BuildSetup, SetupComparison),
                    Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser,
-                   ConflictMatrix, PomEditor für textgenaue POM-Änderungen, MavenVersion)
+                   ConflictMatrix, ExclusionAudit, PomEditor für textgenaue POM-Änderungen, MavenVersion, PomCache)
 maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
 intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies, Konflikt-Matrix), Listener auf Maven-Läufe, Quick-Fixes,
-                   Editor-Aktion „Warum diese Version?“;
+                   Editor-Aktion „Warum diese Version?“, Inspection „Veraltete Exclusion“;
                    IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht)
 fixtures/          Je Fehlerkategorie ein Projekt, das den Fehler absichtlich auslöst (fixtures.txt),
                    dazu 09-changed-since-green für den Schnappschuss-Diff
@@ -196,9 +219,10 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
 - Preflight-Check und Log-Navigator aus dem Konzept.
 - Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.
-- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A4 Exclusion-Hygiene, A5 Unused/undeclared, A3 doppelte Klassen, A6 Upgrade-Simulator.
+- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A5 Unused/undeclared, A3 doppelte Klassen, A6 Upgrade-Simulator.
 - A1 in `runIde` an einem Spring-Boot-Projekt durchklicken (Abnahme laut Konzept: Herkunft jeder Dependency korrekt).
 - A2 in `runIde` an einem Multi-Modul-Projekt durchklicken: Abweichung pinnen, Re-Import, Matrix aktualisieren.
+- A4 in `runIde` an einem Spring-Boot-Projekt durchklicken: eine bekannte veraltete Exclusion (z. B. `commons-logging` bei `spring-core` 6) wird ausgegraut, Quick-Fix entfernt sie.
 - A2-Pin auch als Karte im Build Doctor anbieten (Regel 10 „Laufzeitkonflikt“: verschiedene Versionen über die Module).
 
 ## Lizenz

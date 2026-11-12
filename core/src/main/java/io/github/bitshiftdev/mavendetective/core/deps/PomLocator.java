@@ -20,6 +20,7 @@ public final class PomLocator {
 
     private final ProjectPoms reactor;
     private final Path localRepository;
+    private final PomCache shared;
     private final Map<Path, PomFile> cache = new HashMap<Path, PomFile>();
     private final Map<Path, EffectiveModel> models = new HashMap<Path, EffectiveModel>();
     private final Set<String> missing = new LinkedHashSet<String>();
@@ -29,8 +30,14 @@ public final class PomLocator {
      * @param localRepository lokales Repository, meist {@code ~/.m2/repository}
      */
     public PomLocator(Path projectRoot, Path localRepository) {
+        this(projectRoot, localRepository, null);
+    }
+
+    /** Wie oben, liest POMs aber über einen langlebigen {@link PomCache} (IDE). */
+    public PomLocator(Path projectRoot, Path localRepository, PomCache shared) {
         this.reactor = new ProjectPoms(projectRoot);
         this.localRepository = localRepository;
+        this.shared = shared;
     }
 
     public Path getLocalRepository() { return localRepository; }
@@ -50,7 +57,9 @@ public final class PomLocator {
             return cache.get(key);
         }
         PomFile pom = null;
-        if (Files.isRegularFile(key)) {
+        if (shared != null) {
+            pom = shared.load(key);
+        } else if (Files.isRegularFile(key)) {
             try {
                 pom = PomFile.read(key);
             } catch (Exception e) {

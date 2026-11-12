@@ -25,6 +25,31 @@ import java.util.Map;
  */
 public final class PomFile {
 
+    /** Ein {@code <exclusion>} mit Zeile; {@code groupId}/{@code artifactId} dürfen {@code *} sein. */
+    public static final class Exclusion {
+        final String groupId;
+        final String artifactId;
+        final int line;
+
+        Exclusion(String groupId, String artifactId, int line) {
+            this.groupId = groupId;
+            this.artifactId = artifactId;
+            this.line = line;
+        }
+
+        public String getGroupId() { return groupId; }
+        public String getArtifactId() { return artifactId; }
+        /** Zeile von {@code <exclusion>}. */
+        public int getLine() { return line; }
+        public String ga() { return groupId + ":" + artifactId; }
+
+        /** Schließt diese Exclusion {@code groupId:artifactId} aus (mit {@code *} als Platzhalter)? */
+        public boolean matches(String g, String a) {
+            return ("*".equals(groupId) || groupId != null && groupId.equals(g))
+                    && ("*".equals(artifactId) || artifactId != null && artifactId.equals(a));
+        }
+    }
+
     /** Eine {@code <dependency>} aus {@code dependencies} oder {@code dependencyManagement}. */
     public static final class Dep {
         String groupId;
@@ -33,9 +58,11 @@ public final class PomFile {
         String type;
         String classifier;
         String scope;
+        String optional;
         int line;
         int versionLine;
         final List<String> exclusions = new ArrayList<String>();
+        final List<Exclusion> exclusionEntries = new ArrayList<Exclusion>();
 
         public String getGroupId() { return groupId; }
         public String getArtifactId() { return artifactId; }
@@ -50,6 +77,10 @@ public final class PomFile {
         public int getVersionLine() { return versionLine > 0 ? versionLine : line; }
         /** Ausgeschlossene {@code groupId:artifactId} (auch mit {@code *}). */
         public List<String> getExclusions() { return Collections.unmodifiableList(exclusions); }
+        /** Die Exclusions mit Zeilennummer. */
+        public List<Exclusion> getExclusionEntries() { return Collections.unmodifiableList(exclusionEntries); }
+        /** {@code <optional>true</optional>} – wird nicht transitiv weitergegeben. */
+        public boolean isOptional() { return "true".equalsIgnoreCase(optional); }
 
         public String ga() { return groupId + ":" + artifactId; }
 
@@ -156,6 +187,7 @@ public final class PomFile {
         private boolean depManaged;
         private String exclusionGroup;
         private String exclusionArtifact;
+        private int exclusionLine;
         private String profileId;
         private boolean profileTouches;
         private int elementLine;
@@ -183,6 +215,8 @@ public final class PomFile {
                 dep = new Dep();
                 dep.line = line();
                 depManaged = p.startsWith("project/dependencyManagement");
+            } else if (dep != null && p.endsWith("/dependency/exclusions/exclusion")) {
+                exclusionLine = line();
             } else if ("project/parent".equals(p)) {
                 pom.parentLine = line();
             } else if ("project/profiles/profile".equals(p)) {
@@ -209,6 +243,7 @@ public final class PomFile {
                 exclusionArtifact = value;
             } else if (dep != null && p.endsWith("/dependency/exclusions/exclusion")) {
                 dep.exclusions.add(exclusionGroup + ":" + exclusionArtifact);
+                dep.exclusionEntries.add(new Exclusion(exclusionGroup, exclusionArtifact, exclusionLine));
                 exclusionGroup = null;
                 exclusionArtifact = null;
             } else if (dep != null && isDepChild(p)) {
@@ -226,6 +261,8 @@ public final class PomFile {
                     dep.classifier = value;
                 } else if ("scope".equals(field)) {
                     dep.scope = value;
+                } else if ("optional".equals(field)) {
+                    dep.optional = value;
                 }
             } else if (dep != null && ("project/dependencies/dependency".equals(p)
                     || "project/dependencyManagement/dependencies/dependency".equals(p))) {

@@ -32,7 +32,7 @@ public final class RuleCatalog {
     private static final Set<String> FIX_TYPES = new HashSet<String>(Arrays.asList(
             FixAction.REBUILD, FixAction.DELETE_FILES, FixAction.OPEN_FILE, FixAction.REPLACE_IN_FILE,
             FixAction.SWITCH_JDK, FixAction.SET_JVM_OPTION, FixAction.INSERT_PLUGIN_VERSION,
-            FixAction.SHOW_DEPENDENCY, FixAction.PIN_VERSION, FixAction.MANUAL));
+            FixAction.SHOW_DEPENDENCY, FixAction.PIN_VERSION, FixAction.REMOVE_EXCLUSION, FixAction.MANUAL));
 
     private static final Set<String> RULE_KEYS = new HashSet<String>(Arrays.asList(
             "id", "number", "category", "priority", "confidence", "patterns", "extract", "unless",

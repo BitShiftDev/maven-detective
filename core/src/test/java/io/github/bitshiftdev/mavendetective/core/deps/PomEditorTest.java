@@ -153,4 +153,60 @@ class PomEditorTest {
         assertThrows(IllegalArgumentException.class, () -> pin("<project><dependencies></project>"));
         assertThrows(IllegalArgumentException.class, () -> pin("<foo/>"));
     }
+    @Test
+    void removesOneExclusionWithItsLines() {
+        String xml = """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>org.web</groupId>
+                      <artifactId>web</artifactId>
+                      <exclusions>
+                        <exclusion>
+                          <groupId>org.a</groupId>
+                          <artifactId>a</artifactId>
+                        </exclusion>
+                        <exclusion><groupId>org.b</groupId><artifactId>b</artifactId></exclusion>
+                      </exclusions>
+                    </dependency>
+                  </dependencies>
+                  <profiles><profile><dependencies><dependency>
+                    <groupId>org.web</groupId><artifactId>web</artifactId>
+                    <exclusions><exclusion><groupId>org.b</groupId><artifactId>b</artifactId></exclusion></exclusions>
+                  </dependency></dependencies></profile></profiles>
+                </project>
+                """;
+        PomEditor.Edit edit = PomEditor.removeExclusion(xml, "org.web", "web", "org.a:a", false);
+        assertEquals(7, edit.line);
+        String once = edit.apply(xml);
+        assertEquals(xml.replace("""
+                        <exclusion>
+                          <groupId>org.a</groupId>
+                          <artifactId>a</artifactId>
+                        </exclusion>
+                """, ""), once);
+
+        String twice = PomEditor.removeExclusion(once, "org.web", "web", "org.b:b", false).apply(once);
+        assertEquals("""
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>org.web</groupId>
+                      <artifactId>web</artifactId>
+                    </dependency>
+                  </dependencies>
+                """, twice.substring(0, twice.indexOf("  <profiles>")), "letzte Exclusion nimmt <exclusions> mit, Profil bleibt");
+        assertTrue(twice.contains("<exclusions><exclusion><groupId>org.b</groupId>"));
+    }
+
+    @Test
+    void removesInlineExclusionAndKnowsSections() {
+        String xml = "<project><dependencyManagement><dependencies><dependency><groupId>g</groupId><artifactId>a</artifactId>"
+                + "<exclusions><exclusion><groupId>x</groupId><artifactId>*</artifactId></exclusion></exclusions></dependency>"
+                + "</dependencies></dependencyManagement></project>";
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.removeExclusion(xml, "g", "a", "x:*", false));
+        assertEquals("<project><dependencyManagement><dependencies><dependency><groupId>g</groupId><artifactId>a</artifactId>"
+                        + "</dependency></dependencies></dependencyManagement></project>",
+                PomEditor.removeExclusion(xml, "g", "a", "x:*", true).apply(xml));
+    }
 }

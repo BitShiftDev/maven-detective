@@ -15,6 +15,7 @@ import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBScrollPane;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
+import io.github.bitshiftdev.mavendetective.core.deps.PomCache;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
@@ -276,12 +277,17 @@ public final class DependenciesPanel extends JPanel implements Disposable {
 
     /** POM-Zugriff für den Reactor; lokales Repository aus dem IDE-Modell, sonst wie Maven es fände. */
     static PomLocator locator(Project project, @Nullable Path root) {
+        return locator(project, root, null);
+    }
+
+    /** Wie oben, mit langlebigem POM-Cache (Inspection, läuft bei jeder Änderung). */
+    static PomLocator locator(Project project, @Nullable Path root, @Nullable PomCache cache) {
         Path repo = IdeMaven.localRepository(project);
         if (repo == null) {
             repo = Environment.builder().projectDirectory(root).userHome(Paths.get(System.getProperty("user.home")))
                     .env(System.getenv()).build().getLocalRepository();
         }
-        return new PomLocator(root, repo);
+        return new PomLocator(root, repo, cache);
     }
 
     private static String render(VersionExplanation x) {

@@ -1,0 +1,19 @@
+<html>
+<body>
+Meldet <code>&lt;exclusion&gt;</code>-Einträge in der <code>pom.xml</code>, die nichts mehr ausschließen –
+typisch nach einem Upgrade der Dependency (Maven Detective, Modul A4).
+<!-- tooltip end -->
+<p>
+Maven Detective baut den transitiven Baum der Dependency aus den POMs im lokalen Repository nach, und zwar
+ohne die geprüfte Exclusion. Taucht das ausgeschlossene Artifact darin nicht auf, ist die Exclusion
+<b>veraltet</b>. Kommt es nur über einen Pfad, den eine andere Exclusion derselben Dependency schon kappt,
+ist sie <b>doppelt</b>.
+</p>
+<p>
+Fehlen unterwegs POMs im lokalen Repository, meldet die Inspection nichts – lieber keine Meldung als eine
+falsche. Einmal bauen, dann prüft sie vollständig. Projektweit: <i>Code | Inspect Code</i> oder
+<code>maven-detective-core.jar exclusions</code>.
+</p>
+<p>Quick-Fix: Exclusion entfernen (bei der letzten samt <code>&lt;exclusions&gt;</code>).</p>
+</body>
+</html>

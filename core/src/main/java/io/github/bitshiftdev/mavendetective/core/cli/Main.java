@@ -7,6 +7,7 @@ import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 import io.github.bitshiftdev.mavendetective.core.deps.ConflictMatrix;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.DependencyTreeParser;
+import io.github.bitshiftdev.mavendetective.core.deps.ExclusionAudit;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
@@ -53,6 +54,7 @@ import java.util.TreeMap;
  * java -jar maven-detective-core.jar changes [--project DIR]
  * java -jar maven-detective-core.jar why groupId:artifactId [--project DIR] [--module DIR] [--tree tree.txt | -] [--markdown]
  * java -jar maven-detective-core.jar matrix [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--pin groupId:artifactId[:version]]
+ * java -jar maven-detective-core.jar exclusions [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--remove]
  * </pre>
  *
  * {@code evaluate} ist das Werkzeug für Gate 1: alle Logs eines Ordners einordnen und, falls
@@ -89,6 +91,9 @@ public final class Main {
             }
             if ("matrix".equals(command)) {
                 return matrix(o, out, err, stdin);
+            }
+            if ("exclusions".equals(command)) {
+                return exclusions(o, out, err, stdin);
             }
             if ("evaluate".equals(command) && o.target != null) {
                 return evaluate(o, out);
@@ -292,6 +297,63 @@ public final class Main {
         return 0;
     }
 
+    /** POMs des Projekts unter {@code root}, frisch gelesen über {@code locator}. */
+    private static List<PomFile> projectPoms(PomLocator locator, Path root) {
+        List<PomFile> poms = new ArrayList<PomFile>();
+        for (ProjectPoms.Pom p : new ProjectPoms(root).all()) {
+            PomFile m = locator.load(p.file);
+            if (m != null) {
+                poms.add(m);
+            }
+        }
+        return poms;
+    }
+
+    /**
+     * Modul A4: Exclusions, die nichts mehr ausschließen. Mit {@code --remove} werden veraltete und
+     * doppelte entfernt – eine nach der anderen, nach jeder Änderung neu geprüft (bei doppelt
+     * notierten Exclusions bleibt so eine stehen). Exit-Code 3, wenn ohne {@code --remove} etwas zu
+     * entfernen wäre (für CI).
+     */
+    private static int exclusions(Options o, PrintStream out, PrintStream err, InputStream stdin) throws IOException {
+        Path root = projectRoot(o);
+        Map<String, DepNode> trees = trees(o, err, stdin);
+        Path repo = localRepository(o, root);
+        PomLocator locator = new PomLocator(root, repo);
+        List<PomFile> poms = projectPoms(locator, root);
+        if (poms.isEmpty()) {
+            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            return 1;
+        }
+        ExclusionAudit audit = ExclusionAudit.build(locator, poms, trees);
+        if (o.remove) {
+            FixExecutor executor = new FixExecutor(Collections.<Path>emptyList());
+            int removed = 0;
+            for (int round = 0; round < 500 && !audit.removable().isEmpty(); round++) {
+                ExclusionAudit.Finding f = audit.removable().get(0);
+                for (String a : executor.execute(f.fix()).actions) {
+                    out.println(a + " (" + (f.getStatus() == ExclusionAudit.Status.STALE ? "veraltet" : "doppelt") + ")");
+                }
+                removed++;
+                locator = new PomLocator(root, repo);
+                audit = ExclusionAudit.build(locator, projectPoms(locator, root), trees);
+            }
+            out.println(removed == 0 ? "Nichts zu entfernen." : removed + (removed == 1 ? " Exclusion entfernt." : " Exclusions entfernt."));
+            if (audit.count(ExclusionAudit.Status.UNKNOWN) > 0) {
+                out.println(audit.count(ExclusionAudit.Status.UNKNOWN) + " nicht prüfbar (POMs fehlen lokal) – Details ohne --remove.");
+            }
+            return 0;
+        }
+        if (o.markdown) {
+            out.print(audit.markdown(o.all));
+        } else {
+            for (String line : audit.lines(o.all)) {
+                out.println(line);
+            }
+        }
+        return audit.removable().isEmpty() ? 0 : 3;
+    }
+
     private static int pin(ConflictMatrix matrix, String spec, PrintStream out, PrintStream err) throws IOException {
         String[] parts = spec.split(":");
         if (parts.length < 2) {
@@ -421,6 +483,8 @@ public final class Main {
         err.println("      (Modul A: woher kommt die Version? Baum: mvn dependency:tree -Dverbose > tree.txt)");
         err.println("  matrix [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--pin groupId:artifactId[:version]]");
         err.println("      (Modul A2: welche Module nutzen welche Version? --pin legt sie im gemeinsamen Parent fest)");
+        err.println("  exclusions [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--remove]");
+        err.println("      (Modul A4: Exclusions, die nichts mehr ausschließen; --remove entfernt sie, Exit 3 = es gibt welche)");
     }
 
     private static final class Options {
@@ -433,6 +497,7 @@ public final class Main {
         String pin;
         boolean markdown;
         boolean all;
+        boolean remove;
         boolean idOnly;
 
         static Options parse(String[] args) {
@@ -453,6 +518,8 @@ public final class Main {
                     o.pin = args[++i];
                 } else if ("--all".equals(a)) {
                     o.all = true;
+                } else if ("--remove".equals(a)) {
+                    o.remove = true;
                 } else if ("--markdown".equals(a)) {
                     o.markdown = true;
                 } else if ("--id".equals(a)) {

@@ -1,6 +1,6 @@
 ---
 name: maven-detective
-description: Projektwissen zu Maven Detective (IntelliJ-Plugin + Maven-Core-Extension + Java-8-Kern, der gescheiterte Maven-Builds diagnostiziert). Nutze diesen Skill bei jeder Arbeit in diesem Repo – neue Regel im Fehlerkatalog, neue Prüfung (Check), neuer Quick-Fix-Typ, Log-Parser, Schnappschuss-Diff, IDE-gegen-Kommandozeile, Fixtures, CLI (diagnose/evaluate/changes/validate-catalog/why/matrix), IntelliJ-Plugin oder CI – und wenn von Build Doctor, Diagnose-Karte, Gate 1/2 oder Modul A (Warum diese Version?, Konflikt-Matrix, Exclusions) die Rede ist.
+description: Projektwissen zu Maven Detective (IntelliJ-Plugin + Maven-Core-Extension + Java-8-Kern, der gescheiterte Maven-Builds diagnostiziert). Nutze diesen Skill bei jeder Arbeit in diesem Repo – neue Regel im Fehlerkatalog, neue Prüfung (Check), neuer Quick-Fix-Typ, Log-Parser, Schnappschuss-Diff, IDE-gegen-Kommandozeile, Fixtures, CLI (diagnose/evaluate/changes/validate-catalog/why/matrix/exclusions), IntelliJ-Plugin oder CI – und wenn von Build Doctor, Diagnose-Karte, Gate 1/2 oder Modul A (Warum diese Version?, Konflikt-Matrix, Exclusions) die Rede ist.
 ---
 
 # Maven Detective
@@ -38,6 +38,8 @@ Konzept/Roadmap: `Maven Detective – Plugin-Konzept.md` (Modul A Dependency-Ana
 ./gradlew :intellij-plugin:runIde
 ```
 
+In der Claude-Sandbox (`~/.gradle` und `/tmp` nur lesbar, kein X11): entpackte Distribution `~/.gradle/wrapper/dists/gradle-*/…/bin/gradle --offline` mit `GRADLE_USER_HOME=$TMPDIR/gh GRADLE_RO_DEP_CACHE=~/.gradle/caches`, `JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=$TMPDIR/jtmp -Djava.awt.headless=true"`, `DISPLAY=`; `buildPlugin -x buildSearchableOptions`.
+
 Build braucht JDK 21. Versionen in `gradle.properties` (`mavenVersion=3.9.11`, `platformVersion=2025.3`).
 
 ## Diagnose-Ablauf
@@ -63,7 +65,7 @@ Datei: `core/src/main/resources/io/github/bitshiftdev/mavendetective/core/catalo
 
 ## Quick-Fix-Typen
 
-Konstanten in `core/diagnosis/FixAction` (Javadoc-Tabelle listet Parameter): `rebuild`, `delete-files`, `open-file`, `replace-in-file`, `switch-jdk`, `set-jvm-option`, `insert-plugin-version`, `show-dependency`, `pin-version` (Modul A; `file`, `artifact`, `version`), `manual`. `core/fix/FixExecutor` führt nur dateibasierte aus (`delete-files`, `replace-in-file`, `set-jvm-option`, `pin-version`); der Rest läuft im Plugin (`FixRunner`). Neuer Typ ⇒ FixAction-Konstante + Javadoc + Katalog-Kopfkommentar + Ausführung in Executor/Plugin.
+Konstanten in `core/diagnosis/FixAction` (Javadoc-Tabelle listet Parameter): `rebuild`, `delete-files`, `open-file`, `replace-in-file`, `switch-jdk`, `set-jvm-option`, `insert-plugin-version`, `show-dependency`, `pin-version` (Modul A; `file`, `artifact`, `version`), `remove-exclusion` (A4; `file`, `artifact`, `exclusion`, `section`), `manual`. `core/fix/FixExecutor` führt nur dateibasierte aus (`delete-files`, `replace-in-file`, `set-jvm-option`, `pin-version`, `remove-exclusion`); der Rest läuft im Plugin (`FixRunner`). Neuer Typ ⇒ FixAction-Konstante + Javadoc + Katalog-Kopfkommentar + `RuleCatalog.FIX_TYPES` + Ausführung in Executor/Plugin.
 
 ## Schnappschüsse („Was hat sich geändert?“)
 
@@ -78,6 +80,7 @@ java -jar core/build/libs/maven-detective-core-*.jar validate-catalog extra.yaml
 java -jar core/build/libs/maven-detective-core-*.jar changes [--project DIR]
 java -jar core/build/libs/maven-detective-core-*.jar why g:a [--project DIR] [--module DIR] [--tree tree.txt|-] [--markdown] [--local-repo DIR]
 java -jar core/build/libs/maven-detective-core-*.jar matrix [--project DIR] [--tree tree.txt|-] [--all] [--markdown] [--pin g:a[:version]]
+java -jar core/build/libs/maven-detective-core-*.jar exclusions [--project DIR] [--tree tree.txt|-] [--all] [--markdown] [--remove]  # Exit 3 = veraltete vorhanden
 ```
 
 Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFile=…`, `-DmavenDetective.report=false`.
@@ -92,10 +95,13 @@ Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFi
 - **A2** `ConflictMatrix.build(locator, root, poms, trees)`: Zelle je Modul aus Baum (INCLUDED, BFS), ohne Baum nur direkte Deps (`isPartial`). Abweichende Zeile → `Pin` im **nächsten gemeinsamen Parent innerhalb des Projekts**, Version = `MavenVersion.max`; `Blocker` = direkte `<version>` oder Management näher am Modul (BOM-Importe blockieren nie). Spalten ohne Zellen bei `packaging pom` fallen weg.
 - `PomEditor.pinManagedVersion` → `Edit` (offset/length/text/line): eigener Tag-Scanner, nur Pfade direkt unter `project` (Profile unberührt), behält Einrückung/Zeilenenden; vorhandener Eintrag → Version bzw. `${prop}` derselben POM ändern. Kein DOM-Roundtrip. Plugin wendet `Edit` aufs `Document` an (Undo), `FixExecutor` auf die Datei.
 - Plugin: Tab `ConflictMatrixPanel` („Konflikt-Matrix“), Doppelklick → `DependenciesPanel.show`; nach Pin `IdeMaven.reimport`. CLI: `matrix [--tree …] [--all] [--markdown] [--pin g:a[:version]]`.
+- **A4** `ExclusionAudit.build/audit`: je `<exclusion>` (nur in der POM notierte, `dependencies` + `dependencyManagement`) transitiven Baum der Dependency aus lokalen POMs nachbauen (`Closure`: compile/runtime, ohne optional, tiefere Exclusions gelten, erster Fund je GA gewinnt, Management des **prüfenden** Moduls vor Angabe der Dependency-POM) – einmal ohne Exclusions, einmal mit den übrigen. Status `USED`/`REDUNDANT`/`STALE`/`UNKNOWN`; fehlt eine POM → `UNKNOWN`, nie `STALE`. `PomFile.Dep` hat `getExclusionEntries()` (mit Zeile, `matches` mit `*`) und `isOptional()`.
+- `PomEditor.removeExclusion(xml, g, a, "eg:ea", managed)`: Scan kennt jetzt alle Deps (`DepEntry` inkl. Exclusions); letzte Exclusion nimmt `<exclusions>` mit, ganze Zeilen weg; bei Duplikaten die erste.
+- Plugin: `StaleExclusionInspection` (localInspection XML, `<depends>com.intellij.modules.xml</depends>`, Beschreibung `inspectionDescriptions/MavenDetectiveStaleExclusion.html`) liest die gespeicherte Datei, bildet Befunde über Struktur (nicht Zeilen) aufs PSI ab, Quick-Fix löscht PSI-Tag. Statischer `PomCache` (mtime+Größe) über `PomLocator(root, repo, cache)`.
 
 ## Offene Punkte (Stand README)
 
-Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1, A2 fertig (beide nicht in `runIde` geklickt), A3–A6 offen. Vor größeren Features README „Nächste Schritte“ prüfen.
+Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1, A2, A4 fertig (alle nicht in `runIde` geklickt), A3, A5, A6 offen. Vor größeren Features README „Nächste Schritte“ prüfen.
 
 ## Git
 
