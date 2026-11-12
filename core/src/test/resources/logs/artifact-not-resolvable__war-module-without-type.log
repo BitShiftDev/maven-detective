@@ -1,0 +1,47 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] shop                                                               [pom]
+[INFO] shop-web                                                           [war]
+[INFO] shop-ear                                                           [ear]
+[INFO] 
+[INFO] ----------------------< com.example.fixture:shop >----------------------
+[INFO] Building shop 1.0                                                  [1/3]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --------------------< com.example.fixture:shop-web >--------------------
+[INFO] Building shop-web 1.0                                              [2/3]
+[INFO]   from web/pom.xml
+[INFO] --------------------------------[ war ]---------------------------------
+[INFO] 
+[INFO] --------------------< com.example.fixture:shop-ear >--------------------
+[INFO] Building shop-ear 1.0                                              [3/3]
+[INFO]   from app/pom.xml
+[INFO] --------------------------------[ ear ]---------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for shop 1.0:
+[INFO] 
+[INFO] shop ............................................... SUCCESS [  0.001 s]
+[INFO] shop-web ........................................... SUCCESS [  0.000 s]
+[INFO] shop-ear ........................................... FAILURE [  0.629 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  0.687 s
+[INFO] Finished at: 2026-11-12T17:21:10+01:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal on project shop-ear: Could not resolve dependencies for project com.example.fixture:shop-ear:ear:1.0
+[ERROR] dependency: com.example.fixture:shop-web:jar:1.0 (compile)
+[ERROR] 	Could not find artifact com.example.fixture:shop-web:jar:1.0 in central (https://repo.maven.apache.org/maven2)
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/DependencyResolutionException
+[ERROR] 
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <args> -rf :shop-ear

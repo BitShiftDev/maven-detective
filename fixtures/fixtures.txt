@@ -12,3 +12,4 @@
 07-non-resolvable-parent   | invalid-pom             | validate
 08-missing-child-module    | reactor-problem         | validate
 08-reactor-cycle           | reactor-problem         | validate
+10-ear-module-not-dependency | javaee-packaging      | generate-resources

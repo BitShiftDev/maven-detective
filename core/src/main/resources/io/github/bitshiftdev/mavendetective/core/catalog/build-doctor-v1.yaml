@@ -270,6 +270,8 @@ rules:
     category: Compiler-Fehler durch Dependency
     priority: 55
     patterns:
+      - regex: 'package (?<package>(?:javax|jakarta)\.(?:servlet|ejb|persistence|ws\.rs|inject|enterprise|faces|annotation|transaction|validation|jms|mail|json|xml\.bind|xml\.ws|xml\.soap|jws|activation|websocket|batch|security|resource|interceptor|decorator)\b[\w.]*) does not exist'
+        cause: 'Das Paket {package} gehört zur Java-EE/Jakarta-EE-API und ist beim Kompilieren nicht im Classpath: die API-Dependency fehlt (meist mit Scope provided), oder javax.* und jakarta.* passen nicht zusammen.'
       - regex: 'package (?<package>[\w.]+) does not exist'
         cause: 'Das Paket {package} ist beim Kompilieren nicht im Classpath: Dependency fehlt, hat den falschen Scope oder wurde per Exclusion entfernt.'
       - regex: 'class file for (?<class>[\w.$]+) not found'
@@ -280,7 +282,7 @@ rules:
         cause: 'Der Compiler findet {symbol|ein Symbol}. Stammt es aus einer Bibliothek, fehlt die Dependency oder hat den falschen Scope; sonst ist es ein Fehler im Code.'
     extract:
       - 'symbol:\s+(?:class|variable|method) (?<symbol>[\w$]+)'
-    checks: [source-location]
+    checks: [ee-namespace, source-location]
 
   # ---------------------------------------------------------------- 1
   - id: artifact-not-resolvable
@@ -294,7 +296,7 @@ rules:
       - 'Plugin (?<artifact>\S+) or one of its dependencies could not be resolved'
       - 'Cannot access (?<repoId>[\w.\-]+) \((?<repoUrl>[^)\s]+)\) in offline mode and the artifact (?<artifact>\S+) has not been downloaded'
       - 'Failed to read artifact descriptor for (?<artifact>\S+)'
-      - 'Could not resolve dependencies for project (?<project>\S+?):'
+      - 'Could not resolve dependencies for project (?<project>[^\s:]+:[^\s:]+:[^\s:]+:[^\s:]+)'
       - 'was cached in the local repository'
       - 'Failed to collect dependencies at'
       - 'Non-resolvable import POM'
@@ -309,6 +311,45 @@ rules:
       label: 'Mit -U neu bauen (Update erzwingen)'
       params:
         args: '-U'
+
+  # ---------------------------------------------------------------- 14 (Erweiterung)
+  - id: javaee-packaging
+    number: 14
+    category: EAR/WAR/EJB-Packaging
+    priority: 82
+    confidence: certain
+    description: Fehler der Packaging-Plugins in Java-EE-Projekten (maven-ear-plugin, maven-war-plugin, maven-ejb-plugin).
+    patterns:
+      - regex: 'Artifact\[(?<moduleType>[\w-]+):(?<module>[^\]\s]+)\] is not a dependency of the project'
+        cause: '{module} ist im maven-ear-plugin als {moduleType}-Modul eingetragen, steht aber nicht in den <dependencies> der EAR-POM; das Plugin packt nur Dependencies ein.'
+        fix:
+          type: manual
+          label: 'Dependency {module} mit Version und <type>{moduleType}</type> in die EAR-POM eintragen'
+      - regex: 'maven-ear-plugin:(?<pluginVersion>[^:\s]+):.*Invalid version \[(?<eeVersion>[^\]]+)\]'
+        cause: 'Das maven-ear-plugin {pluginVersion} kennt die Plattform-Version {eeVersion} aus <version> nicht: Tippfehler, oder die Plugin-Version ist älter als diese Java-EE/Jakarta-EE-Version.'
+        fix:
+          type: manual
+          label: '<version> im maven-ear-plugin prüfen oder das Plugin auf eine aktuelle Version anheben'
+      - regex: 'Unable to load the mojo ''(?<goal>[^'']+)'' in the plugin ''(?<plugin>org\.apache\.maven\.plugins:maven-war-plugin:(?<pluginVersion>2\.[^'']*))'' due to an API incompatibility'
+        cause: 'Das maven-war-plugin {pluginVersion} läuft nicht auf Java 16 und neuer: die Versionen 2.x greifen per Reflection auf JDK-Interna zu.'
+        fix:
+          type: manual
+          label: 'maven-war-plugin auf 3.4.0 oder neuer anheben'
+      - regex: 'Error assembling WAR: webxml attribute is required'
+        cause: 'Das WAR-Modul {failedModule|} hat keine WEB-INF/web.xml, und das maven-war-plugin verlangt eine (failOnMissingWebXml).'
+        fix:
+          type: manual
+          label: 'src/main/webapp/WEB-INF/web.xml anlegen oder <failOnMissingWebXml>false</failOnMissingWebXml> setzen, wenn die Anwendung per Annotationen konfiguriert ist'
+      - regex: 'Error assembling EJB: META-INF/ejb-jar.xml is required for ejbVersion (?<ejbVersion>\S+)'
+        cause: 'Mit ejbVersion {ejbVersion} verlangt das maven-ejb-plugin den Deskriptor src/main/resources/META-INF/ejb-jar.xml; ab EJB 3.0 reichen Annotationen.'
+        fix:
+          type: manual
+          label: 'META-INF/ejb-jar.xml anlegen oder <ejbVersion> auf 3.x setzen'
+    extract:
+      - '(?<pluginArtifact>maven-(?:ear|war|ejb|rar)-plugin):(?<pluginVersion>[^:\s'']+)'
+      - ' on project (?<failedModule>[^\s:]+)'
+    cause: 'Das Packaging-Plugin {pluginArtifact|} ist gescheitert.'
+    checks: [ear-module, plugin-declaration]
 
   # ---------------------------------------------------------------- 13 (Erweiterung)
   - id: test-failures

@@ -83,6 +83,67 @@ class ChecksTest {
     }
 
     @Test
+    void reactorSiblingWithOtherPackagingNamesMissingType() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        write(project.resolve("pom.xml"), "<project><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version><packaging>pom</packaging></project>");
+        write(project.resolve("web/pom.xml"), "<project><parent><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version></parent>\n"
+                + "<artifactId>web</artifactId>\n<packaging>war</packaging>\n</project>");
+        write(project.resolve("app/pom.xml"), "<project><parent><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version></parent>\n"
+                + "<artifactId>app</artifactId>\n<packaging>ear</packaging>\n<dependencies>\n<dependency>\n<groupId>com.acme</groupId>\n"
+                + "<artifactId>web</artifactId>\n<version>1.0</version>\n</dependency>\n</dependencies>\n</project>");
+        Diagnosis d = diagnose(env, "[ERROR] Failed to execute goal on project app: Could not resolve dependencies for project com.acme:app:ear:1.0\n"
+                + "[ERROR] dependency: com.acme:web:jar:1.0 (compile)\n"
+                + "[ERROR] \tCould not find artifact com.acme:web:jar:1.0 in central (https://repo.maven.apache.org/maven2)");
+        assertEquals("artifact-not-resolvable", d.getRuleId());
+        assertTrue(d.getCause().contains("packaging war") && d.getCause().contains("<type>war</type>"), d.getCause());
+        assertEquals(FixAction.OPEN_FILE, d.getPrimaryFix().getType());
+        assertEquals(project.resolve("app/pom.xml").toString(), d.getPrimaryFix().param("file"));
+        assertEquals("5", d.getPrimaryFix().param("line"));
+    }
+
+    @Test
+    void earModuleMissingFromDependenciesPointsToEarPom() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        write(project.resolve("pom.xml"), "<project><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version><packaging>pom</packaging></project>");
+        write(project.resolve("web/pom.xml"), "<project><parent><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version></parent>"
+                + "<artifactId>web</artifactId><packaging>war</packaging></project>");
+        write(project.resolve("app/pom.xml"), "<project><parent><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version></parent>\n"
+                + "<artifactId>app</artifactId>\n<packaging>ear</packaging>\n<build><plugins><plugin>\n<artifactId>maven-ear-plugin</artifactId>\n"
+                + "<configuration><modules><webModule>\n<groupId>com.acme</groupId>\n<artifactId>web</artifactId>\n</webModule></modules></configuration>\n"
+                + "</plugin></plugins></build>\n</project>");
+        Diagnosis d = diagnose(env, "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-ear-plugin:3.3.0:generate-application-xml "
+                + "(default-generate-application-xml) on project app: Artifact[war:com.acme:web] is not a dependency of the project. -> [Help 1]");
+        assertEquals("javaee-packaging", d.getRuleId());
+        assertEquals(Confidence.CERTAIN, d.getConfidence());
+        assertTrue(d.getCause().contains("als war-Modul eingetragen"), d.getCause());
+        boolean entry = false;
+        for (Evidence e : d.getEvidence()) {
+            entry |= e.getText().startsWith("Im maven-ear-plugin als war-Modul") && e.getLine() == 8;
+        }
+        assertTrue(entry, String.valueOf(d.getEvidence()));
+    }
+
+    @Test
+    void jakartaImportWithJavaxApiIsNamespaceMismatch() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        write(project.resolve("pom.xml"), "<project><groupId>com.acme</groupId><artifactId>web</artifactId><version>1.0</version>\n<dependencies><dependency>\n"
+                + "<groupId>javax</groupId>\n<artifactId>javaee-api</artifactId>\n<version>8.0.1</version><scope>provided</scope></dependency></dependencies></project>");
+        Diagnosis d = diagnose(env, "[ERROR] /src/main/java/com/acme/S.java:[3,28] package jakarta.servlet.http does not exist");
+        assertEquals("compile-missing-dependency", d.getRuleId());
+        assertEquals(Confidence.CERTAIN, d.getConfidence());
+        assertTrue(d.getCause().contains("alte Java-EE-API"), d.getCause());
+        assertEquals("4", d.getPrimaryFix().param("line"));
+    }
+
+    @Test
+    void javaxPackageRemovedFromJdkIsExplained() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        write(project.resolve("pom.xml"), "<project><groupId>com.acme</groupId><artifactId>svc</artifactId><version>1.0</version></project>");
+        Diagnosis d = diagnose(env, "[ERROR] /src/main/java/com/acme/S.java:[3,28] package javax.xml.bind.annotation does not exist");
+        assertTrue(d.getCause().contains("mit Java 11 entfernt"), d.getCause());
+    }
+
+    @Test
     void serverIdMissingPointsToSettingsAndSimilarId() throws Exception {
         Environment env = env(new HashMap<>(), null);
         write(home.resolve(".m2/settings.xml"), "<settings>\n  <servers>\n    <server><id>Nexus</id><username>u</username></server>\n  </servers>\n</settings>\n");

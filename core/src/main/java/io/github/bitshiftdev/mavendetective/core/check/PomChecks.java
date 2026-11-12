@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
+import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.env.MavenSettings;
@@ -327,6 +328,183 @@ final class PomChecks {
         }
     }
 
+    // ------------------------------------------------------------------ plugin-declaration
+
+    /**
+     * Zeigt, wo ein Plugin (Variable {@code pluginArtifact}, z. B. maven-war-plugin) in den Projekt-POMs
+     * steht – bevorzugt in der POM des gescheiterten Moduls ({@code failedModule}).
+     */
+    static final class PluginDeclaration implements Check {
+        @Override
+        public String id() { return "plugin-declaration"; }
+
+        @Override
+        public CheckResult run(CheckContext ctx) {
+            String artifactId = ctx.var("pluginArtifact");
+            if (artifactId == null) {
+                return CheckResult.notApplicable();
+            }
+            List<ProjectPoms.Location> hits = ctx.projectPoms().findText("<artifactId>" + artifactId + "</artifactId>");
+            if (hits.isEmpty()) {
+                return CheckResult.info().evidence(Evidence.hint(artifactId + " steht in keiner Projekt-POM – die Version kommt aus einem Parent"
+                        + " außerhalb des Projekts oder aus Mavens Voreinstellung für das packaging."));
+            }
+            ProjectPoms.Location best = hits.get(0);
+            String failed = ctx.var("failedModule");
+            for (ProjectPoms.Location h : hits) {
+                if (failed != null && failed.equals(h.pom.artifactId)) {
+                    best = h;
+                    break;
+                }
+            }
+            CheckResult r = CheckResult.info();
+            int shown = 0;
+            for (ProjectPoms.Location h : hits) {
+                if (shown++ < 3) {
+                    r.evidence(Evidence.file(artifactId + " eingetragen", h.pom.file.toString(), h.line));
+                }
+            }
+            return r.fix(FixAction.of(FixAction.OPEN_FILE, artifactId + " in der POM öffnen",
+                    "file", best.pom.file.toString(), "line", String.valueOf(best.line)));
+        }
+    }
+
+    // ------------------------------------------------------------------ ear-module
+
+    /**
+     * Für „Artifact[war:g:a] is not a dependency of the project“: sucht die EAR-POM, den Modul-Eintrag in
+     * der Plugin-Konfiguration und das Zielmodul im Reactor.
+     */
+    static final class EarModule implements Check {
+        @Override
+        public String id() { return "ear-module"; }
+
+        @Override
+        public CheckResult run(CheckContext ctx) {
+            String type = ctx.var("moduleType");
+            String module = ctx.var("module");
+            if (type == null || module == null || module.split(":").length < 2) {
+                return CheckResult.notApplicable();
+            }
+            String groupId = module.split(":")[0];
+            String artifactId = module.split(":")[1];
+            String failed = ctx.var("failedModule");
+            ProjectPoms.Pom ear = null;
+            for (ProjectPoms.Pom p : ctx.projectPoms().all()) {
+                if ("ear".equals(p.effectivePackaging()) && (failed == null || failed.equals(p.artifactId))) {
+                    ear = p;
+                    break;
+                }
+            }
+            if (ear == null || dependency(ear, artifactId) != null) {
+                return CheckResult.notApplicable();
+            }
+            CheckResult r = CheckResult.confirmed();
+            int entry = lineAfter(ear, ear.lineOf("maven-ear-plugin"), "<artifactId>" + artifactId + "</artifactId>");
+            if (entry > 0) {
+                r.evidence(Evidence.file("Im maven-ear-plugin als " + type + "-Modul eingetragen", ear.file.toString(), entry));
+            }
+            r.evidence(Evidence.hint("In den <dependencies> von " + ear.artifactId + " steht kein " + artifactId + "."));
+            ProjectPoms.Pom target = ctx.projectPoms().find(groupId, artifactId);
+            if (target != null) {
+                String packaging = target.effectivePackaging();
+                r.var("modulePackaging", packaging)
+                        .evidence(Evidence.file("Modul im Projekt: packaging " + packaging, target.file.toString(),
+                                target.lineOf("<artifactId>" + artifactId + "</artifactId>")));
+                if (!packaging.equals(type)) {
+                    r.evidence(Evidence.hint("packaging " + packaging + " passt nicht zum Modultyp " + type + " im EAR."));
+                }
+            }
+            int deps = ear.lineOf("<dependencies>");
+            int at = deps > 0 ? deps : Math.max(1, ear.lineOf("<packaging>"));
+            return r.fix(FixAction.of(FixAction.OPEN_FILE, "EAR-POM öffnen", "file", ear.file.toString(), "line", String.valueOf(at)));
+        }
+
+        private static int lineAfter(ProjectPoms.Pom pom, int from, String needle) {
+            for (int i = Math.max(0, from); i < pom.lines.size(); i++) {
+                if (pom.lines.get(i).contains(needle)) {
+                    return i + 1;
+                }
+            }
+            return -1;
+        }
+    }
+
+    // ------------------------------------------------------------------ ee-namespace
+
+    /**
+     * Fehlendes javax.*-/jakarta.*-Paket: passt der Namensraum zur eingebundenen API (Jakarta EE 9 hat javax.*
+     * in jakarta.* umbenannt), oder ist es ein Paket, das Java 11 aus dem JDK entfernt hat?
+     */
+    static final class EeNamespace implements Check {
+        /** Pakete, die bis Java 10 im JDK lagen (JEP 320). */
+        private static final Pattern REMOVED_FROM_JDK = Pattern.compile(
+                "javax\\.(?:xml\\.bind|xml\\.ws|xml\\.soap|jws|activation|annotation(?!\\.processing)|transaction(?!\\.xa))(?:\\..*)?");
+        private static final String[] JAVAX_APIS = {
+                "<artifactId>javaee-api</artifactId>", "<artifactId>javaee-web-api</artifactId>",
+                "<artifactId>javax.servlet-api</artifactId>", "<artifactId>javax.ws.rs-api</artifactId>",
+                "<artifactId>javax.persistence-api</artifactId>", "<artifactId>javax.ejb-api</artifactId>"};
+
+        @Override
+        public String id() { return "ee-namespace"; }
+
+        @Override
+        public CheckResult run(CheckContext ctx) {
+            String pkg = ctx.var("package");
+            if (pkg == null) {
+                return CheckResult.notApplicable();
+            }
+            if (pkg.startsWith("jakarta.")) {
+                List<ProjectPoms.Location> javax = new ArrayList<ProjectPoms.Location>();
+                for (String needle : JAVAX_APIS) {
+                    javax.addAll(ctx.projectPoms().findText(needle));
+                }
+                if (javax.isEmpty()) {
+                    return CheckResult.notApplicable();
+                }
+                ProjectPoms.Location l = javax.get(0);
+                CheckResult r = ctx.projectPoms().findText("<groupId>jakarta.").isEmpty()
+                        ? CheckResult.confirmed() : CheckResult.info();
+                return r.cause("Der Code importiert {package} (Jakarta EE 9 und neuer), das Projekt bindet aber die alte Java-EE-API mit javax.*-Paketen ein.")
+                        .evidence(Evidence.file("javax-API eingebunden: " + Text.truncate(l.pom.lines.get(l.line - 1).trim(), 100), l.pom.file.toString(), l.line))
+                        .fix(FixAction.of(FixAction.OPEN_FILE, "API-Dependency öffnen (jakarta.platform:jakarta.jakartaee-api, provided)",
+                                "file", l.pom.file.toString(), "line", String.valueOf(l.line)));
+            }
+            if (!pkg.startsWith("javax.")) {
+                return CheckResult.notApplicable();
+            }
+            List<ProjectPoms.Location> jakarta = ctx.projectPoms().findText("<groupId>jakarta.");
+            if (!jakarta.isEmpty()) {
+                ProjectPoms.Location l = jakarta.get(0);
+                return CheckResult.info()
+                        .cause("Der Code importiert {package}, das Projekt bindet aber Jakarta-Artefakte ein. Ab Jakarta EE 9 heißen die Pakete jakarta.* statt javax.* – Imports umstellen oder bei einer API-Version bleiben, die noch javax.* enthält (Jakarta EE 8).")
+                        .evidence(Evidence.file("Jakarta-Artefakt: " + Text.truncate(l.pom.lines.get(l.line - 1).trim(), 100), l.pom.file.toString(), l.line))
+                        .fix(FixAction.of(FixAction.MANUAL, "Imports von javax.* auf jakarta.* umstellen"));
+            }
+            if (REMOVED_FROM_JDK.matcher(pkg).matches()) {
+                return CheckResult.info()
+                        .cause("{package} lag bis Java 10 im JDK und wurde mit Java 11 entfernt; jetzt braucht es die API als eigene Dependency.")
+                        .evidence(Evidence.environment("Maven läuft mit Java " + (ctx.env().getRunnerJavaVersion() == null ? "?" : ctx.env().getRunnerJavaVersion())))
+                        .fix(FixAction.of(FixAction.MANUAL, "API als Dependency ergänzen (z. B. javax.xml.bind:jaxb-api, javax.annotation:javax.annotation-api) oder die Java-EE-API mit Scope provided einbinden"));
+            }
+            return CheckResult.notApplicable();
+        }
+    }
+
+    /** Direkte Dependency (nicht dependencyManagement) mit dieser artifactId, sonst {@code null}. */
+    static PomFile.Dep dependency(ProjectPoms.Pom pom, String artifactId) {
+        try {
+            for (PomFile.Dep d : PomFile.read(pom.file).getDependencies()) {
+                if (artifactId.equals(d.getArtifactId())) {
+                    return d;
+                }
+            }
+        } catch (Exception e) {
+            // unlesbare POM: keine Aussage
+        }
+        return null;
+    }
+
     static List<Check> all() {
         List<Check> l = new ArrayList<Check>();
         l.add(new PomLocation());
@@ -334,6 +512,9 @@ final class PomChecks {
         l.add(new ChildModule());
         l.add(new PluginPrefix());
         l.add(new PluginVersion());
+        l.add(new PluginDeclaration());
+        l.add(new EarModule());
+        l.add(new EeNamespace());
         return l;
     }
 }

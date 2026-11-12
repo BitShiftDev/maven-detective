@@ -16,10 +16,10 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 
 | Baustein | Status |
 | --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 82 Unit-Tests |
-| Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ |
+| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 86 Unit-Tests |
+| Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ + „EAR/WAR/EJB-Packaging“ |
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
-| Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 10 Fixture-Projekten getestet |
+| Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
 | „Was hat sich geändert?“ (Schnappschuss-Diff) | fertig in Kern, Extension, CLI (`changes`) und IDE |
 | IDE gegen Kommandozeile | fertig: Vergleich im Tool-Window, Hinweis auf der Karte |
 | IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option. **In `runIde` noch nicht durchgeklickt** |
@@ -121,6 +121,17 @@ Die Terminal-Seite wird aus den Umgebungsvariablen der IDE abgeleitet. Eine Shel
 
 **Warum die IDE die Extension nicht selbst anhängt:** IntelliJ 2025.x startet Maven über das `mvn`-Skript (Registry `maven.use.scripts`) und setzt dabei `-Dmaven.ext.class.path` für den eigenen Event-Listener. Ein zweiter Wert würde ihn überschreiben und den Build-View der IDE leeren. Die IDE nimmt deshalb den Text-Log und ihr Maven-Modell; die Extension bleibt für Terminal und CI.
 
+## Java EE: EAR, WAR, EJB
+
+Build Doctor hängt nicht am packaging; Reactors mit `ear`-, `war`- und `ejb`-Modulen werden wie jedes andere Projekt diagnostiziert. Dazu kommen Regeln für die typischen Fehler der Packaging-Plugins (Kategorie 14):
+
+- `Artifact[war:…] is not a dependency of the project`: Modul im `maven-ear-plugin` eingetragen, aber nicht in den `<dependencies>` der EAR-POM. Die Prüfung `ear-module` zeigt Modul-Eintrag, EAR-POM und das Zielmodul im Reactor.
+- Dependency auf ein WAR-Modul ohne `<type>war</type>`: Maven sucht dann `…:jar:…` und findet nichts. `reactor-sibling` erkennt das am packaging des Reactor-Moduls und springt zur Dependency.
+- `maven-war-plugin` 2.x auf Java 16+, fehlende `web.xml`, fehlender `ejb-jar.xml` bei `ejbVersion` 2.x, unbekannte Plattform-Version im `maven-ear-plugin`.
+- Fehlende `javax.*`/`jakarta.*`-Pakete beim Kompilieren: `ee-namespace` erkennt den Wechsel javax → jakarta (Jakarta EE 9) und Pakete, die Java 11 aus dem JDK entfernt hat (`javax.xml.bind`, `javax.annotation`, …).
+
+Grenzen: Die Konflikt-Matrix (A2) vergleicht den Maven-Classpath je Modul, nicht die Classloader im Server. Sie kennt weder `lib/` im EAR gegenüber `WEB-INF/lib` noch `skinnyWars` oder die Bibliotheken des Applikationsservers. Zeilen sind nach `groupId:artifactId` geschlüsselt, `ejb` und `ejb-client` desselben Moduls fallen zusammen.
+
 ## Gate 1: mit echten Logs messen
 
 1. Logs der letzten 30 gescheiterten Builds in einen Ordner legen (`*.log` oder `*.txt`).
@@ -139,7 +150,7 @@ Der Katalog liegt in [`core/src/main/resources/…/catalog/build-doctor-v1.yaml`
 
 ```yaml
   - id: my-new-rule
-    number: 14
+    number: 15
     category: Kurzer Titel der Karte
     priority: 60            # höher gewinnt, wenn mehrere Regeln passen
     patterns:
@@ -155,7 +166,7 @@ Der Katalog liegt in [`core/src/main/resources/…/catalog/build-doctor-v1.yaml`
 
 Dazu gehört immer ein Testlog unter `core/src/test/resources/logs/<regel-id>__<beschreibung>.log`. `LogCatalogTest` prüft automatisch, dass jede Datei als die Regel im Dateinamen erkannt wird und dass jede Regel mindestens einen Testlog hat. Eigene Kataloge lassen sich mit `--catalog extra.yaml` dazuladen und mit `validate-catalog extra.yaml` prüfen.
 
-Vorhandene Prüfungen: `offline-mode`, `network-failure`, `last-updated-files`, `reactor-sibling`, `requested-repository`, `server-id`, `http-repository`, `corrupt-jar`, `pom-location`, `parent-relative-path`, `child-module`, `plugin-prefix`, `plugin-version`, `jdk-version`, `source-location`, `enforcer-rule`, `memory-settings`. Prüfungen lesen nur Dateien und Einstellungen und gehen nie ins Netz.
+Vorhandene Prüfungen: `offline-mode`, `network-failure`, `last-updated-files`, `reactor-sibling`, `requested-repository`, `server-id`, `http-repository`, `corrupt-jar`, `pom-location`, `parent-relative-path`, `child-module`, `plugin-prefix`, `plugin-version`, `plugin-declaration`, `ear-module`, `ee-namespace`, `jdk-version`, `source-location`, `enforcer-rule`, `memory-settings`. Prüfungen lesen nur Dateien und Einstellungen und gehen nie ins Netz.
 
 ## Konflikt-Matrix
 
@@ -223,6 +234,7 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - A1 in `runIde` an einem Spring-Boot-Projekt durchklicken (Abnahme laut Konzept: Herkunft jeder Dependency korrekt).
 - A2 in `runIde` an einem Multi-Modul-Projekt durchklicken: Abweichung pinnen, Re-Import, Matrix aktualisieren.
 - A4 in `runIde` an einem Spring-Boot-Projekt durchklicken: eine bekannte veraltete Exclusion (z. B. `commons-logging` bei `spring-core` 6) wird ausgegraut, Quick-Fix entfernt sie.
+- Konflikt-Matrix mit Deployment-Sicht für EARs: `lib/` gegen `WEB-INF/lib`, `skinnyWars`, `provided` vom Server; `ejb-client` als eigene Zeile.
 - A2-Pin auch als Karte im Build Doctor anbieten (Regel 10 „Laufzeitkonflikt“: verschiedene Versionen über die Module).
 
 ## Lizenz

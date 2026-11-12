@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
+import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.env.MavenSettings;
@@ -227,6 +228,11 @@ final class ResolutionChecks {
                 if (rel.isEmpty()) {
                     rel = ".";
                 }
+                String packaging = module.effectivePackaging();
+                String produced = extensionOf(packaging);
+                if (c.classifier == null && !produced.equals(c.extension)) {
+                    return typeMismatch(ctx, c, module, rel, packaging);
+                }
                 return CheckResult.confirmed()
                         .var("module", rel.replace(File.separatorChar, '/'))
                         .cause("{artifact} ist ein Modul dieses Projekts ({module}), wurde in diesem Lauf aber nicht mitgebaut und liegt nicht im lokalen Repository – typisch für -pl ohne -am.")
@@ -235,6 +241,40 @@ final class ResolutionChecks {
                         .fix(FixAction.of(FixAction.MANUAL, "Oder das Modul vorher einmal mit mvn install bauen"));
             }
             return CheckResult.notApplicable();
+        }
+
+        /**
+         * Reactor-Modul mit packaging war/ear/rar/pom, die Dependency fragt aber nach einem anderen
+         * Typ (meist das voreingestellte jar): Maven sucht dann ein Artifact, das es nirgends gibt.
+         */
+        private static CheckResult typeMismatch(CheckContext ctx, Coordinates c, ProjectPoms.Pom module, String rel, String packaging) {
+            CheckResult r = CheckResult.confirmed()
+                    .var("module", rel.replace(File.separatorChar, '/'))
+                    .var("packaging", packaging)
+                    .var("requestedType", c.extension)
+                    .cause("{artifact} ist das Modul {module} mit packaging {packaging}; die Dependency verlangt aber type {requestedType}"
+                            + " – in der Dependency fehlt <type>{packaging}</type>.")
+                    .evidence(Evidence.file("Modul im Projekt: packaging " + packaging, module.file.toString(),
+                            module.lineOf("<packaging>")));
+            Coordinates consumer = Coordinates.parse(ctx.var("project"));
+            ProjectPoms.Pom pom = consumer == null ? null : ctx.projectPoms().find(consumer.groupId, consumer.artifactId);
+            PomFile.Dep dep = pom == null ? null : PomChecks.dependency(pom, c.artifactId);
+            if (dep != null && dep.getLine() > 0) {
+                r.evidence(Evidence.file("Dependency ohne <type>" + packaging + "</type>", pom.file.toString(), dep.getLine()))
+                        .fix(FixAction.of(FixAction.OPEN_FILE, "Dependency öffnen und <type>" + packaging + "</type> ergänzen",
+                                "file", pom.file.toString(), "line", String.valueOf(dep.getLine())));
+            } else {
+                r.fix(FixAction.of(FixAction.MANUAL, "In der Dependency auf " + c.ga() + " <type>" + packaging + "</type> ergänzen"));
+            }
+            return r;
+        }
+
+        /** Dateiendung, die ein Modul mit diesem packaging erzeugt. */
+        static String extensionOf(String packaging) {
+            if ("war".equals(packaging) || "ear".equals(packaging) || "rar".equals(packaging) || "pom".equals(packaging)) {
+                return packaging;
+            }
+            return "jar"; // jar, ejb, maven-plugin, bundle, …
         }
     }
 

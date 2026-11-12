@@ -1,0 +1,38 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] -------------------------------< p:ejb >--------------------------------
+[INFO] Building ejb 1
+[INFO]   from pom.xml
+[INFO] --------------------------------[ ejb ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ ejb ---
+[INFO] skip non existing resourceDirectory /home/dev/legacy-app/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ ejb ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ ejb ---
+[INFO] skip non existing resourceDirectory /home/dev/legacy-app/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ ejb ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ ejb ---
+[INFO] No tests to run.
+[INFO] 
+[INFO] --- ejb:3.2.1:ejb (default-ejb) @ ejb ---
+[WARNING] The created EJB jar will be empty cause the /home/dev/legacy-app/target/classes did not exist.
+[INFO] Building EJB ejb-1 with EJB version 2.1
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  5.499 s
+[INFO] Finished at: 2026-11-12T17:14:30+01:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-ejb-plugin:3.2.1:ejb (default-ejb) on project ejb: Error assembling EJB: META-INF/ejb-jar.xml is required for ejbVersion 2.x -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

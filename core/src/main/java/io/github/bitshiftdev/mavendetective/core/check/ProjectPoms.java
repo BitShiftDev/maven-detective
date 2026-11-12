@@ -37,6 +37,8 @@ public final class ProjectPoms {
         public String groupId;
         public String artifactId;
         public String version;
+        /** Wie in der POM notiert; {@code null} heißt jar. */
+        public String packaging;
         public String parentGroupId;
         public String parentArtifactId;
         public String parentVersion;
@@ -56,6 +58,10 @@ public final class ProjectPoms {
 
         public String effectiveVersion() {
             return version != null ? version : parentVersion;
+        }
+
+        public String effectivePackaging() {
+            return packaging == null || packaging.isEmpty() ? "jar" : packaging;
         }
 
         public String gav() {
@@ -89,7 +95,8 @@ public final class ProjectPoms {
     private final Map<Path, Pom> cache = new HashMap<Path, Pom>();
 
     public ProjectPoms(Path root) {
-        this.root = root;
+        // absolut, damit relativize() gegen die (absoluten) POM-Pfade funktioniert
+        this.root = root == null ? null : root.toAbsolutePath().normalize();
     }
 
     public Path root() { return root; }
@@ -203,6 +210,7 @@ public final class ProjectPoms {
             pom.groupId = text(child(project, "groupId"));
             pom.artifactId = text(child(project, "artifactId"));
             pom.version = text(child(project, "version"));
+            pom.packaging = text(child(project, "packaging"));
             Element parent = child(project, "parent");
             if (parent != null) {
                 pom.hasParent = true;
