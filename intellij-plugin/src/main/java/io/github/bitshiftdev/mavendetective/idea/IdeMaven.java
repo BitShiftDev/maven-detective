@@ -5,6 +5,7 @@ import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
+import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.env.BuildSetup;
 import io.github.bitshiftdev.mavendetective.core.snapshot.BuildSnapshot;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotStore;
@@ -15,6 +16,8 @@ import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
 import org.jetbrains.idea.maven.execution.MavenRunner;
 import org.jetbrains.idea.maven.execution.MavenRunnerSettings;
 import org.jetbrains.idea.maven.model.MavenArtifact;
+import org.jetbrains.idea.maven.model.MavenArtifactNode;
+import org.jetbrains.idea.maven.model.MavenArtifactState;
 import org.jetbrains.idea.maven.model.MavenId;
 import org.jetbrains.idea.maven.model.MavenPlugin;
 import org.jetbrains.idea.maven.project.MavenGeneralSettings;
@@ -168,6 +171,111 @@ final class IdeMaven {
             LOG.warn("Maven Detective: Plugin-Version nicht ermittelbar", e);
         }
         return null;
+    }
+
+    /** Ein Maven-Modul aus dem IDE-Modell: POM-Datei und Anzeigename. */
+    record ModuleRef(@NotNull Path pom, @NotNull String groupId, @NotNull String artifactId, @NotNull String displayName) {
+        @Override
+        public String toString() {
+            return displayName;
+        }
+    }
+
+    /** Alle Maven-Module, die IntelliJ importiert hat. */
+    static List<ModuleRef> modules(@NotNull Project project) {
+        List<ModuleRef> out = new ArrayList<>();
+        try {
+            for (MavenProject p : ReadAction.compute(() -> MavenProjectsManager.getInstance(project).getProjects())) {
+                MavenId id = p.getMavenId();
+                if (id.getArtifactId() == null) {
+                    continue;
+                }
+                out.add(new ModuleRef(Paths.get(p.getPath()), String.valueOf(id.getGroupId()), id.getArtifactId(),
+                        p.getDisplayName() + " (" + id.getGroupId() + ":" + id.getArtifactId() + ")"));
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: Module nicht lesbar", e);
+        }
+        return out;
+    }
+
+    /** Wurzel des Reactors (Verzeichnis der obersten POM), sonst das Projektverzeichnis. */
+    static @Nullable Path reactorRoot(@NotNull Project project) {
+        try {
+            List<MavenProject> roots = ReadAction.compute(() -> MavenProjectsManager.getInstance(project).getRootProjects());
+            if (!roots.isEmpty()) {
+                return Paths.get(roots.get(0).getDirectoryFile().getPath());
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: Reactor-Wurzel nicht ermittelbar", e);
+        }
+        return project.getBasePath() == null ? null : Paths.get(project.getBasePath());
+    }
+
+    /** Lokales Repository laut IDE-Modell; {@code null}, wenn unbekannt. */
+    static @Nullable Path localRepository(@NotNull Project project) {
+        try {
+            for (MavenProject p : ReadAction.compute(() -> MavenProjectsManager.getInstance(project).getProjects())) {
+                Path repo = p.getLocalRepositoryPath();
+                if (repo != null) {
+                    return repo;
+                }
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: lokales Repository nicht ermittelbar", e);
+        }
+        return null;
+    }
+
+    /**
+     * Aufgelöster Dependency-Baum eines Moduls aus dem IDE-Modell (Stand des letzten Imports), als
+     * Kern-Modell. {@code null}, wenn das Modul unbekannt ist.
+     */
+    static @Nullable DepNode dependencyTree(@NotNull Project project, @NotNull Path pom) {
+        try {
+            return ReadAction.compute(() -> {
+                for (MavenProject p : MavenProjectsManager.getInstance(project).getProjects()) {
+                    if (!Paths.get(p.getPath()).equals(pom)) {
+                        continue;
+                    }
+                    MavenId id = p.getMavenId();
+                    DepNode root = new DepNode(id.getGroupId(), id.getArtifactId(), p.getPackaging(), null, id.getVersion(), null);
+                    for (MavenArtifactNode n : p.getDependencyTree()) {
+                        convert(root, n, 0);
+                    }
+                    return root;
+                }
+                return null;
+            });
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: Dependency-Baum nicht lesbar", e);
+            return null;
+        }
+    }
+
+    private static void convert(DepNode parent, MavenArtifactNode n, int depth) {
+        MavenArtifact a = n.getArtifact();
+        DepNode node = parent.add(new DepNode(a.getGroupId(), a.getArtifactId(), a.getType(), a.getClassifier(),
+                a.getVersion(), a.getScope()));
+        node.setPremanagedVersion(n.getPremanagedVersion()).setPremanagedScope(n.getPremanagedScope());
+        MavenArtifactState state = n.getState();
+        if (state == MavenArtifactState.CONFLICT) {
+            node.setState(DepNode.State.CONFLICT);
+            if (n.getRelatedArtifact() != null) {
+                node.setRelatedVersion(n.getRelatedArtifact().getVersion());
+            }
+        } else if (state == MavenArtifactState.DUPLICATE) {
+            node.setState(DepNode.State.DUPLICATE);
+        } else if (state == MavenArtifactState.EXCLUDED) {
+            node.setState(DepNode.State.EXCLUDED);
+        } else if (state == MavenArtifactState.CYCLE) {
+            node.setState(DepNode.State.CYCLE);
+        }
+        if (depth < 40) {
+            for (MavenArtifactNode child : n.getDependencies()) {
+                convert(node, child, depth + 1);
+            }
+        }
     }
 
     private static List<String> profiles(MavenProjectsManager manager, @Nullable MavenRunConfiguration cfg) {

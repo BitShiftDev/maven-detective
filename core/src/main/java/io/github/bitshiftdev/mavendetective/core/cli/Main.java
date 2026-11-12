@@ -3,6 +3,13 @@ package io.github.bitshiftdev.mavendetective.core.cli;
 import io.github.bitshiftdev.mavendetective.core.BuildDoctor;
 import io.github.bitshiftdev.mavendetective.core.catalog.RuleCatalog;
 import io.github.bitshiftdev.mavendetective.core.check.Checks;
+import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
+import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
+import io.github.bitshiftdev.mavendetective.core.deps.DependencyTreeParser;
+import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
+import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
+import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
+import io.github.bitshiftdev.mavendetective.core.deps.VersionExplanation;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
 import io.github.bitshiftdev.mavendetective.core.io.EventLog;
@@ -25,6 +32,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -40,6 +48,7 @@ import java.util.TreeMap;
  * java -jar maven-detective-core.jar evaluate logs/ [--catalog extra.yaml]
  * java -jar maven-detective-core.jar validate-catalog extra.yaml
  * java -jar maven-detective-core.jar changes [--project DIR]
+ * java -jar maven-detective-core.jar why groupId:artifactId [--project DIR] [--module DIR] [--tree tree.txt | -] [--markdown]
  * </pre>
  *
  * {@code evaluate} ist das Werkzeug für Gate 1: alle Logs eines Ordners einordnen und, falls
@@ -70,6 +79,9 @@ public final class Main {
             }
             if ("changes".equals(command)) {
                 return changes(o, out);
+            }
+            if ("why".equals(command) && o.target != null) {
+                return why(o, out, err, stdin);
             }
             if ("evaluate".equals(command) && o.target != null) {
                 return evaluate(o, out);
@@ -144,6 +156,84 @@ public final class Main {
         }
         for (String line : diff.lines(Integer.MAX_VALUE)) {
             out.println("  - " + line);
+        }
+        return 0;
+    }
+
+    /**
+     * Modul A1: Warum steht diese Version im Classpath? Ohne {@code --module} werden alle Module
+     * erklärt, die die Dependency deklarieren oder (laut Baum) enthalten.
+     */
+    private static int why(Options o, PrintStream out, PrintStream err, InputStream stdin) throws IOException {
+        String[] ga = o.target.split(":");
+        if (ga.length < 2) {
+            err.println("Erwartet groupId:artifactId, z. B. com.fasterxml.jackson.core:jackson-databind");
+            return 2;
+        }
+        Path root = Paths.get(o.project != null ? o.project : "").toAbsolutePath().normalize();
+        Path localRepo = o.localRepo != null ? Paths.get(o.localRepo)
+                : Environment.builder().projectDirectory(root).userHome(Paths.get(System.getProperty("user.home")))
+                .env(System.getenv()).build().getLocalRepository();
+        Map<String, DepNode> trees = new HashMap<String, DepNode>();
+        if (o.tree != null) {
+            Reader r = "-".equals(o.tree) ? new InputStreamReader(stdin, StandardCharsets.UTF_8)
+                    : Files.newBufferedReader(Paths.get(o.tree), StandardCharsets.UTF_8);
+            try {
+                for (DepNode n : DependencyTreeParser.parse(r)) {
+                    trees.put(n.ga(), n);
+                }
+            } finally {
+                r.close();
+            }
+            if (trees.isEmpty()) {
+                err.println("Kein Baum in " + o.tree + " gefunden (erwartet: Ausgabe von mvn dependency:tree -Dverbose).");
+            }
+        }
+        PomLocator locator = new PomLocator(root, localRepo);
+        VersionExplainer explainer = new VersionExplainer(locator, root);
+        List<PomFile> modules = new ArrayList<PomFile>();
+        if (o.module != null) {
+            PomFile m = locator.load(root.resolve(o.module));
+            if (m == null) {
+                err.println("Keine lesbare POM unter " + root.resolve(o.module));
+                return 1;
+            }
+            modules.add(m);
+        } else {
+            for (ProjectPoms.Pom p : new ProjectPoms(root).all()) {
+                PomFile m = locator.load(p.file);
+                if (m == null) {
+                    continue;
+                }
+                DepNode tree = trees.get(m.getGroupId() + ":" + m.getArtifactId());
+                if (tree != null && !tree.findAll(ga[0], ga[1]).isEmpty()
+                        || locator.model(m).declared(ga[0], ga[1]) != null) {
+                    modules.add(m);
+                }
+            }
+            if (modules.isEmpty()) {
+                PomFile rootPom = locator.load(root.resolve("pom.xml"));
+                if (rootPom == null) {
+                    err.println("Keine pom.xml in " + root + " (--project DIR angeben)");
+                    return 1;
+                }
+                modules.add(rootPom);
+            }
+        }
+        boolean first = true;
+        for (PomFile m : modules) {
+            VersionExplanation x = explainer.explain(m, ga[0], ga[1], trees.get(m.getGroupId() + ":" + m.getArtifactId()));
+            if (!first) {
+                out.println();
+            }
+            first = false;
+            if (o.markdown) {
+                out.print(x.markdown());
+            } else {
+                for (String line : x.lines()) {
+                    out.println(line);
+                }
+            }
         }
         return 0;
     }
@@ -244,12 +334,17 @@ public final class Main {
         err.println("  evaluate <ordner-mit-logs> [--catalog extra.yaml]   (Gate 1: Trefferquote messen)");
         err.println("  changes [--project DIR]   (was hat sich seit dem letzten grünen Build geändert?)");
         err.println("  validate-catalog <extra.yaml>");
+        err.println("  why <groupId:artifactId> [--project DIR] [--module DIR] [--tree tree.txt | -] [--markdown] [--local-repo DIR]");
+        err.println("      (Modul A: woher kommt die Version? Baum: mvn dependency:tree -Dverbose > tree.txt)");
     }
 
     private static final class Options {
         String target;
         String project;
         String catalog;
+        String module;
+        String tree;
+        String localRepo;
         boolean markdown;
         boolean idOnly;
 
@@ -261,6 +356,12 @@ public final class Main {
                     o.project = args[++i];
                 } else if ("--catalog".equals(a) && i + 1 < args.length) {
                     o.catalog = args[++i];
+                } else if ("--module".equals(a) && i + 1 < args.length) {
+                    o.module = args[++i];
+                } else if ("--tree".equals(a) && i + 1 < args.length) {
+                    o.tree = args[++i];
+                } else if ("--local-repo".equals(a) && i + 1 < args.length) {
+                    o.localRepo = args[++i];
                 } else if ("--markdown".equals(a)) {
                     o.markdown = true;
                 } else if ("--id".equals(a)) {

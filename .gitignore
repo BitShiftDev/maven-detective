@@ -7,4 +7,5 @@ out/
 .kotlin/
 target/
 .DS_Store
-.claude/
+.claude/*
+!.claude/skills/

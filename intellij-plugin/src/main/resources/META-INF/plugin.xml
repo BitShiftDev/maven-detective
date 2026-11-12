@@ -14,6 +14,9 @@
           die Änderungen seitdem – JDK, Maven, Profile, Parent, Plugins, Dependencies.</li>
       <li><b>IDE gegen Kommandozeile:</b> vergleicht Maven, JDK, settings.xml, Profile und .mvn/-Konfiguration
           von IntelliJ und ./mvnw.</li>
+      <li><b>Warum diese Version?</b> Rechtsklick auf eine Dependency in der pom.xml zeigt die Entscheidungskette:
+          direkte Angabe, dependencyManagement im Modul oder Parent, importiertes BOM, setzende Property,
+          Pfad im Baum (nearest wins) und verdrängte Versionen – jede Station springt zur richtigen POM-Zeile.</li>
       <li>Ergänzt Maven Helper und den Dependency Analyzer: die zeigen Fakten, Maven Detective Ursache und Lösung.</li>
     </ul>
     ]]></description>
@@ -28,6 +31,15 @@
                     factoryClass="io.github.bitshiftdev.mavendetective.idea.BuildDoctorToolWindowFactory"/>
         <notificationGroup id="Maven Detective" displayType="BALLOON"/>
     </extensions>
+
+    <actions>
+        <action id="MavenDetective.WhyThisVersion"
+                class="io.github.bitshiftdev.mavendetective.idea.WhyThisVersionAction"
+                text="Warum diese Version?"
+                description="Zeigt, woher die Version dieser Dependency kommt (Maven Detective)">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+    </actions>
 
     <projectListeners>
         <listener class="io.github.bitshiftdev.mavendetective.idea.MavenRunListener"

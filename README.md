@@ -12,11 +12,11 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 [ERROR] +--------------------------------------------------------------
 ```
 
-## Stand: Phase 2 – Doctor v2
+## Stand: Phase 3 – Modul A begonnen
 
 | Baustein | Status |
 | --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 45 Unit-Tests |
+| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 56 Unit-Tests |
 | Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ |
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 10 Fixture-Projekten getestet |
@@ -24,7 +24,8 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | IDE gegen Kommandozeile | fertig: Vergleich im Tool-Window, Hinweis auf der Karte |
 | IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option. **In `runIde` noch nicht durchgeklickt** |
 | Gate 1 (30 eigene Logs) | **offen** – braucht deine Logs, siehe unten |
-| Modul A (Dependency-Analyse) | noch nicht begonnen |
+| A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Tab „Dependencies“, Rechtsklick in der `pom.xml`). **In `runIde` noch nicht durchgeklickt** |
+| A2–A6 (Konflikt-Matrix, doppelte Klassen, Exclusions, unused/undeclared, Upgrade-Simulator) | offen |
 
 ## Schnellstart
 
@@ -49,6 +50,8 @@ mvn verify 2>&1 | java -jar core/build/libs/maven-detective-core-*.jar diagnose 
 java -jar core/build/libs/maven-detective-core-*.jar diagnose build.log --markdown
 # Was hat sich seit dem letzten grünen Build geändert?
 java -jar core/build/libs/maven-detective-core-*.jar changes --project .
+# Woher kommt die Version dieser Dependency? (Modul A1)
+java -jar core/build/libs/maven-detective-core-*.jar why com.fasterxml.jackson.core:jackson-databind --project .
 ```
 
 ### Extension in Maven-Läufen
@@ -75,6 +78,29 @@ Nach jedem Lauf legt Maven Detective einen Schnappschuss ab: Maven- und JDK-Vers
 - **Wo:** `~/.maven-detective/snapshots/<projekt>-<hash>/` (`green-*.json`, `latest-*.json`), also nie im Git-Status. Verlegen mit `-DmavenDetective.home=…` oder `MAVEN_DETECTIVE_HOME`, abschalten mit `-DmavenDetective.snapshots=false`.
 - **Wer schreibt:** die Extension bei jedem Lauf auf Kommandozeile und in CI; die IDE nach jedem Maven-Lauf aus ihrem eigenen Maven-Modell. Kurze grüne Läufe (`validate`, `-pl`) dünnen die Referenz nicht aus.
 - **Rauschen vermeiden:** Gleiche Änderungen in mehreren Modulen werden zusammengefasst. Zwischen IDE- und Extension-Schnappschuss zählt nur, was beide gleich messen (JDK-Hauptversion, Maven, Profile, Parent, Versionen).
+
+## Warum diese Version?
+
+Modul A1 beantwortet „Warum steht genau diese Version im Classpath?“ als Kette von Stationen, jede mit Datei und Zeile:
+
+```
+Warum com.fasterxml.jackson.core:jackson-databind 2.18.2 in com.acme:api:1.0?
+Version 2.18.2: aus dem BOM com.fasterxml.jackson:jackson-bom:2.18.2, importiert über org.springframework.boot:spring-boot-dependencies:3.4.1.
+  1. Deklariert ohne Version in api (api/pom.xml) – die Version kommt aus dependencyManagement  → api/pom.xml:21
+  2. Importiert BOM org.springframework.boot:spring-boot-dependencies:3.4.1 <version>3.4.1</version> in api (api/pom.xml)  → api/pom.xml:14
+  3. Importiert BOM com.fasterxml.jackson:jackson-bom:2.18.2 <version>${jackson-bom.version}</version> in …spring-boot-dependencies:3.4.1  → …/spring-boot-dependencies-3.4.1.pom:2199
+       ${jackson-bom.version} = 2.18.2 gesetzt in org.springframework.boot:spring-boot-dependencies:3.4.1  → …/spring-boot-dependencies-3.4.1.pom:79
+  4. dependencyManagement: com.fasterxml.jackson.core:jackson-databind <version>${jackson.version.databind}</version> in …jackson-bom:2.18.2  → …/jackson-bom-2.18.2.pom:96
+       …
+Hinweise:
+  - Die Property ${jackson-bom.version} = 2.17.0 in api (api/pom.xml) wirkt hier nicht: Das BOM wird importiert, nicht geerbt, …
+```
+
+- **Stationen:** direkte Angabe (gewinnt immer), `dependencyManagement` im Modul oder geerbt aus dem Parent (mit der Parent-Kette), importierte BOMs (auch verschachtelt, auch aus dem Parent eines BOMs), die setzende Property samt überschriebener Werte weiter oben – und ohne Management der Pfad im Baum (nearest wins), die deklarierende POM der transitiven Dependency und jede verdrängte Version mit Grund.
+- **Regeln wie Mavens Model-Builder:** Erst erben (Kind gewinnt), dann im Kontext des Kindes interpolieren, dann BOMs importieren (erster Import gewinnt; ein BOM löst seine Properties im eigenen Kontext auf). Deshalb wirkt `jackson-bom.version` unter `spring-boot-starter-parent`, aber nicht bei importiertem `spring-boot-dependencies` – genau darauf weist die Erklärung hin.
+- **Quellen:** POMs aus dem Projekt und dem lokalen Repository, nie das Netz. Fehlt ein BOM lokal, nennt die Erklärung das wahrscheinlich zuständige. Profile werden nicht ausgewertet; setzt eines Properties oder `dependencyManagement`, steht das als Hinweis da.
+- **Baum:** Die IDE nimmt ihren aufgelösten Baum (Stand des letzten Imports). Auf der Kommandozeile: `mvn dependency:tree -Dverbose > tree.txt`, dann `why g:a --tree tree.txt` (oder `--tree -` aus der Pipe). Weicht der Baum von den POMs ab, sagt die Erklärung das.
+- **In der IDE:** Rechtsklick auf eine `<dependency>` in der `pom.xml` → „Warum diese Version?“, oder im Tab „Dependencies“ ein Modul und eine Dependency wählen (mit Suche und Markierung „× verdrängt“). „Als Markdown kopieren“ für Ticket oder Chat.
 
 ## IDE gegen Kommandozeile
 
@@ -124,9 +150,11 @@ Vorhandene Prüfungen: `offline-mode`, `network-failure`, `last-updated-files`, 
 
 ```
 core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, Prüfungen, Fix-Ausführung, CLI,
-                   Schnappschüsse + Diff (snapshot/), IDE-gegen-Kommandozeile (env/BuildSetup, SetupComparison)
+                   Schnappschüsse + Diff (snapshot/), IDE-gegen-Kommandozeile (env/BuildSetup, SetupComparison),
+                   Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser)
 maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
-intellij-plugin/   Tool-Window „Maven Detective“, Listener auf Maven-Läufe, Quick-Fixes;
+intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies), Listener auf Maven-Läufe, Quick-Fixes,
+                   Editor-Aktion „Warum diese Version?“;
                    IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht)
 fixtures/          Je Fehlerkategorie ein Projekt, das den Fehler absichtlich auslöst (fixtures.txt),
                    dazu 09-changed-since-green für den Schnappschuss-Diff
@@ -141,7 +169,8 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
 - Preflight-Check und Log-Navigator aus dem Konzept.
 - Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.
-- Danach Phase 3: Modul A (Why this version, Exclusion-Hygiene, Unused/undeclared).
+- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A2 Konflikt-Matrix über den Reactor (nutzt dieselben Bäume), A4 Exclusion-Hygiene, A5 Unused/undeclared, A3 doppelte Klassen, A6 Upgrade-Simulator.
+- A1 in `runIde` an einem Spring-Boot-Projekt durchklicken (Abnahme laut Konzept: Herkunft jeder Dependency korrekt).
 
 ## Lizenz
 
