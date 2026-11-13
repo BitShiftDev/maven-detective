@@ -8,7 +8,7 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import org.jetbrains.annotations.NotNull;
 
-/** Tool-Window „Maven Detective“: Tab „Build Doctor“ (Modul B), Tabs „Dependencies“ und „Konflikt-Matrix“ (Modul A). */
+/** Tool-Window „Maven Detective“: Tab „Build Doctor“ (Modul B), Tabs „Dependencies“, „Konflikt-Matrix“ und „Doppelte Klassen“ (Modul A). */
 public final class BuildDoctorToolWindowFactory implements ToolWindowFactory, DumbAware {
 
     @Override
@@ -27,5 +27,10 @@ public final class BuildDoctorToolWindowFactory implements ToolWindowFactory, Du
         Content matrixContent = ContentFactory.getInstance().createContent(matrix, ConflictMatrixPanel.TAB_NAME, false);
         matrixContent.setDisposer(matrix);
         toolWindow.getContentManager().addContent(matrixContent);
+
+        DuplicateClassesPanel duplicates = new DuplicateClassesPanel(project);
+        Content duplicatesContent = ContentFactory.getInstance().createContent(duplicates, DuplicateClassesPanel.TAB_NAME, false);
+        duplicatesContent.setDisposer(duplicates);
+        toolWindow.getContentManager().addContent(duplicatesContent);
     }
 }

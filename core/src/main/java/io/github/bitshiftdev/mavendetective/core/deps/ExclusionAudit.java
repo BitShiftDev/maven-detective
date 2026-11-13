@@ -7,6 +7,7 @@ import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -237,7 +238,7 @@ public final class ExclusionAudit {
     }
 
     /** Version der Dependency: direkt angegeben, sonst aus dem dependencyManagement des Moduls. */
-    private static String dependencyVersion(EffectiveModel consumer, PomFile.Dep d) {
+    static String dependencyVersion(EffectiveModel consumer, PomFile.Dep d) {
         if (d.getVersion() != null) {
             Interpolated v = consumer.interpolate(d.getVersion());
             return v.isResolved() && isFixed(v.value) ? v.value : null;
@@ -271,6 +272,8 @@ public final class ExclusionAudit {
     static final class Closure {
         /** Je {@code groupId:artifactId} der erste (kürzeste) Pfad, beginnend bei der Dependency selbst. */
         final Map<String, List<String>> paths = new LinkedHashMap<String, List<String>>();
+        /** Je {@code groupId:artifactId} die Angabe, über die es kam (Typ, Classifier, Scope). */
+        final Map<String, PomFile.Dep> decls = new HashMap<String, PomFile.Dep>();
         final Set<String> missing = new LinkedHashSet<String>();
 
         private static final class Node {
@@ -324,6 +327,7 @@ public final class ExclusionAudit {
                     List<String> path = new ArrayList<String>(n.path);
                     path.add(ga + ":" + (v == null ? "?" : v));
                     c.paths.put(ga, Collections.unmodifiableList(path));
+                    c.decls.put(ga, d.dep);
                     if (v == null) {
                         c.missing.add(ga + " (Version in " + n.groupId + ":" + n.artifactId + " nicht bestimmbar)");
                         continue;

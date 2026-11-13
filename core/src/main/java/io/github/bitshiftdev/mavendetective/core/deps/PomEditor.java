@@ -169,6 +169,70 @@ public final class PomEditor {
         return new Edit(start, end - start, "", lineOf(xml, start), what + " bei " + groupId + ":" + artifactId + " entfernt");
     }
 
+    /**
+     * Fügt bei der Dependency {@code groupId:artifactId} unter {@code project/dependencies} die
+     * {@code <exclusion>} {@code exclusion} (groupId:artifactId) ein – in vorhandene
+     * {@code <exclusions>} ans Ende, sonst mit neuem {@code <exclusions>} vor {@code </dependency>}.
+     * Bei mehreren Einträgen (Classifier, Typ) zählt der erste ohne Classifier.
+     *
+     * @throws IllegalArgumentException wenn die Dependency fehlt oder die Exclusion schon da ist
+     */
+    public static Edit addExclusion(String xml, String groupId, String artifactId, String exclusion) {
+        Scan s = Scan.of(xml);
+        if (s.projectEnd < 0) {
+            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+        }
+        int colon = exclusion.indexOf(':');
+        if (colon < 0) {
+            throw new IllegalArgumentException("Exclusion erwartet groupId:artifactId: " + exclusion);
+        }
+        String eg = exclusion.substring(0, colon);
+        String ea = exclusion.substring(colon + 1);
+        DepEntry found = null;
+        for (DepEntry d : s.deps) {
+            if (d.managed || !groupId.equals(d.fields.get("groupId")) || !artifactId.equals(d.fields.get("artifactId"))) {
+                continue;
+            }
+            String classifier = d.fields.get("classifier");
+            if (found == null || (classifier == null || classifier.isEmpty()) && found.fields.get("classifier") != null) {
+                found = d;
+            }
+        }
+        if (found == null || found.range == null) {
+            throw new IllegalArgumentException("Dependency " + groupId + ":" + artifactId + " unter dependencies nicht gefunden");
+        }
+        for (ExclusionEntry e : found.exclusions) {
+            if (eg.equals(e.fields.get("groupId")) && ea.equals(e.fields.get("artifactId"))) {
+                throw new IllegalArgumentException(exclusion + " ist bei " + groupId + ":" + artifactId + " schon ausgeschlossen");
+            }
+        }
+        String nl = xml.contains("\r\n") ? "\r\n" : "\n";
+        String unit = s.indentUnit(xml);
+        String description = "<exclusion> " + exclusion + " bei " + groupId + ":" + artifactId + " eingefügt";
+        Range child = found.ranges.get("artifactId");
+        String childIndent = child != null && xml.substring(lineStart(xml, child.tagStart), child.tagStart).trim().isEmpty()
+                ? lineIndent(xml, child.tagStart) : lineIndent(xml, found.range.tagStart) + unit;
+        if (found.exclusionsRange != null) {
+            int at = found.exclusionsRange.contentEnd;
+            String closingIndent = xml.substring(lineStart(xml, at), at).trim().isEmpty() ? lineIndent(xml, at) : childIndent;
+            String block = exclusionBlock(eg, ea, closingIndent + unit, unit, nl);
+            return insertBefore(xml, at, block, closingIndent, nl, description, "<exclusion>");
+        }
+        int at = found.range.contentEnd;
+        String closingIndent = lineIndent(xml, found.range.tagStart);
+        String block = childIndent + "<exclusions>" + nl
+                + exclusionBlock(eg, ea, childIndent + unit, unit, nl)
+                + childIndent + "</exclusions>" + nl;
+        return insertBefore(xml, at, block, closingIndent, nl, description, "<exclusion>");
+    }
+
+    private static String exclusionBlock(String g, String a, String indent, String unit, String nl) {
+        return indent + "<exclusion>" + nl
+                + indent + unit + "<groupId>" + g + "</groupId>" + nl
+                + indent + unit + "<artifactId>" + a + "</artifactId>" + nl
+                + indent + "</exclusion>" + nl;
+    }
+
     /** Position des Zeilenumbruchs nach {@code offset} (bzw. Textende). */
     private static int lineEnd(String xml, int offset) {
         int i = xml.indexOf('\n', offset);
@@ -189,17 +253,22 @@ public final class PomEditor {
      * eigene Zeile und das Tag danach die Einrückung {@code followIndent}.
      */
     private static Edit insertBefore(String xml, int at, String block, String followIndent, String nl, String description) {
-        int lineStart = lineStart(xml, at);
-        if (xml.substring(lineStart, at).trim().isEmpty()) {
-            return new Edit(lineStart, 0, block, lineOf(xml, lineStart) + firstContentLine(block), description);
-        }
-        String text = nl + block + followIndent;
-        return new Edit(at, 0, text, lineOf(xml, at) + 1 + firstContentLine(block), description);
+        return insertBefore(xml, at, block, followIndent, nl, description, "<dependency>");
     }
 
-    /** Zeile (ab 0) im Block, auf der {@code <dependency>} steht – dahin soll der Sprung gehen. */
-    private static int firstContentLine(String block) {
-        int idx = block.indexOf("<dependency>");
+    /** Wie oben; die Sprungzeile ist die mit {@code marker}. */
+    private static Edit insertBefore(String xml, int at, String block, String followIndent, String nl, String description, String marker) {
+        int lineStart = lineStart(xml, at);
+        if (xml.substring(lineStart, at).trim().isEmpty()) {
+            return new Edit(lineStart, 0, block, lineOf(xml, lineStart) + firstContentLine(block, marker), description);
+        }
+        String text = nl + block + followIndent;
+        return new Edit(at, 0, text, lineOf(xml, at) + 1 + firstContentLine(block, marker), description);
+    }
+
+    /** Zeile (ab 0) im Block, auf der {@code marker} steht – dahin soll der Sprung gehen. */
+    private static int firstContentLine(String block, String marker) {
+        int idx = Math.max(0, block.indexOf(marker));
         int n = 0;
         for (int i = 0; i < idx; i++) {
             if (block.charAt(i) == '\n') {
@@ -251,6 +320,8 @@ public final class PomEditor {
         final Map<String, Range> ranges = new HashMap<String, Range>();
         final List<ExclusionEntry> exclusions = new ArrayList<ExclusionEntry>();
         Range exclusionsRange;
+        /** Das ganze {@code <dependency>}-Element. */
+        Range range;
 
         DepEntry(boolean managed) {
             this.managed = managed;
@@ -331,6 +402,7 @@ public final class PomEditor {
                     r.tagEnd = gt + 1;
                     s.onClose(path, name, r, xml, entry, exclusion);
                     if (entry != null && (DEPENDENCY.equals(path) || MANAGED_DEPENDENCY.equals(path))) {
+                        entry.range = r;
                         s.deps.add(entry);
                         if (entry.managed) {
                             s.managed.add(entry);

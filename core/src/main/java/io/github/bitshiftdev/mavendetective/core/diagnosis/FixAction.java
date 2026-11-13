@@ -22,6 +22,9 @@ import java.util.Map;
  * <tr><td>{@code remove-exclusion}</td><td>{@code file} (POM), {@code artifact} (Dependency, groupId:artifactId),
  *     {@code exclusion} (groupId:artifactId, auch mit *), {@code section} ({@code dependencies} oder
  *     {@code dependencyManagement}) – entfernt eine veraltete Exclusion (Modul A4)</td></tr>
+ * <tr><td>{@code add-exclusion}</td><td>{@code file} (POM), {@code artifact} (direkte Dependency unter {@code dependencies},
+ *     groupId:artifactId), {@code exclusion} (groupId:artifactId) – nimmt ein transitives JAR aus dem Classpath,
+ *     z. B. wegen doppelter Klassen (Modul A3)</td></tr>
  * <tr><td>{@code manual}</td><td>nur Beschreibung im Label</td></tr>
  * </table>
  */
@@ -37,6 +40,7 @@ public final class FixAction {
     public static final String SHOW_DEPENDENCY = "show-dependency";
     public static final String PIN_VERSION = "pin-version";
     public static final String REMOVE_EXCLUSION = "remove-exclusion";
+    public static final String ADD_EXCLUSION = "add-exclusion";
     public static final String MANUAL = "manual";
 
     private final String type;

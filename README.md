@@ -12,11 +12,11 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 [ERROR] +--------------------------------------------------------------
 ```
 
-## Stand: Phase 3 – Modul A (A1, A2, A4 fertig)
+## Stand: Phase 3 – Modul A (A1, A2, A3, A4 fertig)
 
 | Baustein | Status |
 | --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 86 Unit-Tests |
+| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 105 Unit-Tests |
 | Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ + „EAR/WAR/EJB-Packaging“ |
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
@@ -27,7 +27,8 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Tab „Dependencies“, Rechtsklick in der `pom.xml`). **In `runIde` noch nicht durchgeklickt** |
 | A2 Konflikt-Matrix | fertig in Kern, CLI (`matrix`, `--pin`) und IDE (Tab „Konflikt-Matrix“ mit Quick-Fix „im Parent festlegen“). **In `runIde` noch nicht durchgeklickt** |
 | A4 Exclusion-Hygiene | fertig in Kern, CLI (`exclusions`, `--remove`) und IDE (Inspection „Veraltete Exclusion“ in der `pom.xml` mit Quick-Fix). **In `runIde` noch nicht durchgeklickt** |
-| A3, A5, A6 (doppelte Klassen, unused/undeclared, Upgrade-Simulator) | offen |
+| A3 Doppelte Klassen | fertig in Kern, CLI (`duplicates`, `--exclude`) und IDE (Tab „Doppelte Klassen“ mit Quick-Fix „Exclusion einfügen“). **In `runIde` noch nicht durchgeklickt** |
+| A5, A6 (unused/undeclared, Upgrade-Simulator) | offen |
 
 ## Schnellstart
 
@@ -63,6 +64,10 @@ java -jar core/build/libs/maven-detective-core-*.jar matrix --project . --pin co
 java -jar core/build/libs/maven-detective-core-*.jar exclusions --project .
 # … und veraltete/doppelte entfernen
 java -jar core/build/libs/maven-detective-core-*.jar exclusions --project . --remove
+# Welche Klassen liegen in mehreren JARs? (Modul A3; Exit-Code 3 = verschiedene Fassungen zur Laufzeit)
+java -jar core/build/libs/maven-detective-core-*.jar duplicates --project . --tree tree.txt
+# … und die empfohlenen Exclusions einfügen
+java -jar core/build/libs/maven-detective-core-*.jar duplicates --project . --exclude
 ```
 
 ### Extension in Maven-Läufen
@@ -206,15 +211,37 @@ doppelt  /…/web/pom.xml:46
 - **Quick-Fix `remove-exclusion`** entfernt genau das `<exclusion>` (bei der letzten samt `<exclusions>`) und lässt den Rest der Datei stehen; Profile bleiben unberührt. `--remove` entfernt eine nach der anderen und prüft nach jeder Änderung neu.
 - **In der IDE:** Inspection „Veraltete Exclusion“ (Gruppe Maven Detective) graut veraltete Exclusions in der `pom.xml` aus, doppelte werden schwach markiert; Alt+Enter → „Exclusion … entfernen“ als ein Undo-Schritt. Projektweit über *Code | Inspect Code*. Repository-POMs werden zwischen den Läufen gecacht (`PomCache`, prüft Änderungszeit).
 
+## Doppelte Klassen
+
+Modul A3 findet Klassen, die in mehr als einem JAR eines Moduls liegen – auch unter verschiedenen Koordinaten. Welche Fassung geladen wird, entscheidet die Reihenfolge im Classpath; bei abweichendem Inhalt sind das die `NoSuchMethodError`s, die nur in manchen Umgebungen auftreten:
+
+```
+Doppelte Klassen: 3 Funde in 2 Modulen – 2 mit verschiedenem Inhalt, 3 im Laufzeit-Classpath
+
+Modul app (84 Einträge)
+  verschieden  2 Klassen in commons-logging:1.2 und jcl-over-slf4j:1.7.36 – alle verschieden; geladen wird die aus commons-logging:1.2.
+      1. commons-logging:1.2  (über org.web:web:1.0, compile)
+         jcl-over-slf4j:1.7.36  (direkt, compile)
+      Empfehlung: commons-logging:1.2 entfernen: bekanntes Paar – jcl-over-slf4j bzw. spring-jcl ersetzen commons-logging absichtlich …
+        → Exclusion commons-logging:commons-logging bei org.web:web einfügen
+```
+
+- **Classpath:** mit Baum (IDE-Modell oder `--tree`) genau die Knoten, die Maven aufgenommen hat, in Mavens Reihenfolge (Tiefe zuerst); ohne Baum aus den POMs im lokalen Repository nachgebaut (nearest wins, bei Gleichstand die zuerst deklarierte) – dann ist die Reihenfolge geschätzt. Dazu `target/classes` des Moduls selbst und anderer Reactor-Module. JARs, die lokal fehlen, werden genannt statt geraten.
+- **Vergleich:** Klassennamen und CRC32 aus dem Zentralverzeichnis der JARs (nichts wird entpackt; gecacht nach Änderungszeit und Größe). Innere Klassen, `module-info`, `package-info` und `META-INF/` zählen nicht. Funde sind nach JAR-Gruppe zusammengefasst, mit Anzahl gleicher und verschiedener Klassen; *nur Tests*, wenn höchstens ein beteiligtes JAR zur Laufzeit dabei ist.
+- **Empfehlung:** zuerst eine Tabelle bekannter Paare (`commons-logging`/`jcl-over-slf4j`/`spring-jcl`, `log4j`/`log4j-over-slf4j`, `javax.xml.bind`/`jakarta.xml.bind-api` 2.x, `javax.activation`, `javax.annotation`, `javax.validation`, `servlet-api`, `jsr311-api`, `google-collections`/`guava`, `asm:asm`, `hamcrest-core`, `bcprov-jdk15on`, `stax-api`). Sonst: ein JAR, dessen Klassen alle auch in anderen liegen, kann ohne Verlust weg – bei gleichem Umfang das, das heute verliert (die Laufzeit ändert sich nicht). Bringen beide eigene Klassen mit, bleibt es eine Entscheidung; angezeigt wird, welches heute gewinnt.
+- **Quick-Fix `add-exclusion`** fügt die Exclusion bei jeder direkten Dependency ein, über die das JAR kommt (auch über verdrängte Pfade, sonst käme es dort wieder hoch) – in vorhandene `<exclusions>` oder neu vor `</dependency>`, Einrückung wie in der Datei. Steht die Dependency im Parent, kommt die Exclusion dorthin (gilt dann für alle erbenden Module). Ist das JAR direkt deklariert, springt der Fix zur Deklaration.
+- **In der IDE:** Tab „Doppelte Klassen“ – prüft erst auf Klick „Prüfen“ (öffnet alle JARs). Filter für nur-Test und inhaltsgleiche Funde, Suche auch nach Klassennamen; unten Reihenfolge, Pfade, Klassen und „Aus dem Classpath nehmen“ mit freier Wahl des JARs (vorbelegt mit der Empfehlung). Alle Exclusions eines Klicks sind ein Undo-Schritt, danach Maven-Import.
+
 ## Aufbau
 
 ```
 core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, Prüfungen, Fix-Ausführung, CLI,
                    Schnappschüsse + Diff (snapshot/), IDE-gegen-Kommandozeile (env/BuildSetup, SetupComparison),
                    Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser,
-                   ConflictMatrix, ExclusionAudit, PomEditor für textgenaue POM-Änderungen, MavenVersion, PomCache)
+                   ConflictMatrix, ExclusionAudit, ModuleClasspath, JarIndex, DuplicateClasses,
+                   PomEditor für textgenaue POM-Änderungen, MavenVersion, PomCache)
 maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
-intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies, Konflikt-Matrix), Listener auf Maven-Läufe, Quick-Fixes,
+intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies, Konflikt-Matrix, Doppelte Klassen), Listener auf Maven-Läufe, Quick-Fixes,
                    Editor-Aktion „Warum diese Version?“, Inspection „Veraltete Exclusion“;
                    IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht)
 fixtures/          Je Fehlerkategorie ein Projekt, das den Fehler absichtlich auslöst (fixtures.txt),
@@ -230,10 +257,12 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
 - Preflight-Check und Log-Navigator aus dem Konzept.
 - Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.
-- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A5 Unused/undeclared, A3 doppelte Klassen, A6 Upgrade-Simulator.
+- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A5 Unused/undeclared, A6 Upgrade-Simulator.
 - A1 in `runIde` an einem Spring-Boot-Projekt durchklicken (Abnahme laut Konzept: Herkunft jeder Dependency korrekt).
 - A2 in `runIde` an einem Multi-Modul-Projekt durchklicken: Abweichung pinnen, Re-Import, Matrix aktualisieren.
 - A4 in `runIde` an einem Spring-Boot-Projekt durchklicken: eine bekannte veraltete Exclusion (z. B. `commons-logging` bei `spring-core` 6) wird ausgegraut, Quick-Fix entfernt sie.
+- A3 in `runIde` an einem Spring-Boot-Projekt durchklicken: z. B. `commons-logging` neben `spring-jcl` erzwingen, Fund erscheint mit Empfehlung, „Exclusion einfügen“ ändert die POM, nach dem Import ist der Fund weg.
+- A3 erweitern: Versionspaare in die Tabelle (z. B. `plexus-utils` < 4 neben `plexus-xml` 3 → plexus-utils heben statt ausschließen); doppelte Klassen als Beleg auf der Build-Doctor-Karte bei `NoSuchMethodError`/`NoClassDefFoundError` in Tests.
 - Konflikt-Matrix mit Deployment-Sicht für EARs: `lib/` gegen `WEB-INF/lib`, `skinnyWars`, `provided` vom Server; `ejb-client` als eigene Zeile.
 - A2-Pin auch als Karte im Build Doctor anbieten (Regel 10 „Laufzeitkonflikt“: verschiedene Versionen über die Module).
 

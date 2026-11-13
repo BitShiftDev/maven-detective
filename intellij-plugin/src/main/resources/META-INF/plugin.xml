@@ -24,6 +24,9 @@
           the declarations that would still override it.</li>
       <li><b>Exclusion hygiene:</b> an inspection in pom.xml greys out exclusions that no longer exclude anything
           (typically after an upgrade) or that another exclusion already covers; quick fix removes them.</li>
+      <li><b>Duplicate classes:</b> finds classes that sit in more than one JAR of a module, also under different coordinates
+          (commons-logging next to jcl-over-slf4j, javax.xml.bind next to jakarta.xml.bind-api 2.x), shows which copy wins
+          and whether the contents differ, and inserts the exclusion that removes the redundant JAR.</li>
       <li>Complements Maven Helper and the Dependency Analyzer: they show facts, Maven Detective shows cause and fix.</li>
     </ul>
     ]]></description>

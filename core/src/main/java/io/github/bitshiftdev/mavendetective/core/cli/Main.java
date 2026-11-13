@@ -7,7 +7,9 @@ import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 import io.github.bitshiftdev.mavendetective.core.deps.ConflictMatrix;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.DependencyTreeParser;
+import io.github.bitshiftdev.mavendetective.core.deps.DuplicateClasses;
 import io.github.bitshiftdev.mavendetective.core.deps.ExclusionAudit;
+import io.github.bitshiftdev.mavendetective.core.deps.JarIndex;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
@@ -55,6 +57,7 @@ import java.util.TreeMap;
  * java -jar maven-detective-core.jar why groupId:artifactId [--project DIR] [--module DIR] [--tree tree.txt | -] [--markdown]
  * java -jar maven-detective-core.jar matrix [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--pin groupId:artifactId[:version]]
  * java -jar maven-detective-core.jar exclusions [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--remove]
+ * java -jar maven-detective-core.jar duplicates [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--exclude]
  * </pre>
  *
  * {@code evaluate} ist das Werkzeug für Gate 1: alle Logs eines Ordners einordnen und, falls
@@ -94,6 +97,9 @@ public final class Main {
             }
             if ("exclusions".equals(command)) {
                 return exclusions(o, out, err, stdin);
+            }
+            if ("duplicates".equals(command)) {
+                return duplicates(o, out, err, stdin);
             }
             if ("evaluate".equals(command) && o.target != null) {
                 return evaluate(o, out);
@@ -354,6 +360,64 @@ public final class Main {
         return audit.removable().isEmpty() ? 0 : 3;
     }
 
+    /**
+     * Modul A3: Klassen, die in mehreren JARs eines Moduls liegen. Mit {@code --exclude} werden die
+     * empfohlenen Exclusions eingefügt (nur Funde mit eindeutiger Empfehlung, ein Durchgang – danach
+     * neu prüfen, mit {@code --tree} auch den Baum neu erzeugen). Exit-Code 3, wenn im
+     * Laufzeit-Classpath Klassen mit verschiedenem Inhalt doppelt liegen (für CI).
+     */
+    private static int duplicates(Options o, PrintStream out, PrintStream err, InputStream stdin) throws IOException {
+        Path root = projectRoot(o);
+        Map<String, DepNode> trees = trees(o, err, stdin);
+        PomLocator locator = new PomLocator(root, localRepository(o, root));
+        List<PomFile> poms = projectPoms(locator, root);
+        if (poms.isEmpty()) {
+            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            return 1;
+        }
+        DuplicateClasses result = DuplicateClasses.build(locator, poms, trees, new JarIndex(), null);
+        if (o.exclude) {
+            FixExecutor executor = new FixExecutor(Collections.<Path>emptyList());
+            java.util.Set<String> done = new java.util.HashSet<String>();
+            int added = 0;
+            for (DuplicateClasses.Clash c : result.fixable()) {
+                for (FixAction f : c.fixes()) {
+                    if (!done.add(f.param("file") + "|" + f.param("artifact") + "|" + f.param("exclusion"))) {
+                        continue;
+                    }
+                    try {
+                        for (String a : executor.execute(f).actions) {
+                            out.println(a);
+                        }
+                        added++;
+                    } catch (IOException e) {
+                        err.println("Übersprungen: " + e.getMessage());
+                    }
+                }
+            }
+            out.println(added == 0 ? "Nichts einzufügen." : added + (added == 1 ? " Exclusion eingefügt." : " Exclusions eingefügt.")
+                    + (added > 0 && !trees.isEmpty() ? " Baum neu erzeugen und erneut prüfen." : added > 0 ? " Erneut prüfen." : ""));
+            int open = result.clashes().size() - result.fixable().size();
+            if (open > 0) {
+                out.println(open + (open == 1 ? " Fund braucht" : " Funde brauchen") + " eine Entscheidung – Details ohne --exclude.");
+            }
+            return 0;
+        }
+        if (o.markdown) {
+            out.print(result.markdown(o.all));
+        } else {
+            for (String line : result.lines(o.all)) {
+                out.println(line);
+            }
+        }
+        for (DuplicateClasses.Clash c : result.clashes()) {
+            if (c.isMain() && !c.isIdentical()) {
+                return 3;
+            }
+        }
+        return 0;
+    }
+
     private static int pin(ConflictMatrix matrix, String spec, PrintStream out, PrintStream err) throws IOException {
         String[] parts = spec.split(":");
         if (parts.length < 2) {
@@ -485,6 +549,9 @@ public final class Main {
         err.println("      (Modul A2: welche Module nutzen welche Version? --pin legt sie im gemeinsamen Parent fest)");
         err.println("  exclusions [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--remove]");
         err.println("      (Modul A4: Exclusions, die nichts mehr ausschließen; --remove entfernt sie, Exit 3 = es gibt welche)");
+        err.println("  duplicates [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--exclude]");
+        err.println("      (Modul A3: Klassen in mehreren JARs; --exclude fügt die empfohlenen Exclusions ein,");
+        err.println("       Exit 3 = verschiedene Fassungen im Laufzeit-Classpath)");
     }
 
     private static final class Options {
@@ -498,6 +565,7 @@ public final class Main {
         boolean markdown;
         boolean all;
         boolean remove;
+        boolean exclude;
         boolean idOnly;
 
         static Options parse(String[] args) {
@@ -520,6 +588,8 @@ public final class Main {
                     o.all = true;
                 } else if ("--remove".equals(a)) {
                     o.remove = true;
+                } else if ("--exclude".equals(a)) {
+                    o.exclude = true;
                 } else if ("--markdown".equals(a)) {
                     o.markdown = true;
                 } else if ("--id".equals(a)) {

@@ -47,7 +47,7 @@ final class FixRunner {
         return switch (fix.getType()) {
             case FixAction.OPEN_FILE, FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE,
                  FixAction.SET_JVM_OPTION, FixAction.REBUILD, FixAction.SWITCH_JDK,
-                 FixAction.INSERT_PLUGIN_VERSION, FixAction.PIN_VERSION -> true;
+                 FixAction.INSERT_PLUGIN_VERSION, FixAction.PIN_VERSION, FixAction.ADD_EXCLUSION -> true;
             // show-dependency: Modul A
             default -> false;
         };
@@ -66,6 +66,7 @@ final class FixRunner {
                         rebuild(project, result, null);
                     }
                 }
+                case FixAction.ADD_EXCLUSION -> addExclusions(project, List.of(fix));
                 default -> notify(project, fix.getLabel(), NotificationType.INFORMATION);
             }
         } catch (RuntimeException e) {
@@ -311,6 +312,65 @@ final class FixRunner {
         notify(project, edit.description + " (" + vf.getName() + "). Maven-Projekt wird neu geladen.", NotificationType.INFORMATION);
         IdeMaven.reimport(project);
         return true;
+    }
+
+    /**
+     * Modul A3: Exclusions einfügen – alle in einem Undo-Schritt, jede POM über ihr Dokument
+     * (offene Editoren sehen die Änderung sofort). Danach Maven-Import.
+     *
+     * @return wie viele eingefügt wurden
+     */
+    static int addExclusions(Project project, List<FixAction> fixes) {
+        List<Runnable> edits = new ArrayList<>();
+        List<Document> docs = new ArrayList<>();
+        List<String> done = new ArrayList<>();
+        String jump = null;
+        for (FixAction fix : fixes) {
+            String file = fix.param("file");
+            String artifact = fix.param("artifact");
+            String exclusion = fix.param("exclusion");
+            int colon = artifact == null ? -1 : artifact.indexOf(':');
+            if (file == null || colon < 0 || exclusion == null) {
+                continue;
+            }
+            VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Paths.get(file));
+            Document doc = vf == null ? null : FileDocumentManager.getInstance().getDocument(vf);
+            if (doc == null) {
+                notify(project, "Datei nicht gefunden: " + file, NotificationType.WARNING);
+                continue;
+            }
+            String g = artifact.substring(0, colon);
+            String a = artifact.substring(colon + 1);
+            edits.add(() -> {
+                // erst hier zerlegen: mehrere Fixes können dieselbe Datei nacheinander ändern
+                try {
+                    PomEditor.Edit edit = PomEditor.addExclusion(doc.getText(), g, a, exclusion);
+                    doc.replaceString(edit.offset, edit.offset + edit.length, edit.text);
+                    done.add(edit.description + " (" + vf.getName() + ")");
+                } catch (IllegalArgumentException e) {
+                    done.add(vf.getName() + ": " + e.getMessage());
+                }
+            });
+            if (!docs.contains(doc)) {
+                docs.add(doc);
+            }
+            if (jump == null) {
+                jump = file;
+            }
+        }
+        if (edits.isEmpty()) {
+            return 0;
+        }
+        WriteCommandAction.runWriteCommandAction(project, "Exclusion einfügen (Maven Detective)", null, () -> edits.forEach(Runnable::run));
+        for (Document d : docs) {
+            FileDocumentManager.getInstance().saveDocument(d);
+        }
+        if (jump != null) {
+            openLocation(project, jump);
+        }
+        notify(project, String.join("<br>", done).replace("<exclusion>", "&lt;exclusion&gt;") + "<br>Maven-Projekt wird neu geladen.", NotificationType.INFORMATION);
+        IdeMaven.reimport(project);
+        return edits.size();
     }
 
     private static int parseInt(String s) {

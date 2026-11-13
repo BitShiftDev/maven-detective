@@ -1,0 +1,206 @@
+package io.github.bitshiftdev.mavendetective.core.deps;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.zip.CRC32;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+
+/**
+ * Klassen eines JARs oder eines {@code target/classes}-Verzeichnisses samt CRC32 je Klasse – für
+ * Modul A3 (doppelte Klassen). Bei JARs kommt die Prüfsumme aus dem Zentralverzeichnis, die
+ * Klassen werden also nicht entpackt. Ausgelassen werden innere Klassen (sie kommen immer mit der
+ * äußeren), {@code module-info}, {@code package-info} und alles unter {@code META-INF/} (auch die
+ * Multi-Release-Varianten).
+ *
+ * <p>Thread-sicher. JARs werden nach Änderungszeit und Größe gecacht, damit die IDE nicht bei jedem
+ * Aktualisieren hunderte Archive neu öffnet; Verzeichnisse werden jedes Mal frisch gelesen.
+ */
+public final class JarIndex {
+
+    private static final int MAX_ENTRIES = 5000;
+    private static final int MAX_DIR_CLASSES = 100000;
+
+    /** Klassen eines Classpath-Eintrags, sortiert nach Name. */
+    public static final class Contents {
+        private final String[] names;
+        private final long[] crcs;
+
+        private Contents(String[] names, long[] crcs) {
+            this.names = names;
+            this.crcs = crcs;
+        }
+
+        /** Anzahl der (äußeren) Klassen. */
+        public int size() { return names.length; }
+
+        /** Klassenname mit Punkten, z. B. {@code org.apache.commons.logging.Log}. */
+        public String name(int i) { return names[i]; }
+
+        public long crc(int i) { return crcs[i]; }
+
+        /** CRC32 der Klasse oder {@code -1}, wenn sie fehlt. */
+        public long crc(String className) {
+            int i = Arrays.binarySearch(names, className);
+            return i < 0 ? -1 : crcs[i];
+        }
+
+        public boolean contains(String className) {
+            return Arrays.binarySearch(names, className) >= 0;
+        }
+
+        static Contents of(List<String> names, List<Long> crcs) {
+            Integer[] order = new Integer[names.size()];
+            for (int i = 0; i < order.length; i++) {
+                order[i] = i;
+            }
+            final List<String> n = names;
+            Arrays.sort(order, new java.util.Comparator<Integer>() {
+                @Override
+                public int compare(Integer a, Integer b) {
+                    return n.get(a).compareTo(n.get(b));
+                }
+            });
+            List<String> outNames = new ArrayList<String>();
+            List<Long> outCrcs = new ArrayList<Long>();
+            for (Integer i : order) {
+                String name = names.get(i);
+                if (!outNames.isEmpty() && outNames.get(outNames.size() - 1).equals(name)) {
+                    continue; // doppelter Zip-Eintrag: zählt einmal
+                }
+                outNames.add(name);
+                outCrcs.add(crcs.get(i));
+            }
+            String[] a = outNames.toArray(new String[0]);
+            long[] c = new long[outCrcs.size()];
+            for (int i = 0; i < c.length; i++) {
+                c[i] = outCrcs.get(i);
+            }
+            return new Contents(a, c);
+        }
+    }
+
+    private static final class Entry {
+        final long modified;
+        final long size;
+        final Contents contents;
+
+        Entry(long modified, long size, Contents contents) {
+            this.modified = modified;
+            this.size = size;
+            this.contents = contents;
+        }
+    }
+
+    private final Map<Path, Entry> entries = new ConcurrentHashMap<Path, Entry>();
+
+    /**
+     * Klassen eines JARs oder Verzeichnisses.
+     *
+     * @throws IOException wenn die Datei fehlt oder kein lesbares ZIP ist
+     */
+    public Contents read(Path fileOrDirectory) throws IOException {
+        Path p = fileOrDirectory.toAbsolutePath().normalize();
+        if (Files.isDirectory(p)) {
+            return readDirectory(p);
+        }
+        long modified = Files.getLastModifiedTime(p).toMillis();
+        long size = Files.size(p);
+        Entry e = entries.get(p);
+        if (e != null && e.modified == modified && e.size == size) {
+            return e.contents;
+        }
+        Contents c = readJar(p);
+        if (entries.size() >= MAX_ENTRIES) {
+            entries.clear();
+        }
+        entries.put(p, new Entry(modified, size, c));
+        return c;
+    }
+
+    private static Contents readJar(Path jar) throws IOException {
+        List<String> names = new ArrayList<String>();
+        List<Long> crcs = new ArrayList<Long>();
+        ZipFile zip = new ZipFile(jar.toFile());
+        try {
+            Enumeration<? extends ZipEntry> en = zip.entries();
+            while (en.hasMoreElements()) {
+                ZipEntry z = en.nextElement();
+                String className = className(z.getName());
+                if (className != null && !z.isDirectory()) {
+                    names.add(className);
+                    crcs.add(z.getCrc());
+                }
+            }
+        } finally {
+            zip.close();
+        }
+        return Contents.of(names, crcs);
+    }
+
+    private static Contents readDirectory(final Path dir) throws IOException {
+        final List<String> names = new ArrayList<String>();
+        final List<Long> crcs = new ArrayList<Long>();
+        Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                String rel = dir.relativize(file).toString().replace('\\', '/');
+                String className = className(rel);
+                if (className != null) {
+                    names.add(className);
+                    crcs.add(crc(file));
+                }
+                return names.size() >= MAX_DIR_CLASSES ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
+            }
+        });
+        return Contents.of(names, crcs);
+    }
+
+    private static long crc(Path file) throws IOException {
+        CRC32 crc = new CRC32();
+        byte[] buf = new byte[8192];
+        InputStream in = Files.newInputStream(file);
+        try {
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                crc.update(buf, 0, n);
+            }
+        } finally {
+            in.close();
+        }
+        return crc.getValue();
+    }
+
+    /** {@code org/x/Y.class} → {@code org.x.Y}; {@code null} für alles, was nicht zählt. */
+    static String className(String entry) {
+        if (!entry.endsWith(".class") || entry.startsWith("META-INF/")) {
+            return null;
+        }
+        String base = entry.substring(entry.lastIndexOf('/') + 1);
+        if (base.indexOf('$') >= 0 || "module-info.class".equals(base) || "package-info.class".equals(base)) {
+            return null;
+        }
+        return entry.substring(0, entry.length() - ".class".length()).replace('/', '.');
+    }
+
+    /** Für Tests und die Ausgabe: alle Klassennamen. */
+    static List<String> names(Contents c) {
+        List<String> out = new ArrayList<String>(c.size());
+        for (int i = 0; i < c.size(); i++) {
+            out.add(c.name(i));
+        }
+        return Collections.unmodifiableList(out);
+    }
+}

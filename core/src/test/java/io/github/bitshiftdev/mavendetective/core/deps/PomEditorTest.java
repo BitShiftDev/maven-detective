@@ -209,4 +209,86 @@ class PomEditorTest {
                         + "</dependency></dependencies></dependencyManagement></project>",
                 PomEditor.removeExclusion(xml, "g", "a", "x:*", true).apply(xml));
     }
+
+    @Test
+    void addsExclusionWithNewExclusionsBlock() {
+        String xml = """
+                <project>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.web</groupId>
+                            <artifactId>web</artifactId>
+                            <version>1.0</version>
+                        </dependency>
+                    </dependencies>
+                    <profiles><profile><dependencies>
+                        <dependency><groupId>org.web</groupId><artifactId>web</artifactId></dependency>
+                    </dependencies></profile></profiles>
+                </project>
+                """;
+        PomEditor.Edit edit = PomEditor.addExclusion(xml, "org.web", "web", "commons-logging:commons-logging");
+        assertEquals("""
+                <project>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.web</groupId>
+                            <artifactId>web</artifactId>
+                            <version>1.0</version>
+                            <exclusions>
+                                <exclusion>
+                                    <groupId>commons-logging</groupId>
+                                    <artifactId>commons-logging</artifactId>
+                                </exclusion>
+                            </exclusions>
+                        </dependency>
+                    </dependencies>
+                    <profiles><profile><dependencies>
+                        <dependency><groupId>org.web</groupId><artifactId>web</artifactId></dependency>
+                    </dependencies></profile></profiles>
+                </project>
+                """, edit.apply(xml));
+        assertEquals(8, edit.line);
+    }
+
+    @Test
+    void addsExclusionToExistingBlockAndRefusesDuplicates() {
+        String xml = """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>org.web</groupId>
+                      <artifactId>web</artifactId>
+                      <exclusions>
+                        <exclusion>
+                          <groupId>org.a</groupId>
+                          <artifactId>a</artifactId>
+                        </exclusion>
+                      </exclusions>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """;
+        String out = PomEditor.addExclusion(xml, "org.web", "web", "org.b:b").apply(xml);
+        assertTrue(out.contains("""
+                          <artifactId>a</artifactId>
+                        </exclusion>
+                        <exclusion>
+                          <groupId>org.b</groupId>
+                          <artifactId>b</artifactId>
+                        </exclusion>
+                      </exclusions>
+                """), out);
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.addExclusion(xml, "org.web", "web", "org.a:a"));
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.addExclusion(xml, "org.none", "none", "org.a:a"));
+    }
+
+    @Test
+    void addsExclusionToOneLineDependency() {
+        String xml = "<project>\n  <dependencies>\n    <dependency><groupId>g</groupId><artifactId>a</artifactId></dependency>\n"
+                + "  </dependencies>\n</project>\n";
+        String out = PomEditor.addExclusion(xml, "g", "a", "x:y").apply(xml);
+        assertEquals("<project>\n  <dependencies>\n    <dependency><groupId>g</groupId><artifactId>a</artifactId>\n"
+                + "      <exclusions>\n        <exclusion>\n          <groupId>x</groupId>\n          <artifactId>y</artifactId>\n"
+                + "        </exclusion>\n      </exclusions>\n    </dependency>\n  </dependencies>\n</project>\n", out);
+    }
 }
