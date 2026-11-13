@@ -12,17 +12,18 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 [ERROR] +--------------------------------------------------------------
 ```
 
-## Stand: Phase 4 – Preflight und Log-Navigator (Modul A fertig)
+## Stand: Phase 5 – Build Doctor fragt Modul A
 
 | Baustein | Status |
 | --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 184 Unit-Tests |
+| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 197 Unit-Tests |
 | Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ + „EAR/WAR/EJB-Packaging“ |
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
 | „Was hat sich geändert?“ (Schnappschuss-Diff) | fertig in Kern, Extension, CLI (`changes`) und IDE |
 | IDE gegen Kommandozeile | fertig: Vergleich als Tabelle im Tool-Window, Hinweis auf der Karte |
 | Preflight-Check | fertig in Kern, CLI (`preflight`, `--network`) und IDE (Aktion „Preflight“ im Build Doctor und in der Toolbar des Maven-Tool-Windows, Kachel in der Übersicht): Ampel aus settings.xml, JDK, Maven, Projekt, lokalem Repository und Remote-Repositories; Netz nur auf Klick. **In `runIde` noch nicht durchgeklickt** |
+| Klassen-Herkunft (Regeln 9 und 10) | fertig im Kern, wirkt damit in CLI, Extension und IDE: Bei `NoSuchMethodError`, `NoClassDefFoundError` & Co. und bei `package … does not exist` sucht Build Doctor die Klasse im Classpath des gescheiterten Moduls und liest die Klassendateien. Die Karte sagt, welches JAR die JVM lädt, ob es die Methode hat, welche Version verdrängt wurde oder welche Exclusion die Klasse entfernt; Quick-Fixes über Modul A (Exclusion, Version heben über den Upgrade-Simulator, Scope, Dependency deklarieren). Unit-Tests mit echt kompilierten Klassen, **kein Fixture mit echtem `mvn`** (bräuchte Netz für Surefire) |
 | Log-Navigator | fertig in Kern, CLI (`outline`, `--strip`) und IDE (Ansicht „Log-Navigator“ im Build Doctor: Gliederung nach Modulen und Plugin-Schritten, Sprung zum ersten Fehler und zum gescheiterten Modul, Downloads eingeklappt; Downloads auch in Konsole und Build-Fenster eingeklappt). **In `runIde` noch nicht durchgeklickt** |
 | IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Tool-Window mit drei Tabs (Übersicht mit Kacheln, Build Doctor, Dependencies mit Navigation), Badge an der Leiste bei rotem Build, Ergebnisse veralten sichtbar nach jedem Maven-Import; Diagnose-Karte aus Komponenten mit Verlauf der letzten 20 Läufe, Link „Ursache anzeigen“ hinter `BUILD FAILURE` in der Konsole und Fix-und-Prüf-Schleife (nach dem Fix neu bauen, „Behoben ✓“ oder neue Diagnose); Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option; jede Änderung an einer `pom.xml` zeigt vorher einen Diff (abschaltbar); Oberfläche und Diagnose-Texte auf Englisch (Standard) oder Deutsch (Einstellung *Sprache*); Einstellungen unter *Settings | Tools | Maven Detective* (Sprache, Sprechblase bei rotem Build, Neubau nach Fix, Diff-Vorschau, Schnappschüsse an/aus und Ordner, Starter-Funde), „Got it“-Hinweise beim ersten roten Build und beim ersten Öffnen einer `pom.xml`, leere Seiten erklären in zwei Sätzen, was sie tun. **In `runIde` noch nicht durchgeklickt** |
 | Gate 1 (30 eigene Logs) | **offen** – braucht deine Logs, siehe unten |
@@ -170,6 +171,30 @@ Ein Maven-Log mit Hunderten Download-Zeilen versteckt den eigentlichen Fehler. *
 
 In Konsole und Build-Fenster klappt das Plugin Download-Zeilen (`Downloading from …`, `Downloaded from …`, `Progress (1): …`) zu einer Zeile zusammen; abschaltbar unter *Settings | Tools | Maven Detective*. In der Kommandozeile liefert `outline` dieselbe Gliederung, `outline --strip` das Log ohne Downloads.
 
+## Woher kommt die Klasse?
+
+Bei Laufzeit- und Compiler-Fehlern rund um Klassen (Regeln 9 und 10) fragt Build Doctor Modul A. Er baut den Classpath des gescheiterten Moduls aus den lokalen POMs nach (`DependencyResolver`, wie `dependency:tree`) und sucht die Klasse aus der Meldung in jedem JAR. Bei `NoSuchMethodError` und `NoSuchFieldError` liest er zusätzlich die Klassendatei und prüft, ob die Methode mit genau dieser Signatur darin steht:
+
+```
+Ursache (sicher): org.x.Util kommt aus util:1.0, dort fehlt Util.newMethod(). org.n:mid:1.0 verlangt
+Version 2.0, die sie hat, verliert aber gegen 1.0 (nearest wins).
+  Geladen: util:1.0 (compile) – ohne Util.newMethod() – über org.o:old-user:1.0
+  Verdrängt: util:2.0, verlangt von org.n:mid:1.0, 1.0 gewinnt – hat Util.newMethod()
+  Aufrufer org.n.NewUser stammt aus new-user:1.0
+Behebung: org.x:util:2.0 in app unter dependencyManagement festlegen
+```
+
+| Befund | Quick-Fix |
+| --- | --- |
+| Klasse mehrfach im Classpath, die geladene Fassung hat die Methode nicht (oder die Fassungen unterscheiden sich) | `add-exclusion` an der direkten Dependency, die das falsche JAR mitbringt (Empfehlung wie bei „Doppelte Klassen“) |
+| Nur eine Fassung im Classpath, eine verdrängte Version (nearest wins oder `dependencyManagement`) hat die Methode bzw. die Klasse | Version heben an der Stelle, die der Upgrade-Simulator findet (direkte Version, Management, Property, BOM, sonst Pin in der obersten Projekt-POM); nur wenn ein einziger Schritt genügt und die Version im Modul ankommt |
+| Klasse liegt in einem Artifact, das eine `<exclusion>` des Projekts entfernt | `remove-exclusion` |
+| Compiler: Paket liegt in einer Dependency mit Scope `test` oder `runtime` | `set-scope` auf `compile` (geerbt: zur Deklaration springen; transitiv: im Modul deklarieren) |
+| Compiler: Paket fehlt im Classpath, liegt aber im lokalen Repository | `add-dependency` mit der höchsten lokalen Version (ohne Version, wenn verwaltet) |
+| `NoClassDefFoundError: Could not initialize class` | kein Classpath-Problem: Hinweis auf den ersten `ExceptionInInitializerError` |
+
+Das Modul kommt aus der Quelldatei des Compiler-Fehlers, aus `on project …` oder ist das einzige Modul mit Code. Gelesen werden nur lokale POMs und JARs; was fehlt, steht als Hinweis auf der Karte. Die Suche im lokalen Repository bleibt unter dem Verzeichnis, das zum Paketnamen passt (z. B. `org/apache/commons` für `org.apache.commons.lang3`), und gibt bei mehr als 600 JARs auf.
+
 ## Java EE: EAR, WAR, EJB
 
 Build Doctor hängt nicht am packaging; Reactors mit `ear`-, `war`- und `ejb`-Modulen werden wie jedes andere Projekt diagnostiziert. Dazu kommen Regeln für die typischen Fehler der Packaging-Plugins (Kategorie 14):
@@ -218,7 +243,7 @@ Der Katalog liegt in [`core/src/main/resources/…/catalog/build-doctor-v1.yaml`
 
 `category`, `cause` und `label` sind deutsch, `*_en` liefert den englischen Text (fehlt er, gilt der Grundtext); im Standardkatalog prüft `TextsTest`, dass zu jedem Text die englische Fassung da ist. Dazu gehört immer ein Testlog unter `core/src/test/resources/logs/<regel-id>__<beschreibung>.log`. `LogCatalogTest` prüft automatisch, dass jede Datei als die Regel im Dateinamen erkannt wird und dass jede Regel mindestens einen Testlog hat. Eigene Kataloge lassen sich mit `--catalog extra.yaml` dazuladen und mit `validate-catalog extra.yaml` prüfen.
 
-Vorhandene Prüfungen: `offline-mode`, `network-failure`, `last-updated-files`, `reactor-sibling`, `requested-repository`, `server-id`, `http-repository`, `corrupt-jar`, `pom-location`, `parent-relative-path`, `child-module`, `plugin-prefix`, `plugin-version`, `plugin-declaration`, `ear-module`, `ee-namespace`, `jdk-version`, `source-location`, `enforcer-rule`, `memory-settings`. Prüfungen lesen nur Dateien und Einstellungen und gehen nie ins Netz.
+Vorhandene Prüfungen: `offline-mode`, `network-failure`, `last-updated-files`, `reactor-sibling`, `requested-repository`, `server-id`, `http-repository`, `corrupt-jar`, `pom-location`, `parent-relative-path`, `child-module`, `plugin-prefix`, `plugin-version`, `plugin-declaration`, `ear-module`, `ee-namespace`, `jdk-version`, `source-location`, `enforcer-rule`, `memory-settings`, `class-origin`, `class-location`. Prüfungen lesen nur Dateien und Einstellungen und gehen nie ins Netz.
 
 ## Konflikt-Matrix
 
@@ -349,7 +374,8 @@ core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, 
                    Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser,
                    ConflictMatrix, ExclusionAudit, ModuleClasspath, JarIndex, DuplicateClasses,
                    ClassUsages, SourceScanner, DependencyUsage, DependencyResolver, UpgradeSimulator, PomFetcher,
-                   PomEditor für textgenaue POM-Änderungen, MavenVersion, PomCache)
+                   PomEditor für textgenaue POM-Änderungen, MavenVersion, PomCache, ClassOrigin + ClassFile für
+                   die Klassen-Herkunft auf der Karte – Prüfungen check/ClasspathChecks)
 maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
 intellij-plugin/   Tool-Window „Maven Detective“ mit drei Tabs: Übersicht (Kacheln, „Alles prüfen“), Build Doctor,
                    Dependencies (Navigation: Warum diese Version? als Zeitleiste, Konflikte, Doppelte Klassen,
@@ -391,11 +417,12 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - A2 in `runIde` an einem Multi-Modul-Projekt durchklicken: Abweichung pinnen, Re-Import, Matrix aktualisieren.
 - A4 in `runIde` an einem Spring-Boot-Projekt durchklicken: eine bekannte veraltete Exclusion (z. B. `commons-logging` bei `spring-core` 6) wird ausgegraut, Quick-Fix entfernt sie.
 - A3 in `runIde` an einem Spring-Boot-Projekt durchklicken: z. B. `commons-logging` neben `spring-jcl` erzwingen, Fund erscheint mit Empfehlung, „Exclusion einfügen“ ändert die POM, nach dem Import ist der Fund weg.
-- A3 erweitern: Versionspaare in die Tabelle (z. B. `plexus-utils` < 4 neben `plexus-xml` 3 → plexus-utils heben statt ausschließen); doppelte Klassen als Beleg auf der Build-Doctor-Karte bei `NoSuchMethodError`/`NoClassDefFoundError` in Tests.
+- A3 erweitern: Versionspaare in die Tabelle (z. B. `plexus-utils` < 4 neben `plexus-xml` 3 → plexus-utils heben statt ausschließen).
 - A5 in `runIde` an einem Spring-Boot-Projekt durchklicken: Import aus `spring-web` ohne Deklaration (mit „Auch über Starter“), ungenutzte Dependency entfernen, compile → test; prüfen, wie lange „Prüfen“ bei großen Modulen braucht.
 - A5 erweitern: Kotlin über die Kotlin-PSI statt Text-Scanner; die Liste bekannter Laufzeit-Bibliotheken an echten Projekten schärfen; „ungenutzt“ live in der `pom.xml` (braucht einen modulweiten Cache der Nennungen).
 - Konflikt-Matrix mit Deployment-Sicht für EARs: `lib/` gegen `WEB-INF/lib`, `skinnyWars`, `provided` vom Server; `ejb-client` als eigene Zeile.
-- A2-Pin auch als Karte im Build Doctor anbieten (Regel 10 „Laufzeitkonflikt“: verschiedene Versionen über die Module).
+- Klassen-Herkunft (Phase 5) schärfen: in der IDE den echten Baum des Maven-Imports statt des nachgebauten übergeben (`Environment` um Bäume erweitern); A2-Pin über alle Module, wenn das Artifact auch in anderen Modulen abweicht (heute nur Hebel für das gescheiterte Modul); „seit dem letzten grünen Build kam util 2.0 → 1.0“ aus dem Schnappschuss-Diff als Beleg; Fixture mit echtem `mvn` für Regel 10 (Surefire aus einem vorbereiteten Repository); an echten `NoSuchMethodError`-Logs messen (Gate 1).
+- Klassen-Herkunft in `runIde` abnehmen: Karte nach einem roten Testlauf mit `NoSuchMethodError` (Fix „unter dependencyManagement festlegen“ mit Diff-Vorschau, danach neu bauen → „Behoben ✓“) und nach `package … does not exist` mit Scope `test`.
 
 ## Lizenz
 

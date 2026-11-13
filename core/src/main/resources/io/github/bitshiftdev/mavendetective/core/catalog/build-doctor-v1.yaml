@@ -318,6 +318,7 @@ rules:
       - 'AbstractMethodError'
       - 'IncompatibleClassChangeError'
       - 'ClassNotFoundException: (?<class>[\w.$]+)'
+    checks: [class-origin]
     cause: 'Zur Laufzeit passt {class,member|eine Klasse} nicht zu der Version, gegen die kompiliert wurde – typischerweise ein Versionskonflikt im Classpath.'
     cause_en: 'At runtime {class,member|a class} does not match the version it was compiled against – typically a version conflict on the classpath.'
     fix:
@@ -349,7 +350,7 @@ rules:
         cause_en: 'The compiler cannot find {symbol|a symbol}. If it comes from a library, the dependency is missing or has the wrong scope; otherwise it is a bug in the code.'
     extract:
       - 'symbol:\s+(?:class|variable|method) (?<symbol>[\w$]+)'
-    checks: [ee-namespace, source-location]
+    checks: [ee-namespace, source-location, class-location]
 
   # ---------------------------------------------------------------- 1
   - id: artifact-not-resolvable

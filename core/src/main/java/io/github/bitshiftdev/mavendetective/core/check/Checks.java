@@ -25,6 +25,9 @@ public final class Checks {
         for (Check check : RuntimeChecks.all()) {
             c.register(check);
         }
+        for (Check check : ClasspathChecks.all()) {
+            c.register(check);
+        }
         return c;
     }
 
