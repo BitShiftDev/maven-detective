@@ -96,4 +96,42 @@ public final class BuildDoctorActions {
             return project == null ? null : BuildDoctorService.getInstance(project).getLast();
         }
     }
+
+    /**
+     * Preflight vor dem Build: settings.xml, JDK, Maven, Parents/BOMs, Repositories. Steht auch in
+     * der Toolbar des Maven-Tool-Windows.
+     */
+    public static final class Preflight extends ProjectAction {
+        @Override
+        public void actionPerformed(@NotNull AnActionEvent e) {
+            withPanel(e, BuildDoctorPanel::showPreflight);
+        }
+    }
+
+    /** Log des gezeigten Laufs im Log-Navigator, beim ersten Fehler. */
+    public static final class ShowLog extends ProjectAction {
+        @Override
+        public void update(@NotNull AnActionEvent e) {
+            MavenDetectiveBundle.localize(this, e.getPresentation());
+            if (e.getData(DetectivePanel.KEY) instanceof BuildDoctorPanel panel) {
+                e.getPresentation().setEnabled(panel.hasLog());
+            } else {
+                Project project = e.getProject();
+                BuildDoctorService.Result last = project == null ? null : BuildDoctorService.getInstance(project).getLast();
+                e.getPresentation().setEnabled(last != null && last.rawLog() != null && !last.rawLog().isBlank());
+            }
+        }
+
+        @Override
+        public void actionPerformed(@NotNull AnActionEvent e) {
+            if (e.getData(DetectivePanel.KEY) instanceof BuildDoctorPanel panel) {
+                panel.showLog(true);
+            } else if (e.getProject() != null) {
+                Navigator.buildDoctor(e.getProject(), panel -> {
+                    panel.showLatest();
+                    panel.showLog(true);
+                });
+            }
+        }
+    }
 }

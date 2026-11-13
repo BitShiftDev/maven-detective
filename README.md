@@ -12,16 +12,18 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 [ERROR] +--------------------------------------------------------------
 ```
 
-## Stand: Phase 3 – Modul A (A1 bis A6 fertig)
+## Stand: Phase 4 – Preflight und Log-Navigator (Modul A fertig)
 
 | Baustein | Status |
 | --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 149 Unit-Tests |
+| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 184 Unit-Tests |
 | Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ + „EAR/WAR/EJB-Packaging“ |
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
 | „Was hat sich geändert?“ (Schnappschuss-Diff) | fertig in Kern, Extension, CLI (`changes`) und IDE |
 | IDE gegen Kommandozeile | fertig: Vergleich als Tabelle im Tool-Window, Hinweis auf der Karte |
+| Preflight-Check | fertig in Kern, CLI (`preflight`, `--network`) und IDE (Aktion „Preflight“ im Build Doctor und in der Toolbar des Maven-Tool-Windows, Kachel in der Übersicht): Ampel aus settings.xml, JDK, Maven, Projekt, lokalem Repository und Remote-Repositories; Netz nur auf Klick. **In `runIde` noch nicht durchgeklickt** |
+| Log-Navigator | fertig in Kern, CLI (`outline`, `--strip`) und IDE (Ansicht „Log-Navigator“ im Build Doctor: Gliederung nach Modulen und Plugin-Schritten, Sprung zum ersten Fehler und zum gescheiterten Modul, Downloads eingeklappt; Downloads auch in Konsole und Build-Fenster eingeklappt). **In `runIde` noch nicht durchgeklickt** |
 | IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Tool-Window mit drei Tabs (Übersicht mit Kacheln, Build Doctor, Dependencies mit Navigation), Badge an der Leiste bei rotem Build, Ergebnisse veralten sichtbar nach jedem Maven-Import; Diagnose-Karte aus Komponenten mit Verlauf der letzten 20 Läufe, Link „Ursache anzeigen“ hinter `BUILD FAILURE` in der Konsole und Fix-und-Prüf-Schleife (nach dem Fix neu bauen, „Behoben ✓“ oder neue Diagnose); Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option; jede Änderung an einer `pom.xml` zeigt vorher einen Diff (abschaltbar); Oberfläche und Diagnose-Texte auf Englisch (Standard) oder Deutsch (Einstellung *Sprache*); Einstellungen unter *Settings | Tools | Maven Detective* (Sprache, Sprechblase bei rotem Build, Neubau nach Fix, Diff-Vorschau, Schnappschüsse an/aus und Ordner, Starter-Funde), „Got it“-Hinweise beim ersten roten Build und beim ersten Öffnen einer `pom.xml`, leere Seiten erklären in zwei Sätzen, was sie tun. **In `runIde` noch nicht durchgeklickt** |
 | Gate 1 (30 eigene Logs) | **offen** – braucht deine Logs, siehe unten |
 | A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Popup am Cursor per Alt+Enter oder Rechtsklick in der `pom.xml`, Rechtsklick im Maven-Tool-Window und unter External Libraries, Tab „Dependencies“ → „Warum diese Version?“). **In `runIde` noch nicht durchgeklickt** |
@@ -79,6 +81,12 @@ java -jar core/build/libs/maven-detective-core-*.jar upgrade com.fasterxml.jacks
 # … genauso für BOM, Parent oder Property; fehlende POMs mit Maven nachladen, danach übernehmen
 java -jar core/build/libs/maven-detective-core-*.jar upgrade org.springframework.boot:spring-boot-starter-parent:3.5.0 --fetch
 java -jar core/build/libs/maven-detective-core-*.jar upgrade jackson-bom.version=2.18.2 --apply
+# Vor dem Build: kann er so überhaupt laufen? (Exit-Code 3 = rot); --network fragt die Repositories an
+java -jar core/build/libs/maven-detective-core-*.jar preflight --project .
+java -jar core/build/libs/maven-detective-core-*.jar preflight --project . --network --markdown
+# Log-Navigator: Module, gescheitertes Modul, erster echter Fehler mit Umfeld; --strip = Log ohne Downloads
+java -jar core/build/libs/maven-detective-core-*.jar outline build.log --context 5
+mvn verify 2>&1 | java -jar core/build/libs/maven-detective-core-*.jar outline - --strip
 ```
 
 ### Extension in Maven-Läufen
@@ -140,6 +148,27 @@ Nennt die Diagnose eines roten Laufs aus der IDE eine Datei (Beleg oder Quick-Fi
 Die Terminal-Seite wird aus den Umgebungsvariablen der IDE abgeleitet. Eine Shell mit anderem `JAVA_HOME` kann abweichen; das steht auch so im Fenster.
 
 **Warum die IDE die Extension nicht selbst anhängt:** IntelliJ 2025.x startet Maven über das `mvn`-Skript (Registry `maven.use.scripts`) und setzt dabei `-Dmaven.ext.class.path` für den eigenen Event-Listener. Ein zweiter Wert würde ihn überschreiben und den Build-View der IDE leeren. Die IDE nimmt deshalb den Text-Log und ihr Maven-Modell; die Extension bleibt für Terminal und CI.
+
+## Preflight vor dem Build
+
+Bevor ein Build zehn Minuten Downloads zieht, um dann an einer kaputten `settings.xml` zu scheitern: **Preflight** (Build Doctor, Toolbar des Maven-Tool-Windows, Kachel in der Übersicht oder `preflight` in der Kommandozeile) prüft mit dem Setup, mit dem gebaut wird – in der IDE Maven, Runner-JDK und settings.xml der IDE, in der Kommandozeile das, was `./mvnw` bzw. `mvn` nähme. Ergebnis ist eine Ampel und je Thema eine Zeile mit Belegen und Quick-Fixes:
+
+| Thema | Was geprüft wird |
+| --- | --- |
+| settings.xml | Benutzer- und globale `settings.xml` gültiges XML (mit Zeile), eingestellte Datei vorhanden, Offline-Modus (`<offline>` oder `-o` in `.mvn/maven.config`), Mirrors mit `http://` (seit Maven 3.8.1 gesperrt; Fix: auf https umstellen) |
+| JDK | JDK gefunden, JDK statt JRE (`javac`), verlangtes Release (`maven.compiler.release/target/source`, auch über `${java.version}` aus dem Parent, und `<release>`) gegen das JDK des Builds, Enforcer `requireJavaVersion`, Toolchains ohne `~/.m2/toolchains.xml` |
+| Maven | Maven gefunden, Wrapper ohne `mvnw`, Maven 4 mit Java < 17, Maven < 3.6.3, Enforcer `requireMavenVersion` |
+| Projekt | `pom.xml` vorhanden und lesbar (Zeile des XML-Fehlers), Module aus `<modules>` vorhanden, `relativePath` auf den falschen Parent, Dependencies ohne Version und ohne dependencyManagement, Parents/BOMs, die lokal fehlen (offline: Fehler) |
+| Lokales Repository | beschreibbar, gespeicherte Fehlversuche (`*.lastUpdated` ohne Artifact) zu Parents, BOMs und direkten Dependencies – Fix: löschen |
+| Remote-Repositories | Maven Central plus `<repositories>`/`<pluginRepositories>` der Projekt-POMs, nach den Mirrors umgelenkt: von Maven gesperrt (http, `maven-default-http-blocker`). Mit Netz („Repositories prüfen“ bzw. `--network`): erreichbar, DNS, Zeitüberschreitung, Zertifikat (Firmen-Proxy), 401/403 mit oder ohne `<server>` in settings.xml, Proxy aus settings.xml samt `nonProxyHosts`; fehlende Parents/BOMs, die in keinem Repository liegen |
+
+Netzprüfungen schicken nur `HEAD`-Anfragen und nie Zugangsdaten; ob hinterlegte Zugangsdaten stimmen, bleibt ungeprüft. Zertifikate prüft der Preflight mit dem Truststore der JVM, in der er läuft (IDE bzw. CLI) – das JDK des Builds kann einen anderen haben.
+
+## Log-Navigator
+
+Ein Maven-Log mit Hunderten Download-Zeilen versteckt den eigentlichen Fehler. **Log öffnen** auf der Diagnose-Karte (bzw. die Aktion „Log-Navigator“) zeigt das Log des Laufs in einem Editor: links die Gliederung (erster echter Fehler, gescheitertes Modul mit dem Plugin-Schritt, in dem es scheiterte, alle Module mit Ergebnis und Zeit aus dem Reactor Summary und ihren Plugin-Schritten), rechts das Log mit eingeklappten Downloads und markierten Fehlerzeilen (auch im Scrollbalken), dazu „Vorheriger/Nächster Fehler“. „Erster Fehler“ überspringt Maven-Textbausteine wie `COMPILATION ERROR :` oder `Tests run:` und landet auf der Fundstelle.
+
+In Konsole und Build-Fenster klappt das Plugin Download-Zeilen (`Downloading from …`, `Downloaded from …`, `Progress (1): …`) zu einer Zeile zusammen; abschaltbar unter *Settings | Tools | Maven Detective*. In der Kommandozeile liefert `outline` dieselbe Gliederung, `outline --strip` das Log ohne Downloads.
 
 ## Java EE: EAR, WAR, EJB
 
@@ -315,6 +344,8 @@ Unvollständig – lokal fehlen 2 POMs: org.codehaus.plexus:plexus-utils:3.0.20,
 ```
 core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, Prüfungen, Fix-Ausführung, CLI,
                    Schnappschüsse + Diff (snapshot/), IDE-gegen-Kommandozeile (env/BuildSetup, SetupComparison),
+                   Preflight (preflight/: Preflight, PreflightChecks, RemoteRepositories, RepositoryProbe),
+                   Log-Navigator (io/LogOutline),
                    Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser,
                    ConflictMatrix, ExclusionAudit, ModuleClasspath, JarIndex, DuplicateClasses,
                    ClassUsages, SourceScanner, DependencyUsage, DependencyResolver, UpgradeSimulator, PomFetcher,
@@ -324,7 +355,8 @@ intellij-plugin/   Tool-Window „Maven Detective“ mit drei Tabs: Übersicht (
                    Dependencies (Navigation: Warum diese Version? als Zeitleiste, Konflikte, Doppelte Klassen,
                    Exclusions, Nutzung, Upgrade-Simulator mit Ergebnis als Editor-Tab; AnalysisResults hält den
                    Stand, Navigator springt), Fix-Vorschau als Diff (PomChanges, PomChangePreviewDialog), Listener auf Maven-Läufe,
-                   Diagnose-Karte (DiagnosisCard) mit Verlauf, Fix-und-Prüf-Schleife und SetupComparisonView,
+                   Diagnose-Karte (DiagnosisCard) mit Verlauf, Fix-und-Prüf-Schleife, SetupComparisonView,
+                   PreflightView und LogNavigatorView, Download-Faltung in der Konsole (DownloadConsoleFolding),
                    Konsolen-Link hinter BUILD FAILURE (BuildFailureConsoleFilter), „Falsch erkannt?“-Dialog,
                    Quick-Fixes, Editor-Aktionen und Intentions „Warum diese Version?“ (Popup am Cursor) und
                    „Upgrade simulieren…“ (auch im Maven-Tool-Window und unter External Libraries),
@@ -350,7 +382,8 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - U5 in `runIde` abnehmen: Zeitleiste und Breadcrumb in „Warum diese Version?“, fixierte Spalte und Versionsfarben der Matrix in Light/Dark/High Contrast, Pin über das Kontextmenü (auch per Shift+F10), Checkbox-Bäume in „Doppelte Klassen“, „Exclusions“ und „Nutzung“ (Leertaste), Diff-Vorschau vor jedem POM-Fix, Upgrade-Ergebnis als Editor-Tab (Diff-Viewer, „Übernehmen“ nach Änderung an der POM verweigert). Jede Seite einmal nur mit der Tastatur bedienen.
 - U6 in `runIde` abnehmen: Einstellungsseite (Schalter wirken ohne Neustart; Schnappschüsse aus → Karte ohne „Seit dem letzten grünen Build“; eigener Ordner landet unter `<ordner>/snapshots/`; Neubau aus → Meldung mit „Neu bauen“), „Got it“ beim ersten roten Build und beim ersten Öffnen einer `pom.xml` („Hinweise erneut zeigen“ auf der Einstellungsseite), New-UI-Icon (16 × 16 und 20 × 20 über `MavenDetectiveIconMappings.json`, auch im Kompaktmodus), Screenreader (NVDA/Orca) über Karte, Badges und Kacheln, High-Contrast-Theme. Sprache umschalten (Automatisch/English/Deutsch, nach Neustart überall, auch Karte und Befunde aus dem Kern; Toolbar-Tooltips und Kontextmenüs folgen der Einstellung, Inspection-Namen der IDE); englische Texte von einer Person mit Englisch als Muttersprache gegenlesen lassen. Offen aus U6: Marketplace-Screenshots „nachher“, Test mit einem Nutzer ohne Projektkenntnis.
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
-- Preflight-Check und Log-Navigator aus dem Konzept.
+- Preflight und Log-Navigator in `runIde` abnehmen: Preflight aus der Toolbar des Maven-Tool-Windows (Ampel, Kachel in der Übersicht), „Repositories prüfen“ hinter einem Firmen-Proxy (Zertifikat, 401 mit/ohne `<server>`), Quick-Fixes (settings.xml öffnen, https umstellen, `.lastUpdated` löschen – ohne Neubau danach); „Log öffnen“ auf der Karte eines Multi-Modul-Laufs (Gliederung, Sprünge, Fehlermarken im Scrollbalken, Downloads ein-/ausklappen), Download-Faltung in Konsole **und** Build-Fenster prüfen (greift `console.folding` im Build-Fenster von Maven-Läufen?).
+- Preflight erweitern: Repositories aus aktiven Profilen der settings.xml, Zugangsdaten auf Wunsch prüfen (verschlüsselte Passwörter über `settings-security.xml`), Wrapper-Distribution erreichbar; Ergebnis als Beleg auf der Karte, wenn ein Lauf an etwas scheitert, das der Preflight schon gemeldet hätte.
 - Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.
 - A6 in `runIde` an einem Spring-Boot-Projekt durchklicken: Parent 3.4 → 3.5 simulieren, fehlende POMs laden, Unterschied prüfen, übernehmen, nach dem Import erneut simulieren (kein Unterschied mehr).
 - A6 schärfen: Simulation gegen `mvn dependency:tree -Dverbose` an echten Projekten vergleichen (Abweichungen zeigt der Simulator schon an); Upgrade-Kandidaten aus den Repository-Metadaten vorschlagen (nur auf Klick, Netz); Simulator als Beleg auf der Build-Doctor-Karte („nach dem Upgrade von X kam Y 2.0 → 1.4“).

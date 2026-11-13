@@ -28,6 +28,7 @@ public final class BuildSetup {
     private String label;
     private String mavenVersion;
     private String mavenSource;
+    private String mavenHome;
     private String javaVersion;
     private String javaHome;
     private String userSettings;
@@ -52,6 +53,10 @@ public final class BuildSetup {
     /** z. B. „Wrapper (mvnw)“, „gebündelt“, „/opt/maven“. */
     public String getMavenSource() { return mavenSource; }
     public BuildSetup setMavenSource(String s) { this.mavenSource = s; return this; }
+
+    /** Installationsverzeichnis von Maven (für {@code conf/settings.xml}); {@code null} = unbekannt. */
+    public String getMavenHome() { return mavenHome; }
+    public BuildSetup setMavenHome(String h) { this.mavenHome = h; return this; }
 
     public String getJavaVersion() { return javaVersion; }
     public BuildSetup setJavaVersion(String v) { this.javaVersion = v; return this; }
@@ -104,6 +109,8 @@ public final class BuildSetup {
             Matcher m = WRAPPER_VERSION.matcher(p.getProperty("distributionUrl", ""));
             s.mavenVersion = m.find() ? m.group(1) : null;
             s.mavenSource = hasWrapperScript ? "Wrapper (./mvnw)" : Texts.t("setup.wrapper.no.script");
+            Path dist = wrapperDistribution(s.mavenVersion, userHome, env);
+            s.mavenHome = dist == null ? null : dist.toString();
         } else {
             Path home = mavenHomeFromEnv(env);
             if (home == null) {
@@ -112,6 +119,7 @@ public final class BuildSetup {
             if (home != null) {
                 s.mavenVersion = mavenVersionOf(home);
                 s.mavenSource = home.toString();
+                s.mavenHome = home.toString();
             } else {
                 s.notes.add(Texts.t("setup.note.no.maven"));
             }
@@ -163,6 +171,40 @@ public final class BuildSetup {
             }
         }
         return s;
+    }
+
+    /**
+     * Vom Wrapper schon entpacktes Maven ({@code ~/.m2/wrapper/dists/apache-maven-X-bin/<hash>/apache-maven-X});
+     * {@code null}, solange der Wrapper es noch nicht geladen hat.
+     */
+    static Path wrapperDistribution(String version, Path userHome, Map<String, String> env) {
+        if (version == null) {
+            return null;
+        }
+        String mavenUserHome = env.get("MAVEN_USER_HOME");
+        Path base = mavenUserHome != null && !mavenUserHome.trim().isEmpty() ? Paths.get(mavenUserHome.trim())
+                : userHome == null ? null : userHome.resolve(".m2");
+        if (base == null) {
+            return null;
+        }
+        Path dists = base.resolve("wrapper").resolve("dists").resolve("apache-maven-" + version + "-bin");
+        if (!Files.isDirectory(dists)) {
+            return null;
+        }
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(dists)) {
+            for (Path hash : ds) {
+                Path home = hash.resolve("apache-maven-" + version);
+                if (Files.isDirectory(home.resolve("conf"))) {
+                    return home;
+                }
+                if (Files.isDirectory(hash.resolve("conf"))) {
+                    return hash;
+                }
+            }
+        } catch (IOException ignored) {
+            // nicht lesbar
+        }
+        return null;
     }
 
     /** Versionsnummer aus {@code <javaHome>/release}, z. B. "21.0.4". */

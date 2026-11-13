@@ -75,6 +75,8 @@
                                  key="settings.title"/>
         <!-- U3: „[INFO] BUILD FAILURE“ in Konsole und Build-Fenster wird zum Link auf die Diagnose -->
         <consoleFilterProvider implementation="io.github.bitshiftdev.mavendetective.idea.BuildFailureConsoleFilter$Provider"/>
+        <!-- Log-Navigator: Download-Zeilen von Maven in Konsole und Build-Fenster einklappen (Einstellung) -->
+        <console.folding implementation="io.github.bitshiftdev.mavendetective.idea.DownloadConsoleFolding"/>
         <!-- Modul A4: Beschreibung in inspectionDescriptions/MavenDetectiveStaleExclusion.html -->
         <localInspection language="XML"
                          shortName="MavenDetectiveStaleExclusion"
@@ -158,6 +160,16 @@
         <action id="MavenDetective.CompareSetup"
                 class="io.github.bitshiftdev.mavendetective.idea.BuildDoctorActions$CompareSetup"
                 icon="AllIcons.Actions.Diff"/>
+        <!-- Preflight vor dem Build; auch in der Toolbar des Maven-Tool-Windows -->
+        <action id="MavenDetective.Preflight"
+                class="io.github.bitshiftdev.mavendetective.idea.BuildDoctorActions$Preflight"
+                icon="AllIcons.Actions.Checked">
+            <add-to-group group-id="Maven.NavigatorActionsToolbar" anchor="last"/>
+        </action>
+        <!-- Log-Navigator: Log des gezeigten Laufs mit Gliederung, beim ersten Fehler -->
+        <action id="MavenDetective.ShowLog"
+                class="io.github.bitshiftdev.mavendetective.idea.BuildDoctorActions$ShowLog"
+                icon="AllIcons.Debugger.Console"/>
         <action id="MavenDetective.ReportMisdiagnosis"
                 class="io.github.bitshiftdev.mavendetective.idea.BuildDoctorActions$ReportMisdiagnosis"
                 icon="AllIcons.Ide.Dislike"/>

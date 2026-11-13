@@ -9,6 +9,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.WrapLayout;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.env.SetupComparison;
+import io.github.bitshiftdev.mavendetective.core.preflight.Preflight;
 import io.github.bitshiftdev.mavendetective.core.snapshot.BuildSnapshot;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotDiff;
 import io.github.bitshiftdev.mavendetective.idea.AnalysisResults.Analysis;
@@ -45,6 +46,7 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
     private final Tile build;
     private final Tile changes;
     private final Tile setup;
+    private final Tile preflight;
     private final Tile conflicts;
     private final Tile duplicates;
     private final Tile usage;
@@ -68,13 +70,14 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         build = new Tile(MavenDetectiveBundle.message("tile.build"), () -> Navigator.buildDoctor(project, null));
         changes = new Tile(MavenDetectiveBundle.message("tile.changes"), () -> Navigator.buildDoctor(project, null));
         setup = new Tile(MavenDetectiveBundle.message("tile.setup"), () -> Navigator.buildDoctor(project, BuildDoctorPanel::showSetupView));
+        preflight = new Tile(MavenDetectiveBundle.message("tile.preflight"), () -> Navigator.buildDoctor(project, BuildDoctorPanel::showPreflight));
         conflicts = new Tile(MavenDetectiveBundle.message("nav.conflicts"), () -> Navigator.open(project, ConflictMatrixPanel.class, null));
         duplicates = new Tile(MavenDetectiveBundle.message("nav.duplicates"), () -> Navigator.open(project, DuplicateClassesPanel.class, null));
         usage = new Tile(MavenDetectiveBundle.message("nav.usage"), () -> Navigator.open(project, DependencyUsagePanel.class, null));
         exclusions = new Tile(MavenDetectiveBundle.message("tile.exclusions"), this::openExclusions);
 
         JPanel grid = new JPanel(new WrapLayout(FlowLayout.LEFT, JBUI.scale(12), JBUI.scale(12)));
-        for (Tile t : List.of(build, changes, setup, conflicts, duplicates, usage, exclusions)) {
+        for (Tile t : List.of(build, changes, setup, preflight, conflicts, duplicates, usage, exclusions)) {
             grid.add(t);
         }
         JBScrollPane scroll = new JBScrollPane(grid, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
@@ -87,6 +90,7 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         showBuild();
         showChanges();
         showSetup();
+        showPreflight(service.getLastPreflight());
         for (Analysis a : List.of(Analysis.CONFLICTS, Analysis.DUPLICATES, Analysis.USAGE, Analysis.EXCLUSIONS)) {
             changed(a, results.get(a));
         }
@@ -231,6 +235,23 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
             changes.update(AllIcons.RunConfigurations.TestNotRan, MavenDetectiveBundle.message("tile.changes.none"),
                     MavenDetectiveBundle.message("tile.changes.none.detail"), null, null);
         }
+    }
+
+    @Override
+    public void preflightChanged(@NotNull Preflight.Report report) {
+        showPreflight(report);
+    }
+
+    /** Ampel des letzten Preflights; ohne Preflight der Hinweis, was er prüft. */
+    private void showPreflight(@Nullable Preflight.Report report) {
+        Runnable open = () -> Navigator.buildDoctor(project, BuildDoctorPanel::showPreflight);
+        if (report == null) {
+            preflight.update(AllIcons.RunConfigurations.TestNotRan, MavenDetectiveBundle.message("state.not.checked"),
+                    MavenDetectiveBundle.message("tile.preflight.about"), MavenDetectiveBundle.message("tile.check"), open);
+            return;
+        }
+        preflight.update(PreflightView.icon(report.getLight()), PreflightView.lightText(report.getLight()), report.headline(),
+                MavenDetectiveBundle.message("preflight.again"), open);
     }
 
     private void showSetup() {

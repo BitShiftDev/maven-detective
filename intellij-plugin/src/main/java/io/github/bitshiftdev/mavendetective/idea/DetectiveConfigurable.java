@@ -47,6 +47,7 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
     private JBCheckBox snapshots;
     private TextFieldWithBrowseButton snapshotDir;
     private JBCheckBox usageViaStarters;
+    private JBCheckBox foldDownloads;
     private JBLabel firstStepsDone;
     private JPanel panel;
 
@@ -68,6 +69,7 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
         notifyRedBuild = new JBCheckBox(MavenDetectiveBundle.message("settings.notify"));
         rebuildAfterFix = new JBCheckBox(MavenDetectiveBundle.message("settings.rebuild"));
         previewPomFixes = new JBCheckBox(MavenDetectiveBundle.message("settings.preview"));
+        foldDownloads = new JBCheckBox(MavenDetectiveBundle.message("settings.fold.downloads"));
         snapshots = new JBCheckBox(MavenDetectiveBundle.message("settings.snapshots"));
         snapshotDir = new TextFieldWithBrowseButton();
         snapshotDir.addBrowseFolderListener(null, FileChooserDescriptorFactory.createSingleFolderDescriptor()
@@ -99,6 +101,8 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
                 .addComponent(comment(MavenDetectiveBundle.message("settings.notify.comment")))
                 .addComponent(indent(rebuildAfterFix))
                 .addComponent(comment(MavenDetectiveBundle.message("settings.rebuild.comment")))
+                .addComponent(indent(foldDownloads))
+                .addComponent(comment(MavenDetectiveBundle.message("settings.fold.downloads.comment")))
                 .addComponent(new TitledSeparator(MavenDetectiveBundle.message("settings.group.snapshots")))
                 .addComponent(indent(snapshots))
                 .addLabeledComponent(indent(new JBLabel(MavenDetectiveBundle.message("settings.snapshots.dir"))), snapshotDir)
@@ -130,7 +134,8 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
                 || previewPomFixes.isSelected() != s.isPreviewPomFixes()
                 || snapshots.isSelected() != s.isSnapshots()
                 || !Objects.equals(snapshotDir.getText().trim(), s.getSnapshotDir())
-                || usageViaStarters.isSelected() != s.isUsageViaStarters();
+                || usageViaStarters.isSelected() != s.isUsageViaStarters()
+                || foldDownloads.isSelected() != s.isFoldDownloads();
     }
 
     @Override
@@ -150,6 +155,7 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
         s.setSnapshots(snapshots.isSelected());
         s.setSnapshotDir(dir);
         s.setUsageViaStarters(usageViaStarters.isSelected());
+        s.setFoldDownloads(foldDownloads.isSelected());
     }
 
     @Override
@@ -163,6 +169,7 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
         snapshotDir.setText(s.getSnapshotDir());
         snapshotDir.setEnabled(s.isSnapshots());
         usageViaStarters.setSelected(s.isUsageViaStarters());
+        foldDownloads.setSelected(s.isFoldDownloads());
         firstStepsDone.setText("");
     }
 

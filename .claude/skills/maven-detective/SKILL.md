@@ -85,7 +85,19 @@ java -jar core/build/libs/maven-detective-core-*.jar exclusions [--project DIR] 
 java -jar core/build/libs/maven-detective-core-*.jar duplicates [--project DIR] [--tree tree.txt|-] [--all] [--markdown] [--exclude]  # Exit 3 = verschiedene Fassungen zur Laufzeit
 java -jar core/build/libs/maven-detective-core-*.jar analyze [--project DIR] [--tree tree.txt|-] [--all] [--markdown] [--declare] [--remove]  # A5, Exit 3 = sichere Befunde
 java -jar core/build/libs/maven-detective-core-*.jar upgrade g:a:version|property=wert [--project DIR] [--tree …] [--all] [--markdown] [--manage] [--fetch] [--apply]  # A6, Exit 3 = Downgrade/neuer Konflikt, 1 = keine Stelle
+java -jar core/build/libs/maven-detective-core-*.jar preflight [--project DIR] [--network] [--markdown]  # Exit 3 = Ampel rot
+java -jar core/build/libs/maven-detective-core-*.jar outline build.log|- [--strip] [--context N]
 ```
+
+## Preflight (`core/preflight/`) und Log-Navigator (`core/io/LogOutline`)
+
+- `Preflight.run(projectDir, BuildSetup, Options)` → `Report` (`Item` je Befund: `Topic` SETTINGS/JDK/MAVEN/PROJECT/LOCAL_REPOSITORY/REPOSITORY, `Status` OK/INFO/WARNING/ERROR, `Evidence`, `FixAction`s wie auf der Karte; `getLight()` GREEN/YELLOW/RED, `getLocalRepository()`). Jede Prüfung liefert ≥1 Zeile. `PreflightContext` liest settings.xml (Benutzer aus `setup.getUserSettings()` sonst `~/.m2`, global aus `BuildSetup.getMavenHome()/conf`; SAX-Zeile aus der Cause), POMs über `ProjectPoms` + `PomLocator` (`missingPoms()` baut erst alle Modelle).
+- `PreflightChecks`: Release = max über Module aus `maven.compiler.release/target/source` (interpoliert, Fundstelle = Property mit wörtlichem Wert) und `<release>`; mit `maven-toolchains-plugin` nur INFO + toolchains.xml-Prüfung; Enforcer-Bereiche über `VersionRange` (wie Enforcer, Unlesbares = erfüllt). Dependency ohne Version nur melden, wenn Kette und BOM-Importe vollständig sind. `maven-default-http-blocker` nie als eigener http-Mirror melden.
+- **Netz nur mit `Options.network(true)`** (`RemoteRepositories` + `RepositoryProbe.HTTP`: HEAD, Proxy aus settings.xml inkl. `nonProxyHosts`, **nie Zugangsdaten**). Tests injizieren `Options.probe(...)`. Fehlende Parent/BOM nur dann „in keinem Repository“, wenn alle Repositories geantwortet haben (401/Fehler → kein Urteil).
+- `BuildSetup.getMavenHome()`: Kommandozeile = MAVEN_HOME/PATH bzw. entpackte Wrapper-Distribution (`~/.m2/wrapper/dists/…`); IDE setzt `IdeMaven.mavenHome`. `MavenSettings.getProxies()/activeProxy(protocol)`.
+- `LogOutline.of(lines)`: Zeilen 0-basiert; Module (`---< g:a >---` + `Building …`), Plugin-Schritte (`--- mojo (exec) @ x ---`), Reactor Summary (Ergebnis/Zeit), `BUILD SUCCESS/FAILURE`, `getFirstError()` überspringt `NOT_A_CAUSE` (`COMPILATION ERROR :`, `Tests run:` …), Download-Läufe ≥ `MIN_FOLD` als `Fold`. `isDownloadNoise(line)` ist auch die Grundlage der Konsolen-Faltung (schneller Ausstieg, verträgt ANSI/`\r`/`\n`).
+- Plugin: `BuildDoctorPanel` hat Ansichten card/setup/preflight/log (`showView`). `PreflightView` (Host: back/check/runFix) – Fixes laufen über `FixRunner.run` mit synthetischem `Result` (Session-Repo = Preflight-Repo, Param `args` entfernt → kein Neubau). `BuildDoctorService.preflight(network, cancel)` (IDE-Setup, nicht auf EDT) + `preflightDone` → `Listener.preflightChanged` (Kachel in `OverviewPanel`). `LogNavigatorView` (Disposable, Editor per `EditorFactory.createViewer`, `clean()` entfernt ANSI/`\r` – Dokumente kennen nur `\n`). `DownloadConsoleFolding` (`console.folding`, Einstellung `foldDownloads`). Aktionen `MavenDetective.Preflight` (auch `Maven.NavigatorActionsToolbar`) und `MavenDetective.ShowLog`.
+- Bundle: in `choice` kein `{n,number,#}` verschachteln (zweiten String-Parameter übergeben); Schlüssel nie zusammensetzen (`MavenDetectiveBundleTest` sucht Literale) – `switch` auf Enum.
 
 Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFile=…`, `-DmavenDetective.report=false`.
 
@@ -130,7 +142,7 @@ Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFi
 
 ## Offene Punkte (Stand README)
 
-Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1–A6 fertig, UI-Plan U1–U5 umgesetzt, U6 ohne Screenshots (Oberfläche und Kern Englisch/Deutsch umschaltbar, Englisch nicht muttersprachlich gegengelesen; alles nicht in `runIde` geklickt); Plugin Verifier braucht Netz (in der Sandbox nicht lauffähig). Vor größeren Features README „Nächste Schritte“ prüfen.
+Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1, Preflight, Log-Navigator) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1–A6 fertig, UI-Plan U1–U5 umgesetzt, U6 ohne Screenshots (Oberfläche und Kern Englisch/Deutsch umschaltbar, Englisch nicht muttersprachlich gegengelesen; alles nicht in `runIde` geklickt); Plugin Verifier braucht Netz (in der Sandbox nicht lauffähig). Vor größeren Features README „Nächste Schritte“ prüfen.
 
 ## Git
 

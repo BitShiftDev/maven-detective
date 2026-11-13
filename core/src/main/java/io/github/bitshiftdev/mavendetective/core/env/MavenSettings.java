@@ -59,21 +59,60 @@ public final class MavenSettings {
         }
     }
 
+    /** Ein {@code <proxy>}-Eintrag; Zugangsdaten werden nicht gelesen. */
+    public static final class Proxy {
+        public final String id;
+        public final boolean active;
+        public final String protocol;
+        public final String host;
+        public final int port;
+        public final String nonProxyHosts;
+
+        Proxy(String id, boolean active, String protocol, String host, int port, String nonProxyHosts) {
+            this.id = id;
+            this.active = active;
+            this.protocol = protocol;
+            this.host = host;
+            this.port = port;
+            this.nonProxyHosts = nonProxyHosts;
+        }
+
+        /** Mavens {@code nonProxyHosts}: mit {@code |} getrennt, {@code *} als Platzhalter. */
+        public boolean bypasses(String targetHost) {
+            if (nonProxyHosts == null || targetHost == null) {
+                return false;
+            }
+            for (String raw : nonProxyHosts.split("[|,]")) {
+                String p = raw.trim().toLowerCase(java.util.Locale.ROOT);
+                if (p.isEmpty()) {
+                    continue;
+                }
+                String regex = java.util.regex.Pattern.quote(p).replace("*", "\\E.*\\Q");
+                if (targetHost.toLowerCase(java.util.Locale.ROOT).matches(regex)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     private final Path file;
     private final List<String> lines;
     private final List<String> serverIds;
     private final List<Mirror> mirrors;
     private final List<String> pluginGroups;
+    private final List<Proxy> proxies;
     private final Boolean offline;
     private final String localRepository;
 
     private MavenSettings(Path file, List<String> lines, List<String> serverIds, List<Mirror> mirrors,
-                          List<String> pluginGroups, Boolean offline, String localRepository) {
+                          List<String> pluginGroups, List<Proxy> proxies, Boolean offline, String localRepository) {
         this.file = file;
         this.lines = lines;
         this.serverIds = serverIds;
         this.mirrors = mirrors;
         this.pluginGroups = pluginGroups;
+        this.proxies = proxies;
         this.offline = offline;
         this.localRepository = localRepository;
     }
@@ -111,9 +150,23 @@ public final class MavenSettings {
         for (Element g : children(child(root, "pluginGroups"), "pluginGroup")) {
             groups.add(text(g));
         }
+        List<Proxy> proxies = new ArrayList<Proxy>();
+        for (Element p : children(child(root, "proxies"), "proxy")) {
+            String active = text(child(p, "active"));
+            String protocol = text(child(p, "protocol"));
+            String port = text(child(p, "port"));
+            int portNumber = 8080;
+            try {
+                portNumber = port == null ? 8080 : Integer.parseInt(port);
+            } catch (NumberFormatException ignored) {
+                // Mavens Standard
+            }
+            proxies.add(new Proxy(text(child(p, "id")), active == null || Boolean.parseBoolean(active),
+                    protocol == null ? "http" : protocol, text(child(p, "host")), portNumber, text(child(p, "nonProxyHosts"))));
+        }
         String offlineText = text(child(root, "offline"));
         Boolean offline = offlineText == null ? null : Boolean.valueOf(offlineText.trim());
-        return new MavenSettings(file, lines, servers, mirrors, groups, offline, text(child(root, "localRepository")));
+        return new MavenSettings(file, lines, servers, mirrors, groups, proxies, offline, text(child(root, "localRepository")));
     }
 
     public Path getFile() { return file; }
@@ -123,6 +176,18 @@ public final class MavenSettings {
     public List<Mirror> getMirrors() { return mirrors; }
 
     public List<String> getPluginGroups() { return pluginGroups; }
+
+    public List<Proxy> getProxies() { return proxies; }
+
+    /** Erster aktiver Proxy für das Protokoll (wie Maven), oder {@code null}. */
+    public Proxy activeProxy(String protocol) {
+        for (Proxy p : proxies) {
+            if (p.active && p.host != null && protocol.equalsIgnoreCase(p.protocol)) {
+                return p;
+            }
+        }
+        return null;
+    }
 
     public Boolean getOffline() { return offline; }
 

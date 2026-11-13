@@ -181,8 +181,8 @@ Was Maven Detective von Maven Helper und dem Dependency Analyzer sichtbar abhebt
 - **Zeitleiste „Was hat sich geändert?“:** Alle Schnappschüsse als Zeitstrahl (grüne und rote Punkte); zwei Punkte wählen → Unterschied. Macht die vorhandenen Schnappschüsse zum eigenen Werkzeug statt nur zum Beleg auf der Karte.
 - **Search Everywhere „Dependencies“:** Tab in *Search Everywhere*, der Artifacts des Projekts findet; Enter öffnet „Warum diese Version?“, Alt+Enter den Upgrade-Simulator.
 - **Simulator als Beleg auf der Karte:** Bei `NoSuchMethodError` zeigt die Karte „seit dem Upgrade von X kam Y 2.0 → 1.4“ mit Mini-Diff (steht als Idee in der README).
-- **Preflight vor dem Build** als Toolbar-Aktion im Maven-Tool-Window mit Ampel (Konzept, bisher nicht gebaut).
-- **Log-Navigator** (Konzept): Konsole mit eingeklapptem Download-Rauschen (`FoldingBuilder`/Console-Folding) und Sprung zum ersten echten Fehler.
+- **Preflight vor dem Build** als Toolbar-Aktion im Maven-Tool-Window mit Ampel – **umgesetzt 13.11.2026** (`PreflightView` im Build Doctor, Kachel in der Übersicht, Kern `preflight/`, CLI `preflight`), in `runIde` noch nicht geklickt.
+- **Log-Navigator**: Konsole mit eingeklapptem Download-Rauschen (`console.folding`) und Sprung zum ersten echten Fehler – **umgesetzt 13.11.2026** (`LogNavigatorView` mit Gliederung und Editor, `DownloadConsoleFolding`, Kern `io/LogOutline`, CLI `outline`), in `runIde` noch nicht geklickt.
 
 ## Technische Leitplanken
 

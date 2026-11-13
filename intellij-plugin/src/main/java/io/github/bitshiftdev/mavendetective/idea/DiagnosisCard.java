@@ -71,6 +71,9 @@ final class DiagnosisCard {
         void copyReport();
 
         void reportMisdiagnosis(@NotNull BuildDoctorService.Result result);
+
+        /** Log des Laufs im Log-Navigator, beim ersten Fehler. */
+        void showLog(@NotNull BuildDoctorService.Result result);
     }
 
     static final String SECTION_EVIDENCE = "evidence";
@@ -433,6 +436,14 @@ final class DiagnosisCard {
             row.add(dot);
         }
         row.add(new ActionLink(MavenDetectiveBundle.message("card.misdiagnosis"), (ActionListener) e -> host.reportMisdiagnosis(result)));
+        if (result.rawLog() != null && !result.rawLog().isBlank()) {
+            JBLabel dot = new JBLabel("·");
+            dot.setForeground(NamedColorUtil.getInactiveTextColor());
+            row.add(dot);
+            ActionLink log = new ActionLink(MavenDetectiveBundle.message("card.show.log"), (ActionListener) e -> host.showLog(result));
+            log.setToolTipText(MavenDetectiveBundle.message("card.show.log.tooltip"));
+            row.add(log);
+        }
         return row;
     }
 

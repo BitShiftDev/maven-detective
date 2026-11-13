@@ -30,6 +30,8 @@ public final class DetectiveSettings implements PersistentStateComponent<Detecti
         public boolean previewPomFixes = true;
         /** Nach einem Quick-Fix denselben Lauf neu starten (Fix-und-Prüf-Schleife). */
         public boolean rebuildAfterFix = true;
+        /** Log-Navigator: Download-Zeilen von Maven in Konsole und Build-Fenster einklappen. */
+        public boolean foldDownloads = true;
         /** Schnappschüsse für „Was hat sich geändert?“ ablegen und vergleichen. */
         public boolean snapshots = true;
         /** Basisordner wie {@code -DmavenDetective.home} (Schnappschüsse in {@code snapshots/}); leer = wie die Maven-Extension. */
@@ -94,6 +96,14 @@ public final class DetectiveSettings implements PersistentStateComponent<Detecti
 
     public void setSnapshotDir(@Nullable String v) {
         state.snapshotDir = v == null ? "" : v.trim();
+    }
+
+    public boolean isFoldDownloads() {
+        return state.foldDownloads;
+    }
+
+    public void setFoldDownloads(boolean v) {
+        state.foldDownloads = v;
     }
 
     public boolean isUsageViaStarters() {

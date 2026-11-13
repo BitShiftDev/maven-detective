@@ -22,7 +22,10 @@ import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
 import io.github.bitshiftdev.mavendetective.core.fix.FixExecutor;
+import io.github.bitshiftdev.mavendetective.core.env.BuildSetup;
 import io.github.bitshiftdev.mavendetective.core.io.EventLog;
+import io.github.bitshiftdev.mavendetective.core.io.LogOutline;
+import io.github.bitshiftdev.mavendetective.core.preflight.Preflight;
 import io.github.bitshiftdev.mavendetective.core.io.MavenLogParser;
 import io.github.bitshiftdev.mavendetective.core.model.BuildFailure;
 import io.github.bitshiftdev.mavendetective.core.report.Reports;
@@ -65,6 +68,8 @@ import java.util.TreeMap;
  * java -jar maven-detective-core.jar analyze [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--declare] [--remove]
  * java -jar maven-detective-core.jar upgrade groupId:artifactId:version | property=wert [--project DIR] [--tree tree.txt | -]
  *     [--all] [--markdown] [--manage] [--fetch] [--apply] [--local-repo DIR]
+ * java -jar maven-detective-core.jar preflight [--project DIR] [--network] [--markdown]
+ * java -jar maven-detective-core.jar outline build.log | - [--strip] [--context N]
  * </pre>
  *
  * {@code evaluate} ist das Werkzeug für Gate 1: alle Logs eines Ordners einordnen und, falls
@@ -119,6 +124,12 @@ public final class Main {
             if ("upgrade".equals(command) && o.target != null) {
                 return upgrade(o, out, err, stdin);
             }
+            if ("preflight".equals(command)) {
+                return preflight(o, out);
+            }
+            if ("outline".equals(command) && o.target != null) {
+                return outline(o, out, stdin);
+            }
             if ("evaluate".equals(command) && o.target != null) {
                 return evaluate(o, out);
             }
@@ -168,6 +179,47 @@ public final class Main {
             }
         }
         return result.get(0).isUnknown() ? 4 : 0;
+    }
+
+    /**
+     * Preflight vor dem Build: settings.xml, JDK, Maven, Projekt, lokales Repository, Repositories –
+     * mit dem Setup, das {@code ./mvnw} bzw. {@code mvn} hier nähme. Netz nur mit {@code --network}.
+     * Exit-Code 3, wenn der Build so nicht laufen kann (Ampel rot).
+     */
+    private static int preflight(Options o, PrintStream out) {
+        Path root = Paths.get(o.project != null ? o.project : o.target != null ? o.target : "").toAbsolutePath().normalize();
+        Path home = Paths.get(System.getProperty("user.home"));
+        BuildSetup setup = BuildSetup.detectCommandLine(root, home, System.getenv());
+        Preflight.Report report = Preflight.run(root, setup, new Preflight.Options().network(o.network));
+        if (o.markdown) {
+            out.print(report.markdown());
+        } else {
+            for (String line : report.lines()) {
+                out.println(line);
+            }
+        }
+        return report.getLight() == Preflight.Light.RED ? 3 : 0;
+    }
+
+    /** Log-Navigator: Module, gescheitertes Modul, erster echter Fehler; {@code --strip} gibt das Log ohne Downloads aus. */
+    private static int outline(Options o, PrintStream out, InputStream stdin) throws IOException {
+        List<String> lines = new ArrayList<String>();
+        Reader r = "-".equals(o.target) ? new InputStreamReader(stdin, StandardCharsets.UTF_8)
+                : Files.newBufferedReader(Paths.get(o.target), StandardCharsets.UTF_8);
+        try {
+            java.io.BufferedReader br = new java.io.BufferedReader(r);
+            String line;
+            while ((line = br.readLine()) != null) {
+                lines.add(line);
+            }
+        } finally {
+            r.close();
+        }
+        LogOutline outline = LogOutline.of(lines);
+        for (String line : o.strip ? outline.withoutDownloads() : outline.summary(o.context)) {
+            out.println(line);
+        }
+        return 0;
     }
 
     /** „Was hat sich geändert?“ – letzter grüner Build gegen letzten Lauf, ohne Log. */
@@ -725,6 +777,9 @@ public final class Main {
         boolean fetch;
         boolean apply;
         boolean idOnly;
+        boolean network;
+        boolean strip;
+        int context = 3;
 
         static Options parse(String[] args) {
             Options o = new Options();
@@ -760,6 +815,16 @@ public final class Main {
                     o.apply = true;
                 } else if ("--markdown".equals(a)) {
                     o.markdown = true;
+                } else if ("--network".equals(a)) {
+                    o.network = true;
+                } else if ("--strip".equals(a)) {
+                    o.strip = true;
+                } else if ("--context".equals(a) && i + 1 < args.length) {
+                    try {
+                        o.context = Math.max(0, Integer.parseInt(args[++i]));
+                    } catch (NumberFormatException ignored) {
+                        // Standard behalten
+                    }
                 } else if ("--id".equals(a)) {
                     o.idOnly = true;
                 } else if (o.target == null) {

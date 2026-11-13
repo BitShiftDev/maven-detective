@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.ui.AnimatedIcon;
 import com.intellij.ui.ColoredListCellRenderer;
 import com.intellij.ui.EditorNotificationPanel;
@@ -19,6 +20,8 @@ import com.intellij.util.ui.JBUI;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.env.SetupComparison;
+import io.github.bitshiftdev.mavendetective.core.model.BuildFailure;
+import io.github.bitshiftdev.mavendetective.core.preflight.Preflight;
 import io.github.bitshiftdev.mavendetective.core.report.Reports;
 import io.github.bitshiftdev.mavendetective.idea.BuildDoctorService.FixCheck;
 import io.github.bitshiftdev.mavendetective.idea.BuildDoctorService.Run;
@@ -42,14 +45,18 @@ import java.util.Objects;
 
 /**
  * Tab „Build Doctor“: links der Verlauf der letzten Läufe (rot/grün, Zeit, Kategorie), rechts die
- * Diagnose-Karte des gewählten Laufs ({@link DiagnosisCard}) oder der Vergleich IDE gegen
- * Kommandozeile ({@link SetupComparisonView}). Über der Karte: „Maven-Lauf läuft …“ bzw. nach einem
+ * Diagnose-Karte des gewählten Laufs ({@link DiagnosisCard}), der Vergleich IDE gegen
+ * Kommandozeile ({@link SetupComparisonView}), der Preflight vor dem Build ({@link PreflightView}) oder
+ * das Log des Laufs im Log-Navigator ({@link LogNavigatorView}). Über der Karte: „Maven-Lauf läuft …“ bzw. nach einem
  * Quick-Fix „Neu bauen läuft …“ und danach „Behoben“ oder was sich geändert hat.
  */
-public final class BuildDoctorPanel extends DetectivePanel implements BuildDoctorService.Listener, DiagnosisCard.Host {
+public final class BuildDoctorPanel extends DetectivePanel implements BuildDoctorService.Listener, DiagnosisCard.Host,
+        PreflightView.Host {
 
     private static final String VIEW_CARD = "card";
     private static final String VIEW_SETUP = "setup";
+    private static final String VIEW_PREFLIGHT = "preflight";
+    private static final String VIEW_LOG = "log";
 
     private final BuildDoctorService service;
     private final DefaultListModel<Run> historyModel = new DefaultListModel<>();
@@ -67,9 +74,13 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
     private final JPanel checkSlot = new JPanel(new BorderLayout());
     private final SetupComparisonView setupView;
     private final Background setupCheck = background(MavenDetectiveBundle.message("doctor.setup.loading"));
+    private final PreflightView preflightView;
+    private final Background preflightCheck = background(MavenDetectiveBundle.message("preflight.loading"));
+    private final LogNavigatorView logView;
     private @Nullable Run shown;
     private int diagnosisIndex;
-    private boolean setupVisible;
+    /** Welche Ansicht rechts steht (VIEW_*). */
+    private String view = VIEW_CARD;
 
     public BuildDoctorPanel(@NotNull Project project) {
         super(project);
@@ -79,6 +90,8 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         DefaultActionGroup actions = new DefaultActionGroup();
         actions.add(registered("MavenDetective.AnalyzeClipboard"));
         actions.add(registered("MavenDetective.CompareSetup"));
+        actions.add(registered("MavenDetective.Preflight"));
+        actions.add(registered("MavenDetective.ShowLog"));
         actions.addSeparator();
         actions.add(registered("MavenDetective.CopyMarkdown"));
         actions.add(registered("MavenDetective.ReportMisdiagnosis"));
@@ -118,8 +131,13 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         cardView.add(cardScroll, BorderLayout.CENTER);
 
         setupView = new SetupComparisonView(this::showCardView);
+        preflightView = new PreflightView(project, this);
+        logView = new LogNavigatorView(project, this::showCardView);
+        Disposer.register(this, logView);
         right.add(cardView, VIEW_CARD);
         right.add(setupView, VIEW_SETUP);
+        right.add(preflightView, VIEW_PREFLIGHT);
+        right.add(logView, VIEW_LOG);
 
         JBSplitter split = new JBSplitter(false, "MavenDetective.BuildDoctor.split", 0.22f);
         split.setFirstComponent(rows(history, () -> null, () -> {
@@ -240,8 +258,12 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
     }
 
     private void showCardView() {
-        setupVisible = false;
-        views.show(right, VIEW_CARD);
+        showView(VIEW_CARD);
+    }
+
+    private void showView(String id) {
+        view = id;
+        views.show(right, id);
     }
 
     /** Neuesten Lauf zeigen (Link „Ursache anzeigen“ in der Konsole, Benachrichtigung). */
@@ -263,8 +285,7 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
 
     /** Vergleich IDE gegen Kommandozeile anzeigen; ohne fertigen Vergleich wird er jetzt ermittelt. */
     void showSetupView() {
-        setupVisible = true;
-        views.show(right, VIEW_SETUP);
+        showView(VIEW_SETUP);
         BuildDoctorService.Result result = shownResult();
         SetupComparison known = result == null ? null : result.setup();
         if (known != null) {
@@ -280,6 +301,80 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
                 setStatus(MavenDetectiveBundle.message("doctor.setup.failed"));
             }
         });
+    }
+
+    /** Preflight anzeigen: letztes Ergebnis sofort, dann ohne Netz neu prüfen (liest nur Dateien). */
+    void showPreflight() {
+        showView(VIEW_PREFLIGHT);
+        Preflight.Report known = service.getLastPreflight();
+        if (known != null) {
+            preflightView.show(known);
+        }
+        check(false);
+    }
+
+    @Override
+    public void back() {
+        showCardView();
+    }
+
+    @Override
+    public void check(boolean network) {
+        if (preflightView.report() == null) {
+            preflightView.loading();
+        }
+        setStatus(network ? MavenDetectiveBundle.message("preflight.network.running") : null);
+        preflightCheck.run(c -> service.preflight(network, c), report -> {
+            setStatus(null);
+            service.preflightDone(report);
+        });
+    }
+
+    @Override
+    public void preflightChanged(@NotNull Preflight.Report report) {
+        preflightView.show(report);
+    }
+
+    /**
+     * Quick-Fix aus dem Preflight: läuft wie auf der Karte, aber ohne Neubau danach (es gibt noch keinen
+     * Lauf); das Löschen ist nur im lokalen Repository des Preflights erlaubt.
+     */
+    @Override
+    public void runFix(@NotNull FixAction fix, @NotNull Preflight.Report report) {
+        java.util.Map<String, String> params = new java.util.LinkedHashMap<>(fix.getParams());
+        params.remove("args");
+        BuildFailure failure = new BuildFailure(BuildFailure.Source.LOG);
+        if (report.getLocalRepository() != null) {
+            failure.getSession().setLocalRepository(report.getLocalRepository().toString());
+        }
+        FixRunner.run(project, new FixAction(fix.getType(), fix.getLabel(), params),
+                new BuildDoctorService.Result(failure, List.of(), "", null, null, null));
+        if (!FixAction.OPEN_FILE.equals(fix.getType())) {
+            setStatus(MavenDetectiveBundle.message("preflight.fix.started", fix.getLabel()));
+        }
+    }
+
+    /** Log des gezeigten Laufs im Log-Navigator; {@code jump}: gleich zum ersten Fehler. */
+    void showLog(boolean jump) {
+        BuildDoctorService.Result r = shownResult();
+        if (r == null) {
+            setStatus(MavenDetectiveBundle.message("log.none"));
+            return;
+        }
+        showView(VIEW_LOG);
+        logView.show(r.rawLog(), jump);
+    }
+
+    /** Ob der gezeigte Lauf ein Log hat. */
+    boolean hasLog() {
+        BuildDoctorService.Result r = shownResult();
+        return r != null && r.rawLog() != null && !r.rawLog().isBlank();
+    }
+
+    @Override
+    public void showLog(@NotNull BuildDoctorService.Result result) {
+        showView(VIEW_LOG);
+        logView.show(result.rawLog(), true);
     }
 
     /** Ergebnis des gezeigten Laufs ({@code null}: keiner oder grün). */
@@ -318,17 +413,24 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
     @Override
     public boolean canCopyMarkdown() {
         BuildDoctorService.Result r = shownResult();
-        return !setupVisible && r != null && !r.diagnoses().isEmpty();
+        if (VIEW_PREFLIGHT.equals(view)) {
+            return preflightView.report() != null;
+        }
+        return VIEW_CARD.equals(view) && r != null && !r.diagnoses().isEmpty();
     }
 
     @Override
     public @Nullable String markdown() {
+        if (VIEW_PREFLIGHT.equals(view)) {
+            Preflight.Report p = preflightView.report();
+            return p == null ? null : p.markdown();
+        }
         return canCopyMarkdown() ? report(Objects.requireNonNull(shownResult())) : null;
     }
 
     @Override
     public @Nullable String copyMarkdownText() {
-        return MavenDetectiveBundle.message("doctor.copy.report");
+        return MavenDetectiveBundle.message(VIEW_PREFLIGHT.equals(view) ? "preflight.copy" : "doctor.copy.report");
     }
 
     static String report(BuildDoctorService.Result r) {

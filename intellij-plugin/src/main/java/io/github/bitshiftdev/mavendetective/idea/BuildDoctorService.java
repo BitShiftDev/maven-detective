@@ -15,6 +15,9 @@ import com.intellij.ui.EditorNotifications;
 import com.intellij.ui.BadgeIconSupplier;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveIcons;
 import io.github.bitshiftdev.mavendetective.core.BuildDoctor;
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
+import io.github.bitshiftdev.mavendetective.core.env.BuildSetup;
+import io.github.bitshiftdev.mavendetective.core.preflight.Preflight;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
 import io.github.bitshiftdev.mavendetective.core.io.MavenLogParser;
@@ -76,6 +79,10 @@ public final class BuildDoctorService {
         /** Ein Maven-Lauf aus der IDE hat begonnen oder ist samt Analyse fertig; siehe {@link #isRunning()}. */
         default void runningChanged() {
         }
+
+        /** Neuer Preflight; siehe {@link #getLastPreflight()}. */
+        default void preflightChanged(@NotNull Preflight.Report report) {
+        }
     }
 
     /**
@@ -117,6 +124,7 @@ public final class BuildDoctorService {
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private volatile Result last;
     private volatile Run lastRun;
+    private volatile @Nullable Preflight.Report lastPreflight;
     /** Neueste zuerst; nur EDT. */
     private final Deque<Run> history = new ArrayDeque<>();
     /** Laufende Maven-Läufe samt anschließender Analyse; nur EDT. */
@@ -283,6 +291,40 @@ public final class BuildDoctorService {
             LOG.warn("Maven Detective: Vergleich mit dem letzten grünen Build fehlgeschlagen", e);
             return null;
         }
+    }
+
+    /**
+     * Preflight mit dem Setup, mit dem die IDE baut (Maven, Runner-JDK, settings.xml der IDE). Liest
+     * Dateien, mit {@code network} auch das Netz – nicht auf dem EDT aufrufen.
+     */
+    public @NotNull Preflight.Report preflight(boolean network, @NotNull Cancellation cancellation) {
+        Result r = last;
+        BuildSetup setup = IdeMaven.ideSetup(project, r == null ? null : r.configuration());
+        Path home = IdeMaven.mavenHome(project);
+        if (home != null) {
+            setup.setMavenHome(home.toString());
+        } else {
+            setup.setMavenHome(IdeMaven.cliSetup(project).getMavenHome());   // Wrapper: dessen entpacktes Maven
+        }
+        Path root = IdeMaven.reactorRoot(project);
+        if (root == null) {
+            String base = project.getBasePath();
+            root = base == null ? Paths.get("").toAbsolutePath() : Paths.get(base);
+        }
+        return Preflight.run(root, setup, new Preflight.Options().network(network).cancellation(cancellation));
+    }
+
+    /** Ergebnis eines Preflights merken und melden (EDT). */
+    public void preflightDone(@NotNull Preflight.Report report) {
+        lastPreflight = report;
+        for (Listener l : listeners) {
+            l.preflightChanged(report);
+        }
+    }
+
+    /** Letzter Preflight dieser Sitzung, oder {@code null}. */
+    public @Nullable Preflight.Report getLastPreflight() {
+        return lastPreflight;
     }
 
     /** IDE gegen Kommandozeile ({@code null}: nicht ermittelbar); liest Dateien, nicht auf dem EDT aufrufen. */
