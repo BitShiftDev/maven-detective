@@ -1,6 +1,5 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
-import com.intellij.ide.util.PropertiesComponent;
 import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import org.jetbrains.annotations.NotNull;
@@ -20,9 +19,6 @@ import java.util.function.Function;
  * werden in derselben Reihenfolge nacheinander zerlegt, wie sie später ins Dokument gehen.
  */
 final class PomChanges {
-
-    /** Vorschau vor jeder POM-Änderung (Standard: an). */
-    static final String PREVIEW_KEY = "MavenDetective.previewPomFixes";
 
     /**
      * Eine Textänderung: an {@code offset} werden {@code length} Zeichen durch {@code text} ersetzt;
@@ -135,11 +131,12 @@ final class PomChanges {
         return new Plan(files, problems, failed);
     }
 
+    /** Vorschau vor jeder POM-Änderung (Standard: an; {@link DetectiveSettings}). */
     static boolean isPreviewEnabled() {
-        return PropertiesComponent.getInstance().getBoolean(PREVIEW_KEY, true);
+        return DetectiveSettings.getInstance().isPreviewPomFixes();
     }
 
     static void setPreviewEnabled(boolean enabled) {
-        PropertiesComponent.getInstance().setValue(PREVIEW_KEY, enabled, true);
+        DetectiveSettings.getInstance().setPreviewPomFixes(enabled);
     }
 }

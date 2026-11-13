@@ -43,6 +43,8 @@
           rebuilds every module's dependency tree from the POMs and shows what goes up, down, appears, disappears or changes scope,
           plus new conflicts where a higher requested version loses. Missing POMs of the new version are fetched only on click;
           one more click applies exactly the simulated change.</li>
+      <li><b>Settings</b> under <i>Tools | Maven Detective</i>: balloon on red builds, rebuild after a fix, diff preview,
+          snapshots on/off and their folder.</li>
       <li><b>See before you change:</b> every quick fix that edits a pom.xml shows the change in the IDE's diff viewer first
           (can be switched off); the upgrade simulation opens as an editor tab with the POM diff and the tree difference.</li>
       <li>Complements Maven Helper and the Dependency Analyzer: they show facts, Maven Detective shows cause and fix.</li>
@@ -63,6 +65,14 @@
                     icon="/icons/mavenDetective.svg"
                     factoryClass="io.github.bitshiftdev.mavendetective.idea.BuildDoctorToolWindowFactory"/>
         <notificationGroup id="Maven Detective" displayType="BALLOON"/>
+        <!-- U6: New-UI-Icon des Tool-Windows (icons/expui/, 16 × 16 und @20x20) statt des 13 × 13 der alten Oberfläche -->
+        <iconMapper mappingFile="MavenDetectiveIconMappings.json"/>
+        <!-- U6: Einstellungen unter Tools | Maven Detective (Zustand: DetectiveSettings, mavenDetective.xml) -->
+        <applicationConfigurable parentId="tools"
+                                 id="io.github.bitshiftdev.mavendetective.settings"
+                                 instance="io.github.bitshiftdev.mavendetective.idea.DetectiveConfigurable"
+                                 bundle="messages.MavenDetectiveBundle"
+                                 key="settings.title"/>
         <!-- U3: „[INFO] BUILD FAILURE“ in Konsole und Build-Fenster wird zum Link auf die Diagnose -->
         <consoleFilterProvider implementation="io.github.bitshiftdev.mavendetective.idea.BuildFailureConsoleFilter$Provider"/>
         <!-- Modul A4: Beschreibung in inspectionDescriptions/MavenDetectiveStaleExclusion.html -->
@@ -163,5 +173,8 @@
     <projectListeners>
         <listener class="io.github.bitshiftdev.mavendetective.idea.MavenRunListener"
                   topic="com.intellij.execution.ExecutionListener"/>
+        <!-- U6: Erste Schritte – „Got it“-Hinweis beim ersten Öffnen einer pom.xml -->
+        <listener class="io.github.bitshiftdev.mavendetective.idea.FirstSteps$PomOpened"
+                  topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
     </projectListeners>
 </idea-plugin>

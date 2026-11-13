@@ -55,6 +55,8 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
     private final DefaultListModel<Run> historyModel = new DefaultListModel<>();
     private final JBList<Run> history = new JBList<>(historyModel);
     private final DiagnosisCard cards;
+    /** „Got it“ zur Karte in dieser Sitzung schon angefordert. */
+    private boolean firstStepsShown;
     private final CardLayout views = new CardLayout();
     private final JPanel right = new JPanel(views);
     private final JPanel cardHolder = new TrackingPanel(new BorderLayout());
@@ -178,7 +180,13 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         if (run.green()) {
             showCard(cards.green(run));
         } else {
-            showCard(cards.red(run, index, i -> show(run, i)));
+            JComponent card = cards.red(run, index, i -> show(run, i));
+            showCard(card);
+            // Erste Schritte: beim ersten roten Build zeigen, wo die Ursache steht (einmal je Installation)
+            if (!firstStepsShown && card.getClientProperty(DiagnosisCard.CAUSE) instanceof JComponent cause) {
+                firstStepsShown = true;
+                FirstSteps.redBuild(cause, this);
+            }
         }
         updateCheckBanner(run);
     }

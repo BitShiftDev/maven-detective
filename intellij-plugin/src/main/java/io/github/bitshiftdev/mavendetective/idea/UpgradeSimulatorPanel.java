@@ -40,6 +40,7 @@ import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
 import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -162,7 +163,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             }
         });
         TableSpeedSearch.installOn(table, (value, cell) -> cell.column == 2 && value != null ? value.toString() : null);
-        emptyText(table.getEmptyText(), MavenDetectiveBundle.message("upgrade.empty.start"),
+        intro(table.getEmptyText(), MavenDetectiveBundle.message("upgrade.empty.start"),
                 MavenDetectiveBundle.message("action.simulate"), this::simulate);
 
         details = new HtmlView(project);
@@ -540,7 +541,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         fetch.setEnabled(res != null && !PomFetcher.coordinates(res.getMissing()).isEmpty());
         if (res == null) {
             setStatus(null);
-            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            intro(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
         } else {
             emptyText(table.getEmptyText(), MavenDetectiveBundle.message("upgrade.empty.unchanged"), null, null);
@@ -731,7 +732,9 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             }
             SimpleTextAttributes attrs = column == 1
                     ? r.delta != null ? UpgradeLabels.symbolAttributes(r.delta.getKind()) : UpgradeLabels.riskAttributes()
-                    : r.delta != null && r.delta.getKind() == UpgradeSimulator.Kind.REMOVED ? SimpleTextAttributes.GRAYED_ATTRIBUTES
+                    : r.delta != null && r.delta.getKind() == UpgradeSimulator.Kind.REMOVED
+                    ? risky && !selected ? new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, DetectiveColors.TINTED_SECONDARY)
+                    : SimpleTextAttributes.GRAYED_ATTRIBUTES
                     : SimpleTextAttributes.REGULAR_ATTRIBUTES;
             append(value == null ? "" : value.toString(), attrs);
             if (r.delta != null) {
@@ -740,5 +743,10 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                 setToolTipText(r.risk.message());
             }
         }
+    }
+
+    @Override
+    protected @Nls @Nullable String about() {
+        return MavenDetectiveBundle.message("upgrade.about");
     }
 }

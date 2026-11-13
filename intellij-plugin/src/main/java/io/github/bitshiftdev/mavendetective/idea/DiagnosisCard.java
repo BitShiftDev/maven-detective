@@ -77,6 +77,8 @@ final class DiagnosisCard {
     static final String SECTION_CHANGES = "changes";
     static final String SECTION_SETUP = "setup";
     static final String SECTION_MORE = "more";
+    /** Client-Property der roten Karte: Komponente mit der Ursache (Anker für „Erste Schritte“). */
+    static final String CAUSE = "MavenDetective.cause";
     private static final int MAX_CHANGES = 30;
     private static final int TAIL_LINES = 15;
 
@@ -101,7 +103,10 @@ final class DiagnosisCard {
         Diagnosis d = result.diagnoses().get(Math.min(index, result.diagnoses().size() - 1));
         JPanel card = frame();
         card.add(header(AllIcons.General.Error, headline(d), badge(d.getConfidence()), when(run)));
-        card.add(text(d.getCause(), JBFont.label().biggerOn(1)));
+        JComponent cause = text(d.getCause(), JBFont.label().biggerOn(1));
+        card.add(cause);
+        card.putClientProperty(CAUSE, cause);
+        accessible(card, MavenDetectiveBundle.message("card.accessible.red", headline(d), d.getConfidence().label()), d.getCause());
         JComponent fixes = fixes(d, result);
         if (fixes != null) {
             card.add(fixes);
@@ -134,6 +139,7 @@ final class DiagnosisCard {
     private @NotNull JComponent unknown(@NotNull BuildDoctorService.Run run) {
         JPanel card = frame();
         card.add(header(AllIcons.General.Warning, MavenDetectiveBundle.message("card.unknown.title"), null, when(run)));
+        accessible(card, MavenDetectiveBundle.message("card.unknown.title"), MavenDetectiveBundle.message("card.unknown.text"));
         card.add(text(MavenDetectiveBundle.message("card.unknown.text"), JBFont.label()));
         card.add(code(tail(run.result() == null ? null : run.result().rawLog(), TAIL_LINES)));
         if (run.result() != null) {
@@ -148,10 +154,17 @@ final class DiagnosisCard {
         card.add(header(AllIcons.General.InspectionsOK, MavenDetectiveBundle.message("card.green.title"),
                 new Badge(MavenDetectiveBundle.message("card.green.badge"), DetectiveColors.SUCCESS_BACKGROUND), when(run)));
         card.add(text(MavenDetectiveBundle.message("card.green.text"), JBFont.label()));
+        accessible(card, MavenDetectiveBundle.message("card.green.title"), MavenDetectiveBundle.message("card.green.text"));
         return card;
     }
 
     // ---- Bausteine ------------------------------------------------------------------------------
+
+    /** Screenreader: Name (Art, Sicherheit) und Beschreibung (Ursache) der ganzen Karte. */
+    private static void accessible(JComponent card, @Nls String name, @Nls String description) {
+        card.getAccessibleContext().setAccessibleName(name);
+        card.getAccessibleContext().setAccessibleDescription(description);
+    }
 
     private static JPanel frame() {
         JPanel card = new JPanel(new VerticalLayout(JBUI.scale(10)));

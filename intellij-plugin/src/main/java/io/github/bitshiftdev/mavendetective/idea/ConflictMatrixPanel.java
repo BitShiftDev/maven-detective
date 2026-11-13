@@ -39,6 +39,7 @@ import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
 import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -322,7 +323,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         if (matrix == null) {
             model.set(List.of(), rows);
             setStatus(null);
-            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            intro(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             showRow(null);
             return;
@@ -342,7 +343,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         }
         int divergent = matrix.divergent().size();
         if (onlyDivergent && matrix.divergent().isEmpty()) {
-            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("matrix.empty.no.divergence"),
+            intro(table.getEmptyText(), MavenDetectiveBundle.message("matrix.empty.no.divergence"),
                     MavenDetectiveBundle.message("matrix.empty.show.all"), () -> {
                         onlyDivergent = false;
                         applyFilter();
@@ -603,7 +604,10 @@ public final class ConflictMatrixPanel extends DetectivePanel {
                 setBackground(DetectiveColors.versionBackground(group));
             }
             append(c.getVersion(), deviates ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : SimpleTextAttributes.REGULAR_ATTRIBUTES);
-            append("  " + shortSource(c), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+            // Auf eingefärbter Zelle reicht das übliche Grau nicht für 4.5:1 – eigene, dunklere Farbe
+            append("  " + shortSource(c), r.isDivergent() && !selected
+                    ? new SimpleTextAttributes(SimpleTextAttributes.STYLE_SMALLER, DetectiveColors.TINTED_SECONDARY)
+                    : SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
             setToolTipText((r.isDivergent() ? MavenDetectiveBundle.message("matrix.cell.group", group + 1, vs.size()) + " · " : "")
                     + c.sourceLabel() + (c.getScope() != null && !"compile".equals(c.getScope()) ? ", " + c.getScope() : "")
                     + (c.getFile() == null ? "" : " – " + c.getFile() + ":" + c.getLine()) + " · "
@@ -619,5 +623,10 @@ public final class ConflictMatrixPanel extends DetectivePanel {
                 default -> "";
             };
         }
+    }
+
+    @Override
+    protected @Nls @Nullable String about() {
+        return MavenDetectiveBundle.message("matrix.about");
     }
 }

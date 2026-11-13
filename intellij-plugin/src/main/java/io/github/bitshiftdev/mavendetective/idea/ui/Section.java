@@ -4,6 +4,7 @@ import com.intellij.icons.AllIcons;
 import com.intellij.ui.components.ActionLink;
 import com.intellij.util.ui.JBFont;
 import com.intellij.util.ui.JBUI;
+import io.github.bitshiftdev.mavendetective.idea.MavenDetectiveBundle;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
@@ -47,7 +48,7 @@ public final class Section extends JPanel {
         this.expanded = expanded;
         title.setIcon(expanded ? AllIcons.General.ArrowDown : AllIcons.General.ArrowRight);
         inner.setVisible(expanded);
-        title.getAccessibleContext().setAccessibleDescription(expanded ? "aufgeklappt" : "zugeklappt");
+        title.getAccessibleContext().setAccessibleDescription(MavenDetectiveBundle.message(expanded ? "section.expanded" : "section.collapsed"));
         revalidate();
         repaint();
     }

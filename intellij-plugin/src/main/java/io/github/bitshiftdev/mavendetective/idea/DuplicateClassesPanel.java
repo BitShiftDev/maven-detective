@@ -22,6 +22,7 @@ import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
 import io.github.bitshiftdev.mavendetective.idea.ui.FindingTree;
 import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -84,7 +85,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         tree.addSelectionListener(() -> show(selected()));
         tree.addCheckListener(this::updateApplyChecked);
         // Nicht automatisch prüfen: das öffnet alle JARs aller Module – erst auf Klick
-        emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+        intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                 MavenDetectiveBundle.message("empty.check.now"), this::reload);
 
         details = new HtmlView(project);
@@ -191,7 +192,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
     protected void cancelled() {
         super.cancelled();
         if (result == null) {
-            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                     MavenDetectiveBundle.message("empty.check.now"), this::reload);
         }
     }
@@ -273,7 +274,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         List<DuplicateClasses.Clash> rows = new ArrayList<>();
         if (result == null) {
             tree.set(Map.of(), l -> null, c -> false);
-            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             show(null);
             return;
@@ -297,7 +298,11 @@ public final class DuplicateClassesPanel extends DetectivePanel {
             unreadable += m.getUnreadable().size();
         }
         int n = result.clashes().size();
-        emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message(n == 0 ? "duplicates.empty.none" : "empty.all.filtered"), null, null);
+        if (n == 0) {
+            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("duplicates.empty.none"), null, null);
+        } else {
+            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.all.filtered"), null, null);
+        }
         setStatus(result.getModules().size() + " Module, " + n + (n == 1 ? " Fund" : " Funde")
                 + (hidden > 0 ? " (" + hidden + " ausgeblendet)" : "")
                 + (unreadable > 0 ? ", " + unreadable + " JARs lokal nicht lesbar" : "")
@@ -520,5 +525,10 @@ public final class DuplicateClassesPanel extends DetectivePanel {
 
     private void showText(String body) {
         details.show(body);
+    }
+
+    @Override
+    protected @Nls @Nullable String about() {
+        return MavenDetectiveBundle.message("duplicates.about");
     }
 }

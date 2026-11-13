@@ -243,6 +243,33 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
         }
     }
 
+    /**
+     * Was die Seite tut, in zwei kurzen Sätzen (je eine Zeile, durch {@code \n} getrennt). Steht in den
+     * leeren Zuständen, die {@link #intro} setzt ({@code null}: keine Erklärung).
+     */
+    protected @Nls @Nullable String about() {
+        return null;
+    }
+
+    /**
+     * Leerer Zustand mit Erklärung der Seite ({@link #about()}) zwischen Zustand und Link – für „noch
+     * nicht geprüft“, „nichts gefunden“ und „kein Maven-Projekt“. Gefilterte oder durchsuchte Listen
+     * nehmen {@link #emptyText}: dort lenkt die Erklärung nur ab.
+     */
+    protected final void intro(@NotNull StatusText target, @Nls @NotNull String text, @Nls @Nullable String link,
+                               @Nullable Runnable action) {
+        target.setText(text);
+        String about = about();
+        if (about != null) {
+            for (String line : about.split("\n")) {
+                target.appendLine(line, SimpleTextAttributes.GRAYED_ATTRIBUTES, null);
+            }
+        }
+        if (link != null && action != null) {
+            target.appendLine(link, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES, e -> action.run());
+        }
+    }
+
     protected final void setStatus(@Nls @Nullable String text) {
         boolean has = text != null && !text.isEmpty();
         status.setText(has ? text : "");

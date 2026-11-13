@@ -7,7 +7,7 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Schalter „Vorschau vor POM-Änderungen“ (an per Default). Über Find Action und im Filter-Menü der
- * Dependency-Seiten erreichbar; die Einstellungsseite folgt in U6.
+ * Dependency-Seiten erreichbar; derselbe Schalter steht auf der Einstellungsseite ({@link DetectiveConfigurable}).
  */
 public final class PreviewPomFixesAction extends DumbAwareToggleAction {
 

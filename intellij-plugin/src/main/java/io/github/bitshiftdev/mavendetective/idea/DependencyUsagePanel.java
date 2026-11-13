@@ -20,6 +20,7 @@ import io.github.bitshiftdev.mavendetective.idea.ui.FindingTree;
 import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -44,7 +45,6 @@ import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
  */
 public final class DependencyUsagePanel extends DetectivePanel {
 
-    private boolean withBundles;
     private boolean withUncertain = true;
     private final SearchTextField search;
     private final JButton apply = FixBar.primary(new JButton(MavenDetectiveBundle.message("usage.apply")));
@@ -52,6 +52,11 @@ public final class DependencyUsagePanel extends DetectivePanel {
     private final HtmlView details;
     private final Background checker = background(MavenDetectiveBundle.message("loading.usage"));
     private DependencyUsage result;
+
+    /** „Auch über Starter“: gemerkt in den Einstellungen ({@link DetectiveSettings}), dort auch umstellbar. */
+    private static boolean withBundles() {
+        return DetectiveSettings.getInstance().isUsageViaStarters();
+    }
 
     public DependencyUsagePanel(@NotNull Project project) {
         super(project);
@@ -62,8 +67,8 @@ public final class DependencyUsagePanel extends DetectivePanel {
         actions.add(registered("MavenDetective.Stop"));
         actions.add(filterGroup(
                 toggle(MavenDetectiveBundle.message("usage.filter.bundles"), MavenDetectiveBundle.message("usage.filter.bundles.description"),
-                        () -> withBundles, v -> {
-                            withBundles = v;
+                        DependencyUsagePanel::withBundles, v -> {
+                            DetectiveSettings.getInstance().setUsageViaStarters(v);
                             applyFilter();
                         }),
                 toggle(MavenDetectiveBundle.message("usage.filter.uncertain"), MavenDetectiveBundle.message("usage.filter.uncertain.description"),
@@ -86,7 +91,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
         });
         tree.addCheckListener(this::updateApply);
         // Nicht automatisch prüfen: das löst alle Referenzen aller Module auf – erst auf Klick
-        emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+        intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                 MavenDetectiveBundle.message("empty.check.now"), this::reload);
 
         details = new HtmlView(project);
@@ -141,7 +146,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
 
     @Override
     public @Nullable String markdown() {
-        return result == null ? null : result.markdown(withBundles);
+        return result == null ? null : result.markdown(withBundles());
     }
 
     private void reload() {
@@ -166,7 +171,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
     protected void cancelled() {
         super.cancelled();
         if (result == null) {
-            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                     MavenDetectiveBundle.message("empty.check.now"), this::reload);
         }
     }
@@ -236,7 +241,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
         List<DependencyUsage.Finding> rows = new ArrayList<>();
         if (result == null) {
             tree.set(Map.of(), l -> null, f -> false);
-            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             show(null, 0);
             return;
@@ -244,7 +249,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
         String q = search.getText().trim().toLowerCase(Locale.ROOT);
         int hidden = 0;
         for (DependencyUsage.Finding f : result.findings()) {
-            boolean visible = (withBundles || !f.isViaBundle()) && (withUncertain || f.isCertain());
+            boolean visible = (withBundles() || !f.isViaBundle()) && (withUncertain || f.isCertain());
             if (visible && !q.isEmpty() && !matches(f, q)) {
                 visible = false;
             }
@@ -261,8 +266,11 @@ public final class DependencyUsagePanel extends DetectivePanel {
             unchecked += m.getUnchecked().size();
             files += m.getUsages().getMainFiles() + m.getUsages().getTestFiles();
         }
-        emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message(result.findings().isEmpty() ? "usage.empty.none" : "empty.all.filtered"),
-                null, null);
+        if (result.findings().isEmpty()) {
+            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("usage.empty.none"), null, null);
+        } else {
+            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.all.filtered"), null, null);
+        }
         setStatus(result.getModules().size() + " Module, " + files + " Quelldateien – "
                 + result.findings(DependencyUsage.Kind.UNDECLARED).size() + " undeklariert, "
                 + result.findings(DependencyUsage.Kind.UNUSED).size() + " ungenutzt, "
@@ -461,5 +469,10 @@ public final class DependencyUsagePanel extends DetectivePanel {
 
     private void showText(String body) {
         details.show(body);
+    }
+
+    @Override
+    protected @Nls @Nullable String about() {
+        return MavenDetectiveBundle.message("usage.about");
     }
 }

@@ -114,7 +114,6 @@ public final class BuildDoctorService {
     private static final Logger LOG = Logger.getInstance(BuildDoctorService.class);
 
     private final BuildDoctor doctor = BuildDoctor.withDefaults();
-    private final SnapshotStore store = SnapshotStore.defaultStore();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private volatile Result last;
     private volatile Run lastRun;
@@ -236,7 +235,8 @@ public final class BuildDoctorService {
         String name = env == null ? null : env.getRunProfile().getName();
         ApplicationManager.getApplication().invokeLater(() -> finished(new Run(true, at, null, name, takeCheck())), project.getDisposed());
         Path dir = projectDir();
-        if (dir == null) {
+        SnapshotStore store = DetectiveSettings.getInstance().snapshotStore();
+        if (dir == null || store == null) {
             return;
         }
         MavenRunConfiguration cfg = env != null && env.getRunProfile() instanceof MavenRunConfiguration c ? c : null;
@@ -252,11 +252,15 @@ public final class BuildDoctorService {
         });
     }
 
-    /** Grüne Referenz für „Was hat sich geändert?“ ({@code null}: keine); liest Dateien, nicht auf dem EDT aufrufen. */
+    /**
+     * Grüne Referenz für „Was hat sich geändert?“ ({@code null}: keine oder Schnappschüsse abgeschaltet);
+     * liest Dateien, nicht auf dem EDT aufrufen.
+     */
     public @Nullable BuildSnapshot loadGreen() {
         Path dir = projectDir();
+        SnapshotStore store = DetectiveSettings.getInstance().snapshotStore();
         try {
-            return dir == null ? null : store.loadGreen(dir, BuildSnapshot.ORIGIN_IDE);
+            return dir == null || store == null ? null : store.loadGreen(dir, BuildSnapshot.ORIGIN_IDE);
         } catch (RuntimeException e) {
             LOG.warn("Maven Detective: grüner Schnappschuss nicht lesbar", e);
             return null;
@@ -265,7 +269,8 @@ public final class BuildDoctorService {
 
     private @Nullable SnapshotDiff changesSinceGreen(@Nullable MavenRunConfiguration cfg) {
         Path dir = projectDir();
-        if (dir == null) {
+        SnapshotStore store = DetectiveSettings.getInstance().snapshotStore();
+        if (dir == null || store == null) {
             return null;
         }
         try {
@@ -300,9 +305,11 @@ public final class BuildDoctorService {
         } else if (!result.diagnoses().isEmpty()) {
             remember(new Run(false, System.currentTimeMillis(), result, null, null));
         }
-        // Sprechblase nur, wenn das Tool-Window nicht ohnehin zu sehen ist – sonst genügt das Badge
+        // Sprechblase nur, wenn das Tool-Window nicht ohnehin zu sehen ist – sonst genügt das Badge;
+        // abschaltbar (Einstellungen), das Badge bleibt
         ToolWindow window = Navigator.window(project);
-        if (notify && !result.diagnoses().isEmpty() && (window == null || !window.isVisible())) {
+        if (notify && DetectiveSettings.getInstance().isNotifyRedBuild() && !result.diagnoses().isEmpty()
+                && (window == null || !window.isVisible())) {
             Diagnosis d = result.diagnoses().get(0);
             NotificationGroupManager.getInstance().getNotificationGroup(TOOL_WINDOW_ID)
                     .createNotification(MavenDetectiveBundle.message("notification.build.failed", d.getCategory()), d.getCause(),

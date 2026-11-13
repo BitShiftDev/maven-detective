@@ -182,7 +182,7 @@ public final class ExclusionsPanel extends DetectivePanel {
     private void applyFilter() {
         if (result == null) {
             tree.set(Map.of(), l -> null, f -> false);
-            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             setStatus(null);
             showSelection();
@@ -198,7 +198,7 @@ public final class ExclusionsPanel extends DetectivePanel {
         tree.set(FindingTree.groupBy(visible, f -> PomDiffView.label(f.getPom().getFile())), ExclusionsPanel::groupDetail, f -> true);
         boolean none = result.removable().isEmpty();
         if (none && !withAll) {
-            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("exclusions.empty.none"),
+            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("exclusions.empty.none"),
                     result.getFindings().isEmpty() ? null : MavenDetectiveBundle.message("exclusions.empty.show.all"), () -> {
                         withAll = true;
                         applyFilter();
@@ -334,5 +334,10 @@ public final class ExclusionsPanel extends DetectivePanel {
             sb.append(sb.length() == 0 ? "" : "\n").append(f.message());
         }
         return sb.toString();
+    }
+
+    @Override
+    protected @Nls @Nullable String about() {
+        return MavenDetectiveBundle.message("exclusions.about");
     }
 }

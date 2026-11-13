@@ -10,6 +10,7 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.options.ShowSettingsUtil;
+import com.intellij.notification.NotificationAction;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
@@ -62,7 +63,8 @@ final class FixRunner {
             switch (fix.getType()) {
                 case FixAction.OPEN_FILE -> openLocation(project, fix.param("file") + ":" + fix.param("line"));
                 case FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE, FixAction.SET_JVM_OPTION -> runFileFix(project, fix, result);
-                case FixAction.REBUILD -> rebuild(project, result, fix.param("args"), fix.getLabel());
+                // „Neu bauen“ ist selbst der Fix – startet immer, auch wenn Neubau nach Fixes abgeschaltet ist
+                case FixAction.REBUILD -> restart(project, result, fix.param("args"), fix.getLabel());
                 case FixAction.SWITCH_JDK -> switchJdk(project, result, fix);
                 case FixAction.INSERT_PLUGIN_VERSION -> insertPluginVersion(project, result, fix);
                 case FixAction.PIN_VERSION -> {
@@ -182,8 +184,26 @@ final class FixRunner {
      *
      * <p>Startet ein Lauf, meldet {@code fixLabel} ihn als Prüfung des Fixes an: Die Karte zeigt
      * „Neu bauen läuft …“ und danach „Behoben“ oder die neue Diagnose.
+     *
+     * <p>Ist „Nach einem Quick-Fix neu bauen“ abgeschaltet ({@link DetectiveSettings}), startet nichts von
+     * selbst; die Meldung bietet „Neu bauen“ an.
      */
     private static void rebuild(Project project, BuildDoctorService.Result result, String args, String fixLabel) {
+        boolean hasArgs = args != null && !args.isBlank();
+        boolean wouldStart = result.environment() != null && !hasArgs || hasArgs && result.configuration() != null;
+        if (wouldStart && !DetectiveSettings.getInstance().isRebuildAfterFix()) {
+            NotificationGroupManager.getInstance().getNotificationGroup(BuildDoctorService.TOOL_WINDOW_ID)
+                    .createNotification(MavenDetectiveBundle.message("fix.rebuild.off", fixLabel), NotificationType.INFORMATION)
+                    .addAction(NotificationAction.createSimpleExpiring(MavenDetectiveBundle.message("fix.rebuild.now"),
+                            () -> restart(project, result, args, fixLabel)))
+                    .notify(project);
+            return;
+        }
+        restart(project, result, args, fixLabel);
+    }
+
+    /** Neubau wie bei {@link #rebuild}, ohne die Einstellung zu fragen. */
+    private static void restart(Project project, BuildDoctorService.Result result, String args, String fixLabel) {
         boolean hasArgs = args != null && !args.isBlank();
         if (!hasArgs && result.environment() != null) {
             BuildDoctorService.getInstance(project).expectCheck(fixLabel, result);
