@@ -27,6 +27,7 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.Icon;
 import javax.swing.JButton;
+import javax.swing.JList;
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
 import java.nio.file.Path;
@@ -87,7 +88,13 @@ public final class DuplicateClassesPanel extends DetectivePanel {
                 MavenDetectiveBundle.message("empty.check.now"), this::reload);
 
         details = new HtmlView(project);
-        target.setRenderer(SimpleListCellRenderer.create("", ModuleClasspath.Entry::label));
+        target.setRenderer(new SimpleListCellRenderer<ModuleClasspath.Entry>() {
+            @Override
+            public void customize(@NotNull JList<? extends ModuleClasspath.Entry> list, ModuleClasspath.Entry value,
+                                  int index, boolean selected, boolean hasFocus) {
+                setText(value == null ? "" : value.label());
+            }
+        });
         target.addActionListener(e -> updateApply());
         apply.addActionListener(e -> applySelected());
         applyChecked.addActionListener(e -> applyChecked());

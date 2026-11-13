@@ -4,12 +4,13 @@ import com.intellij.execution.ExecutionException;
 import com.intellij.ide.projectView.impl.nodes.NamedLibraryElement;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.DataContext;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
+import com.intellij.openapi.util.Computable;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.env.BuildSetup;
 import io.github.bitshiftdev.mavendetective.core.snapshot.BuildSnapshot;
@@ -59,13 +60,12 @@ final class IdeMaven {
     }
 
     /**
-     * Einzige Stelle mit {@code ReadAction.compute}: ab 2026.2 veraltet, der Ersatz
-     * {@code ReadAction.computeBlocking} fehlt aber in 2025.3 (since-build 253). Wird since-build
-     * angehoben, nur hier umstellen.
+     * Lesezugriff auf das Modell. {@code ReadAction.compute} ist ab 2026.2 veraltet, der Ersatz
+     * {@code ReadAction.computeBlocking} fehlt aber in 2025.3 (since-build 253);
+     * {@code Application.runReadAction} gibt es in beiden und ist nicht veraltet.
      */
-    @SuppressWarnings("deprecation")
     static <T> T read(@NotNull Supplier<T> action) {
-        return ReadAction.compute(action::get);
+        return ApplicationManager.getApplication().runReadAction((Computable<T>) action::get);
     }
 
     /** Schnappschuss aus dem Maven-Modell der IDE (Stand des letzten Imports) und den Runner-Einstellungen. */
