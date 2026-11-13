@@ -78,7 +78,8 @@
         <!-- Modul A4: Beschreibung in inspectionDescriptions/MavenDetectiveStaleExclusion.html -->
         <localInspection language="XML"
                          shortName="MavenDetectiveStaleExclusion"
-                         displayName="Veraltete Exclusion"
+                         bundle="messages.MavenDetectiveBundle"
+                         key="inspection.stale.exclusion.name"
                          groupName="Maven Detective"
                          enabledByDefault="true"
                          level="WARNING"
@@ -86,7 +87,8 @@
         <!-- Modul A5: Beschreibung in inspectionDescriptions/MavenDetectiveUndeclaredDependency.html -->
         <localInspection language="JAVA"
                          shortName="MavenDetectiveUndeclaredDependency"
-                         displayName="Import aus nicht deklarierter Dependency"
+                         bundle="messages.MavenDetectiveBundle"
+                         key="inspection.undeclared.name"
                          groupName="Maven Detective"
                          enabledByDefault="true"
                          level="WEAK WARNING"
@@ -169,6 +171,12 @@
             <reference ref="$Copy"/>
         </group>
     </actions>
+
+    <applicationListeners>
+        <!-- Sprache des Kerns (Diagnose-Texte) = Einstellung „Sprache“ des Plugins -->
+        <listener class="io.github.bitshiftdev.mavendetective.idea.CoreLanguage"
+                  topic="com.intellij.ide.AppLifecycleListener"/>
+    </applicationListeners>
 
     <projectListeners>
         <listener class="io.github.bitshiftdev.mavendetective.idea.MavenRunListener"

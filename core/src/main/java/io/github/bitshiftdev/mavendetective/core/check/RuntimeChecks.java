@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.model.ErrorRecord;
@@ -52,28 +53,28 @@ final class RuntimeChecks {
                 r.var("runner", String.valueOf(runner));
             }
             String home = ctx.failure().getSession().getJavaHome();
-            r.evidence(Evidence.environment("JDK des Maven-Laufs: "
-                    + (ctx.env().getRunnerJavaVersion() != null ? ctx.env().getRunnerJavaVersion() : runner > 0 ? String.valueOf(runner) : "unbekannt")
-                    + (home == null ? "" : " (" + home + ")")));
+            r.evidence(Evidence.environment(Texts.t("check.jdk.of.run",
+                    (ctx.env().getRunnerJavaVersion() != null ? ctx.env().getRunnerJavaVersion() : runner > 0 ? String.valueOf(runner) : Texts.t("unknown"))
+                    + (home == null ? "" : " (" + home + ")"))));
             for (String marker : RELEASE_MARKERS) {
                 for (ProjectPoms.Location l : ctx.projectPoms().findText(marker)) {
-                    r.evidence(Evidence.file("Java-Version im Projekt: " + l.pom.lines.get(l.line - 1).trim(), l.pom.file.toString(), l.line));
+                    r.evidence(Evidence.file(Texts.t("check.jdk.project", l.pom.lines.get(l.line - 1).trim()), l.pom.file.toString(), l.line));
                     if (tooOld) {
-                        r.fix(FixAction.of(FixAction.OPEN_FILE, "Java-Release im Projekt anheben", "file", l.pom.file.toString(), "line", String.valueOf(l.line)));
+                        r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.jdk.raise"), "file", l.pom.file.toString(), "line", String.valueOf(l.line)));
                     }
                 }
             }
             if (ctx.anyLineContains("toolchain")) {
                 Path toolchains = ctx.env().getUserHome() == null ? null : ctx.env().getUserHome().resolve(".m2").resolve("toolchains.xml");
                 if (toolchains != null && Files.isRegularFile(toolchains)) {
-                    r.evidence(Evidence.file("toolchains.xml vorhanden", toolchains.toString(), 1))
-                            .fix(FixAction.of(FixAction.OPEN_FILE, "toolchains.xml öffnen", "file", toolchains.toString(), "line", "1"));
+                    r.evidence(Evidence.file(Texts.t("check.jdk.toolchains"), toolchains.toString(), 1))
+                            .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.jdk.toolchains.open"), "file", toolchains.toString(), "line", "1"));
                 } else {
-                    r.evidence(Evidence.hint("~/.m2/toolchains.xml fehlt"));
+                    r.evidence(Evidence.hint(Texts.t("check.jdk.toolchains.missing")));
                 }
             }
             if (!tooOld && required > 0) {
-                r.fix(FixAction.of(FixAction.SWITCH_JDK, "Runner-JDK auf Java " + required + " umstellen", "required", String.valueOf(required)));
+                r.fix(FixAction.of(FixAction.SWITCH_JDK, Texts.t("check.jdk.switch", required), "required", String.valueOf(required)));
             }
             return r;
         }
@@ -96,12 +97,12 @@ final class RuntimeChecks {
             String file = m.group(1);
             String line = m.group(2);
             CheckResult r = CheckResult.info().var("sourceFile", file).var("sourceLine", line)
-                    .evidence(Evidence.file("Fehlerstelle im Quelltext", file, Integer.parseInt(line)))
-                    .fix(FixAction.of(FixAction.OPEN_FILE, "Zur Fehlerstelle springen", "file", file, "line", line));
+                    .evidence(Evidence.file(Texts.t("check.compile.location"), file, Integer.parseInt(line)))
+                    .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.compile.goto"), "file", file, "line", line));
             if (file.contains("/src/test/") || file.contains("\\src\\test\\")) {
-                r.evidence(Evidence.hint("Fehler im Testcode – fehlt eine Test-Dependency (Scope test)?"));
+                r.evidence(Evidence.hint(Texts.t("check.compile.test")));
             } else {
-                r.evidence(Evidence.hint("Fehler im Hauptcode – steht die Dependency nur mit Scope test oder provided im Projekt, oder wurde sie per Exclusion entfernt?"));
+                r.evidence(Evidence.hint(Texts.t("check.compile.main")));
             }
             return r;
         }
@@ -136,7 +137,7 @@ final class RuntimeChecks {
             }
             String artifact = ctx.var("artifact");
             if (artifact != null && (simple.contains("Convergence") || simple.contains("Banned") || simple.contains("UpperBound"))) {
-                r.fix(FixAction.of(FixAction.SHOW_DEPENDENCY, "Dependency im Baum zeigen", "artifact", artifact));
+                r.fix(FixAction.of(FixAction.SHOW_DEPENDENCY, Texts.t("check.enforcer.show"), "artifact", artifact));
             }
             return r;
         }
@@ -162,10 +163,10 @@ final class RuntimeChecks {
             }
             boolean killed = ctx.anyLineContains("Exit Code: 137") || ctx.anyLineContains("exit code 137");
             CheckResult r = killed ? CheckResult.confirmed()
-                    .cause("Die {memoryTarget} wurde vom Betriebssystem beendet (Exit-Code 137 = SIGKILL) – typisch für den OOM-Killer, wenn Rechner oder Container zu wenig RAM haben.")
-                    .evidence(Evidence.hint("Exit-Code 137 = 128 + 9 (SIGKILL)"))
+                    .cause(Texts.t("check.memory.killed.cause"))
+                    .evidence(Evidence.hint(Texts.t("check.memory.killed.evidence")))
                     : CheckResult.info();
-            r.var("memoryTarget", fork ? "Test-JVM (Surefire/Failsafe)" : "Maven-JVM");
+            r.var("memoryTarget", Texts.t(fork ? "check.memory.test.jvm" : "check.memory.maven.jvm"));
 
             String currentXmx = null;
             String mavenOpts = ctx.env().getenv("MAVEN_OPTS");
@@ -195,7 +196,7 @@ final class RuntimeChecks {
                 for (String line : ctx.linesContaining("Command was")) {
                     forkXmx = xmx(line, forkXmx);
                     if (forkXmx != null) {
-                        r.evidence(Evidence.log("Test-JVM lief mit -Xmx" + forkXmx));
+                        r.evidence(Evidence.log(Texts.t("check.memory.fork.xmx", forkXmx)));
                     }
                 }
             }
@@ -205,14 +206,14 @@ final class RuntimeChecks {
             if (fork) {
                 if (!argLines.isEmpty()) {
                     ProjectPoms.Location l = argLines.get(0);
-                    r.fix(FixAction.of(FixAction.OPEN_FILE, "argLine erhöhen auf " + option, "file", l.pom.file.toString(), "line", String.valueOf(l.line)));
+                    r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.memory.argline", option), "file", l.pom.file.toString(), "line", String.valueOf(l.line)));
                 } else {
-                    r.fix(FixAction.of(FixAction.MANUAL, "Surefire konfigurieren: <argLine>" + option + "</argLine>"));
+                    r.fix(FixAction.of(FixAction.MANUAL, Texts.t("check.memory.surefire", option)));
                 }
             } else if (jvmConfig != null) {
-                r.fix(FixAction.of(FixAction.SET_JVM_OPTION, option + " in .mvn/jvm.config eintragen", "file", jvmConfig.toString(), "option", option));
+                r.fix(FixAction.of(FixAction.SET_JVM_OPTION, Texts.t("check.memory.jvm.config", option), "file", jvmConfig.toString(), "option", option));
             } else {
-                r.fix(FixAction.of(FixAction.MANUAL, "MAVEN_OPTS=\"" + option + "\" setzen"));
+                r.fix(FixAction.of(FixAction.MANUAL, Texts.t("check.memory.maven.opts", option)));
             }
             return r;
         }

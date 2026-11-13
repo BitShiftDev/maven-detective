@@ -257,7 +257,7 @@ class UpgradeSimulatorTest {
         assertFalse(r.isComplete());
         assertEquals(List.of("org.lib:lib:3.0"), r.getMissing());
         assertEquals(List.of("org.lib:lib:3.0"), PomFetcher.coordinates(r.getMissing()));
-        assertTrue(String.join("\n", r.lines(false)).contains("Unvollständig – lokal fehlen 1 POM: org.lib:lib:3.0"));
+        assertTrue(String.join("\n", r.lines(false)).contains("Unvollständig – lokal fehlt 1 POM: org.lib:lib:3.0"));
     }
 
     @Test

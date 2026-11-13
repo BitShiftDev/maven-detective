@@ -27,6 +27,7 @@ public final class BuildDoctorActions {
 
         @Override
         public void update(@NotNull AnActionEvent e) {
+            MavenDetectiveBundle.localize(this, e.getPresentation());
             e.getPresentation().setEnabled(e.getProject() != null);
         }
 
@@ -74,6 +75,7 @@ public final class BuildDoctorActions {
     public static final class ReportMisdiagnosis extends ProjectAction {
         @Override
         public void update(@NotNull AnActionEvent e) {
+            MavenDetectiveBundle.localize(this, e.getPresentation());
             BuildDoctorService.Result r = target(e);
             e.getPresentation().setEnabled(r != null && (!r.diagnoses().isEmpty() || r.environment() != null));
         }

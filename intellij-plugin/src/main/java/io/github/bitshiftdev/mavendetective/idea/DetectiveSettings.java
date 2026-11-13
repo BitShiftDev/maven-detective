@@ -36,6 +36,8 @@ public final class DetectiveSettings implements PersistentStateComponent<Detecti
         public String snapshotDir = "";
         /** Seite „Ungenutzt/undeklariert“: auch Klassen zeigen, die nur über einen Starter kommen. */
         public boolean usageViaStarters;
+        /** Sprache der Oberfläche ({@link MavenDetectiveBundle.Language}); AUTO = wie die IDE. */
+        public String language = MavenDetectiveBundle.Language.AUTO.name();
     }
 
     private State state = new State();
@@ -100,6 +102,18 @@ public final class DetectiveSettings implements PersistentStateComponent<Detecti
 
     public void setUsageViaStarters(boolean v) {
         state.usageViaStarters = v;
+    }
+
+    public @NotNull MavenDetectiveBundle.Language getLanguage() {
+        try {
+            return state.language == null ? MavenDetectiveBundle.Language.AUTO : MavenDetectiveBundle.Language.valueOf(state.language);
+        } catch (IllegalArgumentException e) {
+            return MavenDetectiveBundle.Language.AUTO;
+        }
+    }
+
+    public void setLanguage(@NotNull MavenDetectiveBundle.Language v) {
+        state.language = v.name();
     }
 
     /**

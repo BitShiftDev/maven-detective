@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.ImportStep;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Interpolated;
@@ -53,17 +54,16 @@ public final class VersionExplainer {
             computed = explainDirect(x, model, declared, managed);
         } else if (managed != null) {
             if (declared != null) {
-                x.add(Kind.DIRECT, "Deklariert ohne Version in " + label(declared.declaredIn) + " – die Version kommt aus dependencyManagement",
+                x.add(Kind.DIRECT, Texts.t("why.declared.managed", label(declared.declaredIn)),
                         file(declared.declaredIn), declared.dep.getLine(), 0);
-                inheritance(x, model, declared.declaredIn, "<dependency> geerbt");
+                inheritance(x, model, declared.declaredIn, Texts.t("why.inherited.dependency"));
             } else if (included != null) {
-                x.add(Kind.TREE_PATH, "Transitiv über " + included.pathText(), null, -1, 0);
+                x.add(Kind.TREE_PATH, Texts.t("why.transitive", included.pathText()), null, -1, 0);
                 if (included.getPremanagedVersion() != null) {
-                    x.add(Kind.TREE_PATH, "Ohne dependencyManagement wäre es " + included.getPremanagedVersion()
-                            + " (nearest wins) – das Management des Moduls überstimmt transitive Versionen", null, -1, 1);
+                    x.add(Kind.TREE_PATH, Texts.t("why.premanaged", included.getPremanagedVersion()), null, -1, 1);
                 }
             } else {
-                x.add(Kind.TREE_PATH, "Nicht direkt deklariert; kommt, falls überhaupt, transitiv – dependencyManagement des Moduls bestimmt dann die Version",
+                x.add(Kind.TREE_PATH, Texts.t("why.not.declared.managed"),
                         null, -1, 0);
             }
             computed = explainManaged(x, model, managed, 0);
@@ -71,26 +71,24 @@ public final class VersionExplainer {
             x.setSummary(managedSummary(model, managed, computed));
         } else if (declared != null) {
             computed = null;
-            x.add(Kind.DIRECT, "Deklariert ohne Version in " + label(declared.declaredIn) + ", aber kein passender Eintrag in dependencyManagement gefunden",
+            x.add(Kind.DIRECT, Texts.t("why.declared.unmanaged", label(declared.declaredIn)),
                     file(declared.declaredIn), declared.dep.getLine(), 0);
-            inheritance(x, model, declared.declaredIn, "<dependency> geerbt");
+            inheritance(x, model, declared.declaredIn, Texts.t("why.inherited.dependency"));
             ImportStep suspect = suspectBom(model, groupId);
             x.setSummary(suspect != null
-                    ? "Deklariert ohne Version; die Version kommt vermutlich aus dem BOM " + suspect.declaration.ga() + ":" + suspect.version.value
-                    + ", das im lokalen Repository fehlt."
-                    : "Deklariert ohne Version, aber kein dependencyManagement liefert eine – so baut Maven nicht ('dependencies.dependency.version' is missing).");
+                    ? Texts.t("why.summary.missing.bom", suspect.declaration.ga() + ":" + suspect.version.value)
+                    : Texts.t("why.summary.no.version"));
         } else if (included != null) {
             computed = explainTransitive(x, included);
         } else {
             computed = null;
             if (tree != null && !tree.findAll(groupId, artifactId).isEmpty()) {
-                x.setSummary(groupId + ":" + artifactId + " steht im Baum, landet aber nicht im Classpath (verdrängt oder ausgeschlossen).");
+                x.setSummary(Texts.t("why.summary.not.included", groupId + ":" + artifactId));
             } else if (tree != null) {
-                x.setSummary(groupId + ":" + artifactId + " kommt in " + module.gav() + " nicht vor – weder deklariert, verwaltet noch transitiv.");
+                x.setSummary(Texts.t("why.summary.absent", groupId + ":" + artifactId, module.gav()));
             } else {
-                x.setSummary("Weder deklariert noch in dependencyManagement – die Version kommt transitiv (nearest wins).");
-                x.add(Kind.HINT, "Für Pfad und verdrängte Versionen den Baum mitgeben: mvn dependency:tree -Dverbose -Dincludes="
-                        + groupId + ":" + artifactId + " > tree.txt, dann --tree tree.txt", null, -1, 0);
+                x.setSummary(Texts.t("why.summary.transitive.no.tree"));
+                x.add(Kind.HINT, Texts.t("why.hint.tree", groupId + ":" + artifactId), null, -1, 0);
             }
         }
 
@@ -100,8 +98,7 @@ public final class VersionExplainer {
         String version = included != null ? included.getVersion() : computed;
         x.setVersion(version);
         if (included != null && computed != null && !computed.contains("${") && !computed.equals(included.getVersion())) {
-            x.add(Kind.HINT, "Der aufgelöste Baum sagt " + included.getVersion() + ", die POMs ergeben " + computed
-                    + ". Meist steckt ein aktives Profil, eine -D-Property oder ein veralteter IDE-Import dahinter.", null, -1, 0);
+            x.add(Kind.HINT, Texts.t("why.hint.mismatch", included.getVersion(), computed), null, -1, 0);
         }
         notes(x, model, managed == null);
         return x;
@@ -110,21 +107,18 @@ public final class VersionExplainer {
     private String explainDirect(VersionExplanation x, EffectiveModel model, Declared declared, Managed managed) {
         Interpolated v = model.interpolate(declared.dep.getVersion());
         boolean inherited = declared.declaredIn != model.getPom();
-        x.add(Kind.DIRECT, (inherited ? "Geerbte Angabe " : "Direkt angegeben ") + versionTag(declared.dep.getVersion())
-                        + " in " + label(declared.declaredIn),
+        x.add(Kind.DIRECT, Texts.t(inherited ? "why.direct.inherited" : "why.direct", versionTag(declared.dep.getVersion()), label(declared.declaredIn)),
                 file(declared.declaredIn), declared.dep.getVersionLine(), 0);
         if (inherited) {
-            inheritance(x, model, declared.declaredIn, "<dependency> geerbt");
+            inheritance(x, model, declared.declaredIn, Texts.t("why.inherited.dependency"));
         }
         properties(x, v, 1);
         x.setSource(Source.DIRECT);
-        x.setSummary("Version " + v.value + (inherited ? ": im Parent " + declared.declaredIn.gav() + " direkt angegeben" : ": direkt im Modul angegeben")
-                + " – eine direkte Angabe gewinnt immer, auch gegen dependencyManagement.");
+        x.setSummary(inherited ? Texts.t("why.summary.direct.parent", v.value, declared.declaredIn.gav()) : Texts.t("why.summary.direct", v.value));
         if (managed != null) {
             Interpolated mv = managed.version();
             if (mv.value != null && !mv.value.equals(v.value)) {
-                x.add(Kind.HINT, "dependencyManagement in " + label(managed.declaredIn) + " nennt " + mv.value
-                                + ", wird hier aber von der direkten Angabe überstimmt. Version weglassen, wenn das Management gelten soll.",
+                x.add(Kind.HINT, Texts.t("why.hint.overridden", label(managed.declaredIn), mv.value),
                         file(managed.declaredIn), managed.dep.getVersionLine(), 0);
             }
         }
@@ -135,28 +129,26 @@ public final class VersionExplainer {
     private String explainManaged(VersionExplanation x, EffectiveModel model, Managed managed, int level) {
         if (managed.via.isEmpty()) {
             if (managed.declaredIn != model.getPom()) {
-                inheritance(x, model, managed.declaredIn, "dependencyManagement geerbt");
+                inheritance(x, model, managed.declaredIn, Texts.t("why.inherited.management"));
             }
         } else {
             ImportStep first = managed.via.get(0);
             if (first.declaredIn != model.getPom()) {
-                inheritance(x, model, first.declaredIn, "BOM-Import geerbt");
+                inheritance(x, model, first.declaredIn, Texts.t("why.inherited.import"));
             }
             for (ImportStep step : managed.via) {
-                x.add(Kind.IMPORT, "Importiert BOM " + step.declaration.ga() + ":" + step.version.value + " "
-                                + versionTag(step.declaration.getVersion()) + " in " + label(step.declaredIn),
+                x.add(Kind.IMPORT, Texts.t("why.import", step.declaration.ga() + ":" + step.version.value, versionTag(step.declaration.getVersion()), label(step.declaredIn)),
                         file(step.declaredIn), step.declaration.getVersionLine(), level);
                 properties(x, step.version, level + 1);
                 if (step.bom != null && step.bom.hasParent() && step.bom != managed.declaredIn
                         && managed.via.indexOf(step) == managed.via.size() - 1) {
-                    x.add(Kind.INHERITED, "Eintrag stammt aus dem Parent des BOMs: " + label(managed.declaredIn),
+                    x.add(Kind.INHERITED, Texts.t("why.bom.parent", label(managed.declaredIn)),
                             file(managed.declaredIn), managed.declaredIn.getParentLine(), level + 1);
                 }
             }
         }
         Interpolated v = managed.version();
-        x.add(Kind.MANAGED, "dependencyManagement: " + managed.dep.ga() + " " + versionTag(managed.dep.getVersion())
-                + " in " + label(managed.declaredIn), file(managed.declaredIn), managed.dep.getVersionLine(), level);
+        x.add(Kind.MANAGED, Texts.t("why.managed", managed.dep.ga() + " " + versionTag(managed.dep.getVersion()), label(managed.declaredIn)), file(managed.declaredIn), managed.dep.getVersionLine(), level);
         properties(x, v, level + 1);
         if (!managed.via.isEmpty()) {
             // Nur der erste Import wird im Kontext des Moduls aufgelöst; alles dahinter im Kontext der BOMs
@@ -170,19 +162,18 @@ public final class VersionExplainer {
 
     private String explainTransitive(VersionExplanation x, DepNode included) {
         x.setSource(Source.TRANSITIVE);
-        x.add(Kind.TREE_PATH, "Transitiv über " + included.pathText() + " (Tiefe " + included.depth() + ")", null, -1, 0);
+        x.add(Kind.TREE_PATH, Texts.t("why.transitive.depth", included.pathText(), included.depth()), null, -1, 0);
         DepNode via = included.getParent();
         String version = included.getVersion();
         if (via != null && via.getParent() != null) {
             PomFile pom = locator.byCoordinates(via.getGroupId(), via.getArtifactId(), via.getVersion());
             if (pom == null) {
-                x.add(Kind.HINT, "POM von " + via.gav() + " liegt nicht im lokalen Repository – die Deklaration lässt sich nicht zeigen", null, -1, 0);
+                x.add(Kind.HINT, Texts.t("why.hint.pom.missing", via.gav()), null, -1, 0);
             } else {
                 EffectiveModel m = locator.model(pom);
                 Declared d = m.declared(included.getGroupId(), included.getArtifactId());
                 if (d != null) {
-                    x.add(Kind.DECLARED_TRANSITIVE, "Deklariert von " + via.ga() + " " + versionTag(d.dep.getVersion())
-                            + " in " + label(d.declaredIn), file(d.declaredIn), d.dep.getVersionLine(), 0);
+                    x.add(Kind.DECLARED_TRANSITIVE, Texts.t("why.declared.by", via.ga() + " " + versionTag(d.dep.getVersion()), label(d.declaredIn)), file(d.declaredIn), d.dep.getVersionLine(), 0);
                     if (d.dep.getVersion() != null) {
                         properties(x, m.interpolate(d.dep.getVersion()), 1);
                     } else {
@@ -194,8 +185,7 @@ public final class VersionExplainer {
                 }
             }
         }
-        x.setSummary("Version " + version + ": transitiv über " + (via == null ? "?" : via.ga())
-                + ", kein dependencyManagement im Modul – nearest wins (der kürzeste Pfad gewinnt, bei gleicher Tiefe der zuerst deklarierte).");
+        x.setSummary(Texts.t("why.summary.transitive", version, via == null ? "?" : via.ga()));
         return version;
     }
 
@@ -212,15 +202,15 @@ public final class VersionExplainer {
             }
             String why;
             if (managed) {
-                why = "dependencyManagement setzt die Version";
+                why = Texts.t("why.conflict.managed");
             } else if (winner == null) {
-                why = "eine andere Version hat gewonnen";
+                why = Texts.t("why.conflict.other");
             } else if (n.depth() > winner.depth()) {
-                why = "Pfad ist länger (Tiefe " + n.depth() + " gegen " + winner.depth() + ")";
+                why = Texts.t("why.conflict.longer", n.depth(), winner.depth());
             } else {
-                why = "gleich tief, aber der Gewinner steht weiter vorn im POM";
+                why = Texts.t("why.conflict.order");
             }
-            x.add(Kind.CONFLICT, "Verdrängt: " + requested + " über " + n.pathText() + " – " + why, null, -1, 0);
+            x.add(Kind.CONFLICT, displaced(requested, n.pathText(), why), null, -1, 0);
             if (seen.size() >= 8) {
                 break;
             }
@@ -236,9 +226,7 @@ public final class VersionExplainer {
             PropertyOrigin own = model.property(used.name);
             if (own != null && own.pom != null && own.value != null && !own.value.equals(used.value)
                     && model.getChain().contains(own.pom) && own.pom != used.pom) {
-                x.add(Kind.HINT, "Die Property ${" + used.name + "} = " + own.value + " in " + label(own.pom)
-                                + " wirkt hier nicht: Das BOM wird importiert, nicht geerbt, und löst seine Properties im eigenen Kontext auf. "
-                                + "Abhilfe: den Eintrag vor dem Import selbst in dependencyManagement setzen oder die BOM-Version ändern.",
+                x.add(Kind.HINT, Texts.t("why.hint.bom.property", "${" + used.name + "} = " + own.value, label(own.pom)),
                         file(own.pom), own.line, 0);
             }
         }
@@ -247,17 +235,16 @@ public final class VersionExplainer {
     private void properties(VersionExplanation x, Interpolated v, int level) {
         for (PropertyOrigin o : v.used) {
             if (o.pom == null) {
-                x.add(Kind.PROPERTY, "${" + o.name + "} = " + o.value + " (eingebaut)", null, -1, level);
+                x.add(Kind.PROPERTY, "${" + o.name + "} = " + o.value + " (" + Texts.t("why.property.builtin") + ")", null, -1, level);
                 continue;
             }
-            x.add(Kind.PROPERTY, "${" + o.name + "} = " + o.value + " gesetzt in " + label(o.pom), file(o.pom), o.line, level);
+            x.add(Kind.PROPERTY, Texts.t("why.property.set", "${" + o.name + "} = " + o.value, label(o.pom)), file(o.pom), o.line, level);
             for (PropertyOrigin s : o.shadowed) {
-                x.add(Kind.PROPERTY, "überschreibt " + s.value + " aus " + label(s.pom), file(s.pom), s.line, level + 1);
+                x.add(Kind.PROPERTY, Texts.t("why.property.overrides", s.value, label(s.pom)), file(s.pom), s.line, level + 1);
             }
         }
         for (String name : v.unresolved) {
-            x.add(Kind.HINT, "${" + name + "} ist in keiner POM der Kette definiert – kommt aus -D" + name
-                    + "=…, .mvn/maven.config, settings.xml oder einem Profil", null, -1, 0);
+            x.add(Kind.HINT, Texts.t("why.hint.property.undefined", "${" + name + "}", name), null, -1, 0);
         }
     }
 
@@ -271,7 +258,7 @@ public final class VersionExplainer {
         for (int i = 0; i < idx; i++) {
             PomFile child = chain.get(i);
             PomFile parent = chain.get(i + 1);
-            x.add(Kind.INHERITED, (i == idx - 1 ? what + ": " : "") + "Parent von " + child.getArtifactId() + " ist " + parent.gav(),
+            x.add(Kind.INHERITED, (i == idx - 1 ? what + ": " : "") + Texts.t("why.parent.of", child.getArtifactId(), parent.gav()),
                     file(child), child.getParentLine(), 1);
         }
     }
@@ -284,7 +271,7 @@ public final class VersionExplainer {
             }
         }
         if (!profiles.isEmpty()) {
-            x.add(Kind.HINT, "Profile setzen Properties oder dependencyManagement und sind hier nicht ausgewertet: " + profiles, null, -1, 0);
+            x.add(Kind.HINT, Texts.t("why.hint.profiles", profiles), null, -1, 0);
         }
         for (String n : model.getNotes()) {
             x.add(Kind.HINT, n, null, -1, 0);
@@ -295,8 +282,7 @@ public final class VersionExplainer {
         List<ImportStep> missing = model.getMissingImports();
         ImportStep suspect = suspectBom(model, x.getGroupId());
         if (suspect != null) {
-            x.add(Kind.HINT, "BOM " + suspect.declaration.ga() + ":" + suspect.version.value + " (importiert in " + label(suspect.declaredIn)
-                            + ") fehlt im lokalen Repository und verwaltet vermutlich " + x.getGroupId() + ". Einmal bauen, dann erneut fragen.",
+            x.add(Kind.HINT, Texts.t("why.hint.suspect.bom", suspect.declaration.ga() + ":" + suspect.version.value, label(suspect.declaredIn), x.getGroupId()),
                     file(suspect.declaredIn), suspect.declaration.getVersionLine(), 0);
         }
         int others = missing.size() - (suspect == null ? 0 : 1);
@@ -308,8 +294,7 @@ public final class VersionExplainer {
                     names.append(shown++ == 0 ? "" : ", ").append(s.declaration.getArtifactId()).append(':').append(s.version.value);
                 }
             }
-            x.add(Kind.HINT, (others == 1 ? "Ein importiertes BOM fehlt" : others + " importierte BOMs fehlen") + " im lokalen Repository ("
-                    + names + (others > 3 ? ", …" : "") + "); ihre Einträge sind nicht berücksichtigt.", null, -1, 0);
+            x.add(Kind.HINT, Texts.t("why.hint.missing.boms", others, names + (others > 3 ? ", …" : "")), null, -1, 0);
         }
     }
 
@@ -326,27 +311,37 @@ public final class VersionExplainer {
 
     private static String managedSummary(EffectiveModel model, Managed managed, String version) {
         if (managed.via.isEmpty()) {
-            return "Version " + version + ": aus dependencyManagement in " + managed.declaredIn.gav()
-                    + (managed.declaredIn == model.getPom() ? " (das Modul selbst)." : " (geerbt).");
+            return Texts.t(managed.declaredIn == model.getPom() ? "why.summary.managed.self" : "why.summary.managed.inherited",
+                    version, managed.declaredIn.gav());
         }
         ImportStep first = managed.via.get(0);
         ImportStep last = managed.via.get(managed.via.size() - 1);
-        StringBuilder sb = new StringBuilder("Version ").append(version).append(": aus dem BOM ")
-                .append(last.declaration.ga()).append(':').append(last.version.value);
+        StringBuilder sb = new StringBuilder(Texts.t("why.summary.bom", version, last.declaration.ga() + ":" + last.version.value));
         if (last.bom != null && managed.declaredIn != last.bom) {
-            sb.append(" (Eintrag in dessen Parent ").append(managed.declaredIn.gav()).append(')');
+            sb.append(" (").append(Texts.t("why.summary.bom.parent", managed.declaredIn.gav())).append(')');
         }
         if (managed.via.size() > 1) {
-            sb.append(", importiert über ").append(first.declaration.ga()).append(':').append(first.version.value);
+            sb.append(", ").append(Texts.t("why.summary.bom.via", first.declaration.ga() + ":" + first.version.value));
         }
         if (first.declaredIn != model.getPom()) {
-            sb.append(managed.via.size() > 1 ? "; " : ", ").append("Import geerbt von ").append(first.declaredIn.gav());
+            sb.append(managed.via.size() > 1 ? "; " : ", ").append(Texts.t("why.summary.bom.inherited", first.declaredIn.gav()));
         }
         return sb.append('.').toString();
     }
 
+    /**
+     * „Verdrängt: 2.15.0 über a → b – Grund“. Das Plugin liest Version und Grund daraus zurück
+     * ({@code VersionTimeline.displacedVersion}) – Aufbau nur zusammen mit {@link #DISPLACED} ändern.
+     */
+    static String displaced(String version, String path, String why) {
+        return Texts.t("why.displaced", version, path, why);
+    }
+
+    /** Schlüssel des Verdrängt-Satzes: {@code {0}} Version, {@code {1}} Pfad, {@code {2}} Grund. */
+    public static final String DISPLACED = "why.displaced";
+
     private static String versionTag(String raw) {
-        return raw == null ? "(ohne <version>)" : "<version>" + raw + "</version>";
+        return raw == null ? "(" + Texts.t("why.no.version") + ")" : "<version>" + raw + "</version>";
     }
 
     private String label(PomFile pom) {

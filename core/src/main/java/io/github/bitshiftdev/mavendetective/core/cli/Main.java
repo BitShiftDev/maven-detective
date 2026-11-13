@@ -1,6 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.cli;
 
 import io.github.bitshiftdev.mavendetective.core.BuildDoctor;
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.catalog.RuleCatalog;
 import io.github.bitshiftdev.mavendetective.core.check.Checks;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
@@ -82,6 +83,11 @@ public final class Main {
     }
 
     static int run(String[] args, PrintStream out, PrintStream err, InputStream stdin) {
+        for (int i = 0; i + 1 < args.length; i++) {
+            if ("--lang".equals(args[i])) {
+                System.setProperty(Texts.PROPERTY, args[i + 1]);
+            }
+        }
         if (args.length < 1) {
             usage(err);
             return 2;
@@ -119,16 +125,16 @@ public final class Main {
             if ("validate-catalog".equals(command) && o.target != null) {
                 RuleCatalog c = RuleCatalog.load(Paths.get(o.target));
                 new BuildDoctor(RuleCatalog.loadDefault().merge(c), Checks.defaults());
-                out.println("OK: " + c.getRules().size() + " Regeln");
+                out.println(Texts.t("cli.catalog.ok", c.getRules().size()));
                 return 0;
             }
             usage(err);
             return 2;
         } catch (RuleCatalog.CatalogException e) {
-            err.println("Fehler im Katalog: " + e.getMessage());
+            err.println(Texts.t("cli.catalog.error", e.getMessage()));
             return 3;
         } catch (IOException e) {
-            err.println("Fehler: " + e.getMessage());
+            err.println(Texts.t("cli.error", e.getMessage()));
             return 1;
         }
     }
@@ -149,7 +155,7 @@ public final class Main {
                 : failure.getSession().getProjectDirectory() == null ? null : Paths.get(failure.getSession().getProjectDirectory());
         SnapshotDiff changes = snapshotProject == null || o.idOnly ? null : SnapshotStore.defaultStore().changesSinceGreen(snapshotProject);
         if (result.isEmpty()) {
-            out.println("Keine Fehler im Log gefunden.");
+            out.println(Texts.t("cli.no.errors"));
             return 0;
         }
         if (o.idOnly) {
@@ -171,18 +177,18 @@ public final class Main {
         BuildSnapshot latest = store.loadLatest(project);
         BuildSnapshot green = store.loadGreen(project, latest == null ? BuildSnapshot.ORIGIN_EXTENSION : latest.getOrigin());
         if (green == null) {
-            out.println("Noch kein grüner Build gespeichert für " + project + " (Ablage: " + store.projectDir(project) + ").");
-            out.println("Die Extension speichert ihn automatisch: mvn -Dmaven.ext.class.path=<extension.jar> verify");
+            out.println(Texts.t("cli.changes.no.green", project, store.projectDir(project)));
+            out.println(Texts.t("cli.changes.how"));
             return 1;
         }
         if (latest == null || !Boolean.FALSE.equals(latest.getSuccessful())) {
-            out.println("Der letzte Lauf war grün (" + green.getCreatedAt() + "). Nichts zu vergleichen.");
+            out.println(Texts.t("cli.changes.green", green.getCreatedAt()));
             return 0;
         }
         SnapshotDiff diff = SnapshotDiff.compare(green, latest);
-        out.println(diff.headline() + " bis zum letzten Lauf (" + latest.getCreatedAt() + "):");
+        out.println(Texts.t("cli.changes.headline", diff.headline(), latest.getCreatedAt()));
         if (diff.isEmpty()) {
-            out.println("  keine Änderung an Maven, JDK, Profilen, Parent, Plugins oder Dependencies erkannt.");
+            out.println("  " + Texts.t("cli.changes.none"));
         }
         for (String line : diff.lines(Integer.MAX_VALUE)) {
             out.println("  - " + line);
@@ -197,7 +203,7 @@ public final class Main {
     private static int why(Options o, PrintStream out, PrintStream err, InputStream stdin) throws IOException {
         String[] ga = o.target.split(":");
         if (ga.length < 2) {
-            err.println("Erwartet groupId:artifactId, z. B. com.fasterxml.jackson.core:jackson-databind");
+            err.println(Texts.t("cli.expected.ga"));
             return 2;
         }
         Path root = projectRoot(o);
@@ -208,7 +214,7 @@ public final class Main {
         if (o.module != null) {
             PomFile m = locator.load(root.resolve(o.module));
             if (m == null) {
-                err.println("Keine lesbare POM unter " + root.resolve(o.module));
+                err.println(Texts.t("cli.no.readable.pom", root.resolve(o.module)));
                 return 1;
             }
             modules.add(m);
@@ -227,7 +233,7 @@ public final class Main {
             if (modules.isEmpty()) {
                 PomFile rootPom = locator.load(root.resolve("pom.xml"));
                 if (rootPom == null) {
-                    err.println("Keine pom.xml in " + root + " (--project DIR angeben)");
+                    err.println(Texts.t("cli.no.pom", root));
                     return 1;
                 }
                 modules.add(rootPom);
@@ -277,7 +283,7 @@ public final class Main {
             r.close();
         }
         if (trees.isEmpty()) {
-            err.println("Kein Baum in " + o.tree + " gefunden (erwartet: Ausgabe von mvn dependency:tree -Dverbose).");
+            err.println(Texts.t("cli.no.tree", o.tree));
         }
         return trees;
     }
@@ -298,7 +304,7 @@ public final class Main {
             }
         }
         if (poms.isEmpty()) {
-            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            err.println(Texts.t("cli.no.pom", root));
             return 1;
         }
         ConflictMatrix matrix = ConflictMatrix.build(locator, root, poms, trees);
@@ -340,7 +346,7 @@ public final class Main {
         PomLocator locator = new PomLocator(root, repo);
         List<PomFile> poms = projectPoms(locator, root);
         if (poms.isEmpty()) {
-            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            err.println(Texts.t("cli.no.pom", root));
             return 1;
         }
         ExclusionAudit audit = ExclusionAudit.build(locator, poms, trees);
@@ -350,15 +356,15 @@ public final class Main {
             for (int round = 0; round < 500 && !audit.removable().isEmpty(); round++) {
                 ExclusionAudit.Finding f = audit.removable().get(0);
                 for (String a : executor.execute(f.fix()).actions) {
-                    out.println(a + " (" + (f.getStatus() == ExclusionAudit.Status.STALE ? "veraltet" : "doppelt") + ")");
+                    out.println(a + " (" + Texts.t(f.getStatus() == ExclusionAudit.Status.STALE ? "excl.status.stale" : "excl.status.redundant") + ")");
                 }
                 removed++;
                 locator = new PomLocator(root, repo);
                 audit = ExclusionAudit.build(locator, projectPoms(locator, root), trees);
             }
-            out.println(removed == 0 ? "Nichts zu entfernen." : removed + (removed == 1 ? " Exclusion entfernt." : " Exclusions entfernt."));
+            out.println(removed == 0 ? Texts.t("cli.nothing.to.remove") : Texts.t("cli.exclusions.removed", removed));
             if (audit.count(ExclusionAudit.Status.UNKNOWN) > 0) {
-                out.println(audit.count(ExclusionAudit.Status.UNKNOWN) + " nicht prüfbar (POMs fehlen lokal) – Details ohne --remove.");
+                out.println(Texts.t("cli.exclusions.unknown", audit.count(ExclusionAudit.Status.UNKNOWN)));
             }
             return 0;
         }
@@ -384,7 +390,7 @@ public final class Main {
         PomLocator locator = new PomLocator(root, localRepository(o, root));
         List<PomFile> poms = projectPoms(locator, root);
         if (poms.isEmpty()) {
-            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            err.println(Texts.t("cli.no.pom", root));
             return 1;
         }
         DuplicateClasses result = DuplicateClasses.build(locator, poms, trees, new JarIndex(), null);
@@ -403,15 +409,15 @@ public final class Main {
                         }
                         added++;
                     } catch (IOException e) {
-                        err.println("Übersprungen: " + e.getMessage());
+                        err.println(Texts.t("cli.skipped", e.getMessage()));
                     }
                 }
             }
-            out.println(added == 0 ? "Nichts einzufügen." : added + (added == 1 ? " Exclusion eingefügt." : " Exclusions eingefügt.")
-                    + (added > 0 && !trees.isEmpty() ? " Baum neu erzeugen und erneut prüfen." : added > 0 ? " Erneut prüfen." : ""));
+            out.println(added == 0 ? Texts.t("cli.nothing.to.add") : Texts.t("cli.exclusions.added", added) + " "
+                    + Texts.t(!trees.isEmpty() ? "cli.recheck.tree" : "cli.recheck"));
             int open = result.clashes().size() - result.fixable().size();
             if (open > 0) {
-                out.println(open + (open == 1 ? " Fund braucht" : " Funde brauchen") + " eine Entscheidung – Details ohne --exclude.");
+                out.println(Texts.t("cli.duplicates.open", open));
             }
             return 0;
         }
@@ -442,7 +448,7 @@ public final class Main {
         PomLocator locator = new PomLocator(root, localRepository(o, root));
         List<PomFile> poms = projectPoms(locator, root);
         if (poms.isEmpty()) {
-            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            err.println(Texts.t("cli.no.pom", root));
             return 1;
         }
         DependencyUsage result = DependencyUsage.build(locator, poms, trees, new JarIndex(), DependencyUsage.sourceScanner(null), null);
@@ -465,12 +471,12 @@ public final class Main {
                         }
                         changed++;
                     } catch (IOException e) {
-                        err.println("Übersprungen: " + e.getMessage());
+                        err.println(Texts.t("cli.skipped", e.getMessage()));
                     }
                 }
             }
-            out.println(changed == 0 ? "Nichts zu ändern." : changed + (changed == 1 ? " Änderung." : " Änderungen.")
-                    + " Erneut prüfen" + (trees.isEmpty() ? "." : " (Baum neu erzeugen)."));
+            out.println(changed == 0 ? Texts.t("cli.nothing.to.change") : Texts.t("cli.changes.made", changed) + " "
+                    + Texts.t(trees.isEmpty() ? "cli.recheck" : "cli.recheck.tree"));
             return 0;
         }
         if (o.markdown) {
@@ -513,7 +519,7 @@ public final class Main {
         PomLocator locator = new PomLocator(root, repo);
         List<PomFile> poms = projectPoms(locator, root);
         if (poms.isEmpty()) {
-            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            err.println(Texts.t("cli.no.pom", root));
             return 1;
         }
         UpgradeSimulator.Result result = UpgradeSimulator.simulate(locator, poms, request, trees, null);
@@ -528,16 +534,16 @@ public final class Main {
                 if (gavs.isEmpty()) {
                     break;
                 }
-                err.println("Lade " + gavs.size() + (gavs.size() == 1 ? " fehlende POM" : " fehlende POMs") + " mit " + mvn + " …");
+                err.println(Texts.t("cli.fetch.progress", gavs.size(), mvn));
                 PomFetcher.Outcome outcome;
                 try {
                     outcome = PomFetcher.fetch(mvn, root, repo, gavs, files, null, null, 900);
                 } catch (IOException e) {
-                    err.println("Maven ließ sich nicht starten (" + mvn + "): " + e.getMessage());
+                    err.println(Texts.t("cli.fetch.start.failed", mvn, e.getMessage()));
                     break;
                 }
                 if (!outcome.isOk()) {
-                    err.println("Maven konnte nicht alles laden (Exit " + outcome.getExitCode() + "):");
+                    err.println(Texts.t("cli.fetch.failed", outcome.getExitCode()));
                     for (String l : outcome.errors()) {
                         err.println("  " + l);
                     }
@@ -572,7 +578,7 @@ public final class Main {
                         out.println(a);
                     }
                 } catch (IOException e) {
-                    err.println("Übersprungen: " + e.getMessage());
+                    err.println(Texts.t("cli.skipped", e.getMessage()));
                 }
             }
             return 0;
@@ -583,7 +589,7 @@ public final class Main {
     private static int pin(ConflictMatrix matrix, String spec, PrintStream out, PrintStream err) throws IOException {
         String[] parts = spec.split(":");
         if (parts.length < 2) {
-            err.println("--pin erwartet groupId:artifactId[:version]");
+            err.println(Texts.t("cli.pin.format"));
             return 2;
         }
         for (ConflictMatrix.Row row : matrix.getRows()) {
@@ -592,7 +598,7 @@ public final class Main {
             }
             ConflictMatrix.Pin pin = row.getPin();
             if (pin == null) {
-                err.println(row.isDivergent() ? row.getPinProblem() : row.ga() + " hat in allen Modulen dieselbe Version " + row.versions());
+                err.println(row.isDivergent() ? row.getPinProblem() : Texts.t("cli.pin.same", row.ga(), row.versions()));
                 return 1;
             }
             FixAction fix = pin.fix(row.getGroupId(), row.getArtifactId(), parts.length > 2 ? parts[2] : pin.getVersion());
@@ -605,7 +611,7 @@ public final class Main {
             }
             return 0;
         }
-        err.println(spec + " kommt in keinem Modul vor.");
+        err.println(Texts.t("cli.not.in.any.module", spec));
         return 1;
     }
 
@@ -639,11 +645,11 @@ public final class Main {
         int labelled = 0;
         int correct = 0;
         Map<String, Integer> perRule = new TreeMap<String, Integer>();
-        out.println(String.format("%-40s %-28s %-15s %s", "Datei", "Regel", "Sicherheit", "Erwartet"));
+        out.println(String.format("%-40s %-28s %-15s %s", Texts.t("cli.eval.file"), Texts.t("cli.eval.rule"), Texts.t("cli.eval.confidence"), Texts.t("cli.eval.expected")));
         for (Path f : files) {
             BuildFailure failure = load(f);
             List<Diagnosis> ds2 = doctor.diagnose(failure, Environment.forBuild(failure, o.project == null ? null : Paths.get(o.project)));
-            String rule = ds2.isEmpty() ? "(kein Fehler)" : ds2.get(0).getRuleId();
+            String rule = ds2.isEmpty() ? "(" + Texts.t("cli.eval.no.error") + ")" : ds2.get(0).getRuleId();
             String conf = ds2.isEmpty() ? "" : ds2.get(0).getConfidence().label();
             if (!ds2.isEmpty() && !ds2.get(0).isUnknown()) {
                 classified++;
@@ -664,13 +670,13 @@ public final class Main {
             out.println(String.format("%-40s %-28s %-15s %s", f.getFileName(), rule, conf, mark));
         }
         out.println();
-        out.println("Logs: " + files.size() + ", eingeordnet: " + classified + " (" + percent(classified, files.size()) + ")");
+        out.println(Texts.t("cli.eval.summary", files.size(), classified, percent(classified, files.size())));
         if (labelled > 0) {
-            out.println("Mit Label: " + labelled + ", richtig: " + correct + " (" + percent(correct, labelled) + ")");
+            out.println(Texts.t("cli.eval.labelled", labelled, correct, percent(correct, labelled)));
         } else {
-            out.println("Tipp: labels.properties (datei.log=regel-id) anlegen, um die Trefferquote zu messen.");
+            out.println(Texts.t("cli.eval.tip"));
         }
-        out.println("Verteilung: " + perRule);
+        out.println(Texts.t("cli.eval.distribution", perRule));
         return 0;
     }
 
@@ -699,29 +705,7 @@ public final class Main {
     }
 
     private static void usage(PrintStream err) {
-        err.println("Maven Detective – Build Doctor");
-        err.println();
-        err.println("  diagnose <build.log | events.jsonl | -> [--project DIR] [--markdown | --id] [--catalog extra.yaml]");
-        err.println("  evaluate <ordner-mit-logs> [--catalog extra.yaml]   (Gate 1: Trefferquote messen)");
-        err.println("  changes [--project DIR]   (was hat sich seit dem letzten grünen Build geändert?)");
-        err.println("  validate-catalog <extra.yaml>");
-        err.println("  why <groupId:artifactId> [--project DIR] [--module DIR] [--tree tree.txt | -] [--markdown] [--local-repo DIR]");
-        err.println("      (Modul A: woher kommt die Version? Baum: mvn dependency:tree -Dverbose > tree.txt)");
-        err.println("  matrix [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--pin groupId:artifactId[:version]]");
-        err.println("      (Modul A2: welche Module nutzen welche Version? --pin legt sie im gemeinsamen Parent fest)");
-        err.println("  exclusions [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--remove]");
-        err.println("      (Modul A4: Exclusions, die nichts mehr ausschließen; --remove entfernt sie, Exit 3 = es gibt welche)");
-        err.println("  duplicates [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--exclude]");
-        err.println("      (Modul A3: Klassen in mehreren JARs; --exclude fügt die empfohlenen Exclusions ein,");
-        err.println("       Exit 3 = verschiedene Fassungen im Laufzeit-Classpath)");
-        err.println("  analyze [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--declare] [--remove]");
-        err.println("      (Modul A5: genannt, aber nur transitiv da / deklariert, aber nicht genannt; --declare deklariert,");
-        err.println("       --remove entfernt sicher ungenutzte, Exit 3 = es gibt Befunde)");
-        err.println("  upgrade <groupId:artifactId:version | property=wert> [--project DIR] [--tree tree.txt | -] [--all] [--markdown]");
-        err.println("          [--manage] [--fetch] [--apply] [--local-repo DIR]");
-        err.println("      (Modul A6: was ändert sich im Baum, bevor die POM geändert wird? --manage legt die Version im");
-        err.println("       dependencyManagement fest, --fetch lädt fehlende POMs mit Maven, --apply schreibt die Änderung,");
-        err.println("       Exit 3 = Versionen sinken oder neue Konflikte)");
+        err.println(Texts.t("cli.usage"));
     }
 
     private static final class Options {
@@ -746,7 +730,9 @@ public final class Main {
             Options o = new Options();
             for (int i = 1; i < args.length; i++) {
                 String a = args[i];
-                if ("--project".equals(a) && i + 1 < args.length) {
+                if ("--lang".equals(a) && i + 1 < args.length) {
+                    i++; // in run() ausgewertet
+                } else if ("--project".equals(a) && i + 1 < args.length) {
                     o.project = args[++i];
                 } else if ("--catalog".equals(a) && i + 1 < args.length) {
                     o.catalog = args[++i];

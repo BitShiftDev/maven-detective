@@ -1,6 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.ClassUsages.Use;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.ModuleClasspath.Entry;
@@ -59,7 +60,7 @@ public final class DependencyUsage {
         }
 
         public String label() {
-            return label;
+            return Texts.t("usage.kind." + name().toLowerCase(java.util.Locale.ROOT));
         }
     }
 
@@ -95,24 +96,24 @@ public final class DependencyUsage {
     }
 
     static final List<Known> RUNTIME_ONLY = Collections.unmodifiableList(Arrays.asList(
-            new Known("JDBC-Treiber", "com.h2database:h2", "org.hsqldb:hsqldb", "org.apache.derby:derby*", "org.postgresql:postgresql",
+            new Known("usage.known.jdbc", "com.h2database:h2", "org.hsqldb:hsqldb", "org.apache.derby:derby*", "org.postgresql:postgresql",
                     "com.mysql:mysql-connector-j", "mysql:mysql-connector-java", "org.mariadb.jdbc:mariadb-java-client",
                     "org.xerial:sqlite-jdbc", "com.oracle.database.jdbc:ojdbc*", "com.microsoft.sqlserver:mssql-jdbc",
                     "com.ibm.db2:jcc", "net.sourceforge.jtds:jtds"),
-            new Known("Logging-Backend oder -Brücke", "ch.qos.logback:logback-classic", "org.slf4j:slf4j-simple", "org.slf4j:slf4j-nop",
+            new Known("usage.known.logging", "ch.qos.logback:logback-classic", "org.slf4j:slf4j-simple", "org.slf4j:slf4j-nop",
                     "org.slf4j:slf4j-reload4j", "org.slf4j:slf4j-log4j12", "org.slf4j:slf4j-jdk14", "org.slf4j:jcl-over-slf4j",
                     "org.slf4j:log4j-over-slf4j", "org.slf4j:jul-to-slf4j", "org.apache.logging.log4j:log4j-slf4j-impl",
                     "org.apache.logging.log4j:log4j-slf4j2-impl", "org.apache.logging.log4j:log4j-to-slf4j",
                     "org.apache.logging.log4j:log4j-jul", "org.apache.logging.log4j:log4j-core", "org.springframework:spring-jcl"),
-            new Known("Test-Engine", "org.junit.jupiter:junit-jupiter-engine", "org.junit.vintage:junit-vintage-engine",
+            new Known("usage.known.test.engine", "org.junit.jupiter:junit-jupiter-engine", "org.junit.vintage:junit-vintage-engine",
                     "org.junit.platform:junit-platform-launcher", "org.junit.platform:junit-platform-suite-engine",
                     "net.bytebuddy:byte-buddy-agent", "org.mockito:mockito-inline"),
-            new Known("Annotation-Prozessor", "org.mapstruct:mapstruct-processor", "org.hibernate:hibernate-jpamodelgen",
+            new Known("usage.known.processor", "org.mapstruct:mapstruct-processor", "org.hibernate:hibernate-jpamodelgen",
                     "org.hibernate.orm:hibernate-jpamodelgen", "org.springframework.boot:spring-boot-configuration-processor",
                     "org.springframework.boot:spring-boot-autoconfigure-processor", "com.querydsl:querydsl-apt",
                     "org.projectlombok:lombok-mapstruct-binding", "com.google.dagger:dagger-compiler",
                     "com.google.auto.value:auto-value", "io.micronaut:micronaut-inject-java"),
-            new Known("Laufzeit-Werkzeug", "org.springframework.boot:spring-boot-devtools", "org.springframework.boot:spring-boot-docker-compose",
+            new Known("usage.known.runtime.tool", "org.springframework.boot:spring-boot-devtools", "org.springframework.boot:spring-boot-docker-compose",
                     "org.springframework.boot:spring-boot-starter-actuator", "org.springframework.boot:spring-boot-starter-tomcat",
                     "org.springframework.boot:spring-boot-starter-jetty", "org.springframework.boot:spring-boot-starter-undertow",
                     "org.springframework.boot:spring-boot-starter-logging", "org.springframework.boot:spring-boot-starter-log4j2")));
@@ -204,38 +205,37 @@ public final class DependencyUsage {
                 case UNDECLARED: {
                     Use first = !mainUses.isEmpty() ? mainUses.get(0) : testUses.get(0);
                     int n = mainCount + testCount;
-                    sb.append(entry.label()).append(" ist nicht deklariert, wird aber genannt: ").append(first.getClassName());
+                    sb.append(Texts.t("usage.msg.undeclared", entry.label(), first.getClassName()));
                     if (n > 1) {
-                        sb.append(" und ").append(n - 1).append(n == 2 ? " weitere Klasse" : " weitere Klassen");
+                        sb.append(' ').append(Texts.t("usage.msg.more.classes", n - 1));
                     }
-                    sb.append(mainCount == 0 ? " (nur in Tests)" : "");
-                    sb.append(" – kommt nur transitiv");
+                    sb.append(mainCount == 0 ? " (" + Texts.t("usage.kind.test_only") + ")" : "");
+                    sb.append(" – ").append(Texts.t("usage.msg.transitive"));
                     if (via != null) {
-                        sb.append(" über ").append(via.label());
+                        sb.append(' ').append(Texts.t("upgrade.via", via.label()));
                     }
                     if ("runtime".equals(entry.getScope()) && mainCount > 0) {
-                        sb.append(", und das nur zur Laufzeit: der Compiler findet die Klasse nicht");
+                        sb.append(", ").append(Texts.t("usage.msg.runtime"));
                     }
                     break;
                 }
                 case TEST_ONLY:
-                    sb.append(entry.label()).append(" (Scope ").append(entry.getScope()).append(") wird nur in Tests genannt");
+                    sb.append(Texts.t("usage.msg.test.only", entry.label(), entry.getScope()));
                     if (!testUses.isEmpty()) {
-                        sb.append(", z. B. ").append(testUses.get(0).getClassName());
+                        sb.append(", ").append(Texts.t("usage.msg.example", testUses.get(0).getClassName()));
                     }
-                    sb.append(" – Scope test genügt");
+                    sb.append(" – ").append(Texts.t("usage.msg.scope.test"));
                     break;
                 default:
-                    sb.append(entry.label()).append(" ist deklariert, aber ");
-                    sb.append(note != null && note.startsWith("Starter") ? "nichts, was es mitbringt, wird im Code genannt"
-                            : "keine seiner Klassen wird im Code genannt");
+                    sb.append(Texts.t(note != null && note.startsWith(Texts.t("usage.note.starter")) ? "usage.msg.unused.starter"
+                            : "usage.msg.unused", entry.label()));
                     break;
             }
             if (isInherited()) {
-                sb.append(" (deklariert in ").append(declared.declaredIn.getArtifactId()).append(')');
+                sb.append(" (").append(Texts.t("usage.msg.declared.in", declared.declaredIn.getArtifactId())).append(')');
             }
             if (!certain) {
-                sb.append(" – womöglich trotzdem nötig");
+                sb.append(" – ").append(Texts.t("usage.msg.maybe.needed"));
             }
             return sb.append('.').toString();
         }
@@ -249,8 +249,8 @@ public final class DependencyUsage {
                 boolean managed = model.managed(entry.getGroupId(), entry.getArtifactId()) != null;
                 String scope = suggestedScope();
                 out.add(FixAction.of(FixAction.ADD_DEPENDENCY,
-                        entry.ga() + (managed ? "" : ":" + entry.getVersion()) + ("compile".equals(scope) ? "" : " (" + scope + ")")
-                                + " in " + module.getName() + " deklarieren",
+                        Texts.t("usage.fix.declare", entry.ga() + (managed ? "" : ":" + entry.getVersion()) + ("compile".equals(scope) ? "" : " (" + scope + ")"),
+                                module.getName()),
                         "file", pomFile, "artifact", entry.ga(), "version", managed ? null : entry.getVersion(),
                         "scope", "compile".equals(scope) ? null : scope,
                         "type", "jar".equals(entry.getType()) ? null : entry.getType(), "classifier", entry.getClassifier()));
@@ -261,16 +261,15 @@ public final class DependencyUsage {
             }
             String file = declared.declaredIn.getFile().toString();
             if (isInherited()) {
-                out.add(FixAction.of(FixAction.OPEN_FILE, entry.ga() + " ist in " + declared.declaredIn.getArtifactId()
-                                + " deklariert (gilt für alle erbenden Module) – dort prüfen",
+                out.add(FixAction.of(FixAction.OPEN_FILE, Texts.t("usage.fix.inherited", entry.ga(), declared.declaredIn.getArtifactId()),
                         "file", file, "line", String.valueOf(declared.dep.getLine())));
                 return out;
             }
             if (kind == Kind.TEST_ONLY) {
-                out.add(FixAction.of(FixAction.SET_SCOPE, "Scope von " + entry.ga() + " auf test setzen",
+                out.add(FixAction.of(FixAction.SET_SCOPE, Texts.t("usage.fix.scope.test", entry.ga()),
                         "file", file, "artifact", entry.ga(), "scope", "test", "classifier", declared.dep.getClassifier()));
             } else {
-                out.add(FixAction.of(FixAction.REMOVE_DEPENDENCY, entry.ga() + " aus " + module.getName() + " entfernen",
+                out.add(FixAction.of(FixAction.REMOVE_DEPENDENCY, Texts.t("usage.fix.remove", entry.ga(), module.getName()),
                         "file", file, "artifact", entry.ga(), "classifier", declared.dep.getClassifier()));
             }
             return out;
@@ -484,7 +483,7 @@ public final class DependencyUsage {
         // deklariert: genutzt, nur in Tests oder gar nicht
         boolean hasSources = usages.getMainFiles() + usages.getTestFiles() > 0;
         if (!hasSources) {
-            result.notes.add("Keine Quelldateien gefunden – ungenutzte Dependencies nicht geprüft.");
+            result.notes.add(Texts.t("usage.note.no.sources"));
         }
         for (Declared d : model.getDependencies().values()) {
             PomFile.Dep dep = d.dep;
@@ -529,16 +528,16 @@ public final class DependencyUsage {
             Known k = known(dep.getGroupId(), dep.getArtifactId());
             if (k != null) {
                 if (usedTest == 0) {
-                    result.notes.add(e.ga() + " wird nicht genannt – " + k.what + ", wirkt nur zur Laufzeit.");
+                    result.notes.add(Texts.t("usage.note.runtime.only", e.ga(), Texts.t(k.what)));
                 }
                 continue;
             }
             boolean certain = services.isEmpty();
-            String note = bundle ? "Starter ohne eigene Klassen" : null;
+            String note = bundle ? Texts.t("usage.note.starter") : null;
             if (!certain) {
                 String s = services.iterator().next();
-                note = (note == null ? "" : note + "; ") + "registriert sich ohne Nennung im Code (" + s
-                        + (services.size() > 1 ? " und " + (services.size() - 1) + " weitere" : "") + ")";
+                note = (note == null ? "" : note + "; ") + Texts.t("usage.note.services", s
+                        + (services.size() > 1 ? " " + Texts.t("usage.note.services.more", services.size() - 1) : ""));
             }
             if (usedTest > 0) {
                 if ("compile".equals(scope) || "provided".equals(scope) || "system".equals(scope)) {
@@ -747,33 +746,31 @@ public final class DependencyUsage {
     public List<String> lines(boolean all) {
         List<String> out = new ArrayList<String>();
         out.add(summary());
-        out.add("Grundlage: Klassen, die der Quelltext beim Namen nennt (Imports, voll qualifizierte Namen).");
+        out.add(Texts.t("usage.basis"));
         if (isEstimated()) {
-            out.add("Hinweis: ohne Baum aus den POMs nachgebaut – Classpath geschätzt (genauer mit --tree, "
-                    + "Ausgabe von mvn dependency:tree -Dverbose).");
+            out.add(Texts.t("usage.estimated"));
         }
         for (ModuleResult m : modules) {
             if (m.findings.isEmpty() && m.unchecked.isEmpty() && (!all || m.notes.isEmpty())) {
                 continue;
             }
             out.add("");
-            out.add("Modul " + m.classpath.getName() + " (" + m.usages.getMainFiles() + " Quell-, " + m.usages.getTestFiles()
-                    + " Testdateien)");
+            out.add(Texts.t("usage.module", m.classpath.getName(), m.usages.getMainFiles(), m.usages.getTestFiles()));
             for (Finding f : m.findings) {
                 if (!all && f.viaBundle) {
                     continue;
                 }
                 out.add("  " + pad(f.kind.label() + (f.certain ? "" : "?"), 13) + f.message());
                 if (f.kind == Kind.UNDECLARED && f.entry.getPath().size() > 1) {
-                    out.add("      Pfad: " + join(f.entry.getPath(), " → "));
+                    out.add("      " + Texts.t("usage.path") + " " + join(f.entry.getPath(), " → "));
                 }
                 List<Use> examples = new ArrayList<Use>(f.mainUses);
                 examples.addAll(f.testUses);
                 for (int i = 0; i < examples.size() && (all || i < 2); i++) {
-                    out.add("      genannt: " + examples.get(i));
+                    out.add("      " + Texts.t("usage.named") + " " + examples.get(i));
                 }
                 if (f.note != null) {
-                    out.add("      Hinweis: " + f.note);
+                    out.add("      " + Texts.t("usage.note") + " " + f.note);
                 }
                 for (FixAction fix : f.fixes()) {
                     out.add("        → " + fix.getLabel());
@@ -786,18 +783,18 @@ public final class DependencyUsage {
                 }
             }
             if (!all && bundled > 0) {
-                out.add("  (+" + bundled + " undeklarierte über Starter – mit --all anzeigen)");
+                out.add("  (" + Texts.t("usage.bundled.hidden", bundled) + ")");
             }
             if (!m.unchecked.isEmpty()) {
                 List<String> l = new ArrayList<String>();
                 for (Entry e : m.unchecked) {
                     l.add(e.gav());
                 }
-                out.add("  nicht geprüft (JAR fehlt lokal oder ist kaputt): " + join(l, ", "));
+                out.add("  " + Texts.t("dup.unreadable") + " " + join(l, ", "));
             }
             if (all) {
                 for (String note : m.notes) {
-                    out.add("  Hinweis: " + note);
+                    out.add("  " + Texts.t("usage.note") + " " + note);
                 }
             }
         }
@@ -807,16 +804,14 @@ public final class DependencyUsage {
                 unchecked += m.unchecked.size();
             }
             out.add("");
-            out.add(unchecked == 0 ? "Alles deklariert, was genannt wird, und alles genannt, was deklariert ist."
-                    : "Keine Befunde – aber " + unchecked + (unchecked == 1 ? " JAR" : " JARs")
-                    + " lokal nicht lesbar (einmal bauen, dann vollständig).");
+            out.add(unchecked == 0 ? Texts.t("usage.clean") : Texts.t("usage.clean.unchecked", unchecked));
         }
         return out;
     }
 
     /** Markdown-Tabelle für Ticket oder Review. */
     public String markdown(boolean all) {
-        StringBuilder sb = new StringBuilder("### Ungenutzte und undeklarierte Dependencies\n\n").append(summary()).append("\n\n");
+        StringBuilder sb = new StringBuilder("### ").append(Texts.t("usage.title")).append("\n\n").append(summary()).append("\n\n");
         List<Finding> list = new ArrayList<Finding>();
         for (Finding f : findings()) {
             if (all || !f.viaBundle) {
@@ -824,16 +819,16 @@ public final class DependencyUsage {
             }
         }
         if (list.isEmpty()) {
-            return sb.append("Keine Befunde.\n").toString();
+            return sb.append(Texts.t("usage.no.findings")).append("\n").toString();
         }
-        sb.append("| Modul | Art | Dependency | Beleg | Vorschlag |\n|---|---|---|---|---|\n");
+        sb.append(Texts.t("usage.md.table")).append("\n|---|---|---|---|---|\n");
         for (Finding f : list) {
             List<Use> examples = new ArrayList<Use>(f.mainUses);
             examples.addAll(f.testUses);
             String evidence = examples.isEmpty() ? (f.note == null ? "–" : f.note) : "`" + examples.get(0).getClassName() + "`"
                     + (f.mainCount + f.testCount > 1 ? " (+" + (f.mainCount + f.testCount - 1) + ")" : "");
             List<FixAction> fixes = f.fixes();
-            sb.append("| `").append(f.module.getName()).append("` | ").append(f.kind.label()).append(f.certain ? "" : " (unsicher)")
+            sb.append("| `").append(f.module.getName()).append("` | ").append(f.kind.label()).append(f.certain ? "" : " (" + Texts.t("usage.uncertain") + ")")
                     .append(" | `").append(f.entry.label()).append("` | ").append(evidence.replace("|", "\\|")).append(" | ")
                     .append(fixes.isEmpty() ? "–" : fixes.get(0).getLabel().replace("|", "\\|")).append(" |\n");
         }
@@ -841,9 +836,8 @@ public final class DependencyUsage {
     }
 
     private String summary() {
-        return "Dependency-Nutzung: " + findings(Kind.UNDECLARED).size() + " undeklariert, " + findings(Kind.UNUSED).size()
-                + " ungenutzt, " + findings(Kind.TEST_ONLY).size() + " nur in Tests – " + modules.size()
-                + (modules.size() == 1 ? " Modul" : " Module");
+        return Texts.t("usage.summary", findings(Kind.UNDECLARED).size(), findings(Kind.UNUSED).size(),
+                findings(Kind.TEST_ONLY).size(), modules.size());
     }
 
     private static String pad(String s, int width) {

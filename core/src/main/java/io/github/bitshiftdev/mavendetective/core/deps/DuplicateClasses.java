@@ -1,6 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.ModuleClasspath.Entry;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
@@ -35,6 +36,7 @@ public final class DuplicateClasses {
     static final class Known {
         final String[] drop;
         final String[] keep;
+        /** Schlüssel in {@code texts.properties}. */
         final String hint;
 
         Known(String[] drop, String[] keep, String hint) {
@@ -56,36 +58,35 @@ public final class DuplicateClasses {
     static final List<Known> KNOWN = Collections.unmodifiableList(Arrays.asList(
             new Known(new String[] {"commons-logging:commons-logging"},
                     new String[] {"org.slf4j:jcl-over-slf4j", "org.springframework:spring-jcl"},
-                    "jcl-over-slf4j bzw. spring-jcl ersetzen commons-logging absichtlich – das Original muss raus, sonst entscheidet "
-                            + "die Reihenfolge, welches Logging greift."),
+                    "dup.known.commons.logging"),
             new Known(new String[] {"log4j:log4j"}, new String[] {"org.slf4j:log4j-over-slf4j"},
-                    "log4j-over-slf4j ersetzt log4j 1.x absichtlich – das Original muss raus."),
+                    "dup.known.log4j"),
             new Known(new String[] {"javax.xml.bind:jaxb-api"}, new String[] {"jakarta.xml.bind:jakarta.xml.bind-api"},
-                    "jakarta.xml.bind-api 2.x ist der Nachfolger von javax.xml.bind:jaxb-api mit denselben javax.*-Klassen."),
+                    "dup.known.jaxb"),
             new Known(new String[] {"javax.activation:activation", "javax.activation:javax.activation-api"},
                     new String[] {"jakarta.activation:jakarta.activation-api", "com.sun.activation:jakarta.activation"},
-                    "jakarta.activation 1.x ist der Nachfolger von javax.activation mit denselben javax.*-Klassen."),
+                    "dup.known.activation"),
             new Known(new String[] {"javax.annotation:javax.annotation-api", "javax.annotation:jsr250-api"},
                     new String[] {"jakarta.annotation:jakarta.annotation-api"},
-                    "jakarta.annotation-api 1.3.x ist der Nachfolger von javax.annotation-api mit denselben javax.*-Klassen."),
+                    "dup.known.annotation"),
             new Known(new String[] {"javax.validation:validation-api"}, new String[] {"jakarta.validation:jakarta.validation-api"},
-                    "jakarta.validation-api 2.x ist der Nachfolger von javax.validation:validation-api mit denselben Klassen."),
+                    "dup.known.validation"),
             new Known(new String[] {"javax.servlet:servlet-api"}, new String[] {"javax.servlet:javax.servlet-api", "org.apache.tomcat.embed:tomcat-embed-core"},
-                    "javax.servlet:servlet-api ist die alte Koordinate (bis 2.5); javax.servlet-api ist der Nachfolger."),
+                    "dup.known.servlet"),
             new Known(new String[] {"javax.ws.rs:jsr311-api"}, new String[] {"javax.ws.rs:javax.ws.rs-api", "jakarta.ws.rs:jakarta.ws.rs-api"},
-                    "jsr311-api ist JAX-RS 1.x; neben JAX-RS 2.x führt es zu NoSuchMethodError."),
+                    "dup.known.jsr311"),
             new Known(new String[] {"com.google.collections:google-collections"}, new String[] {"com.google.guava:guava"},
-                    "google-collections ist der Vorgänger von Guava mit teils gleichen, aber älteren Klassen."),
+                    "dup.known.google.collections"),
             new Known(new String[] {"asm:asm"}, new String[] {"org.ow2.asm:asm"},
-                    "asm:asm ist die alte Koordinate von org.ow2.asm:asm."),
+                    "dup.known.asm"),
             new Known(new String[] {"org.hamcrest:hamcrest-core", "org.hamcrest:hamcrest-library"}, new String[] {"org.hamcrest:hamcrest"},
-                    "Seit Hamcrest 2 steckt alles in org.hamcrest:hamcrest; hamcrest-core 1.3 bringt ältere Fassungen derselben Klassen."),
+                    "dup.known.hamcrest"),
             new Known(new String[] {"org.bouncycastle:bcprov-jdk15on"}, new String[] {"org.bouncycastle:bcprov-jdk18on"},
-                    "bcprov-jdk18on ist der Nachfolger von bcprov-jdk15on."),
+                    "dup.known.bcprov"),
             new Known(new String[] {"org.bouncycastle:bcpkix-jdk15on"}, new String[] {"org.bouncycastle:bcpkix-jdk18on"},
-                    "bcpkix-jdk18on ist der Nachfolger von bcpkix-jdk15on."),
+                    "dup.known.bcpkix"),
             new Known(new String[] {"stax:stax-api"}, new String[] {"javax.xml.stream:stax-api"},
-                    "stax:stax-api ist die alte Koordinate von javax.xml.stream:stax-api.")));
+                    "dup.known.stax")));
 
     /** JARs eines Moduls mit gemeinsamen Klassen. */
     public static final class Clash {
@@ -148,19 +149,19 @@ public final class DuplicateClasses {
         /** Befund in einem Satz. */
         public String message() {
             StringBuilder sb = new StringBuilder();
-            sb.append(classes.size()).append(classes.size() == 1 ? " Klasse" : " Klassen").append(" in ");
+            StringBuilder names = new StringBuilder();
             for (int i = 0; i < jars.size(); i++) {
-                sb.append(i == 0 ? "" : i == jars.size() - 1 ? " und " : ", ").append(jars.get(i).label());
+                names.append(i == 0 ? "" : i == jars.size() - 1 ? " " + Texts.t("and") + " " : ", ").append(jars.get(i).label());
             }
-            sb.append(" – ");
+            sb.append(Texts.t("dup.message.classes", classes.size(), names)).append(" – ");
             if (isIdentical()) {
-                sb.append("inhaltlich gleich, harmlos, aber unnötig");
+                sb.append(Texts.t("dup.message.identical"));
             } else {
-                sb.append(differing == classes.size() ? "alle" : String.valueOf(differing)).append(" verschieden; geladen wird die aus ")
-                        .append(jars.get(0).label());
+                sb.append(Texts.t("dup.message.differing", differing == classes.size() ? Texts.t("dup.all") : String.valueOf(differing),
+                        jars.get(0).label()));
             }
             if (!isMain()) {
-                sb.append(" (nur Test-Classpath)");
+                sb.append(" (").append(Texts.t("dup.message.test")).append(")");
             }
             return sb.append('.').toString();
         }
@@ -170,7 +171,7 @@ public final class DuplicateClasses {
             if (drop == null) {
                 return reason;
             }
-            return drop.label() + " entfernen: " + reason;
+            return Texts.t("dup.remove", drop.label(), reason);
         }
 
         /** Quick-Fixes für die Empfehlung; leer, wenn keine. */
@@ -192,7 +193,7 @@ public final class DuplicateClasses {
             Declared own = model.declared(e.getGroupId(), e.getArtifactId());
             if (e.isDirect() || own != null) {
                 if (own != null) {
-                    out.add(FixAction.of(FixAction.OPEN_FILE, e.ga() + " ist direkt deklariert – Dependency entfernen",
+                    out.add(FixAction.of(FixAction.OPEN_FILE, Texts.t("dup.fix.declared", e.ga()),
                             "file", own.declaredIn.getFile().toString(), "line", String.valueOf(own.dep.getLine())));
                 }
                 return out;
@@ -205,8 +206,8 @@ public final class DuplicateClasses {
                 }
                 boolean inherited = !d.declaredIn.getFile().equals(module.getPom().getFile());
                 out.add(FixAction.of(FixAction.ADD_EXCLUSION,
-                        "Exclusion " + e.ga() + " bei " + direct + " einfügen"
-                                + (inherited ? " (in " + d.declaredIn.getArtifactId() + ", gilt für alle erbenden Module)" : ""),
+                        Texts.t("dup.fix.exclusion", e.ga(), direct)
+                                + (inherited ? " (" + Texts.t("dup.fix.inherited", d.declaredIn.getArtifactId()) + ")" : ""),
                         "file", d.declaredIn.getFile().toString(), "artifact", direct, "exclusion", e.ga()));
             }
             return out;
@@ -413,8 +414,8 @@ public final class DuplicateClasses {
             }
             if (drop != null && keep) {
                 clash.drop = drop;
-                clash.hint = k.hint;
-                clash.reason = "bekanntes Paar – " + k.hint;
+                clash.hint = Texts.t(k.hint);
+                clash.reason = Texts.t("dup.reason.known", clash.hint);
                 return;
             }
         }
@@ -428,8 +429,7 @@ public final class DuplicateClasses {
         }
         if (covered.isEmpty()) {
             Entry winner = clash.jars.get(0);
-            clash.reason = (clash.jars.size() == 2 ? "Beide" : "Alle") + " bringen auch eigene Klassen mit – welches weg kann, hängt davon ab, welche Fassung gebraucht wird. "
-                    + "Heute gewinnt " + winner.label() + ".";
+            clash.reason = Texts.t("dup.reason.own.classes", clash.jars.size(), winner.label());
             return;
         }
         // bei mehreren: lieber ein transitives (Exclusion möglich) als ein direktes, sonst das, das heute verliert
@@ -443,13 +443,11 @@ public final class DuplicateClasses {
         Entry drop = clash.jars.get(pick);
         clash.drop = drop;
         if (pick == 0 && !clash.isIdentical()) {
-            clash.reason = "alle seine Klassen liegen auch in den anderen JARs. Achtung: heute gewinnt es – danach gelten die "
-                    + "anderen Fassungen, also Tests laufen lassen.";
+            clash.reason = Texts.t("dup.reason.winner");
         } else if (clash.isIdentical()) {
-            clash.reason = "alle seine Klassen liegen inhaltsgleich auch in " + other(clash, drop).label() + ".";
+            clash.reason = Texts.t("dup.reason.identical", other(clash, drop).label());
         } else {
-            clash.reason = "alle seine Klassen liegen auch in " + other(clash, drop).label() + ", und das gewinnt schon heute – "
-                    + "an der Laufzeit ändert sich nichts.";
+            clash.reason = Texts.t("dup.reason.loser", other(clash, drop).label());
         }
     }
 
@@ -467,23 +465,22 @@ public final class DuplicateClasses {
         List<String> out = new ArrayList<String>();
         out.add(summary());
         if (isEstimated()) {
-            out.add("Hinweis: ohne Baum aus den POMs nachgebaut – Reihenfolge geschätzt (genauer mit --tree, "
-                    + "Ausgabe von mvn dependency:tree -Dverbose).");
+            out.add(Texts.t("deps.estimated"));
         }
         for (ModuleResult m : modules) {
             if (m.clashes.isEmpty() && m.unreadable.isEmpty()) {
                 continue;
             }
             out.add("");
-            out.add("Modul " + m.classpath.getName() + " (" + m.classpath.getEntries().size() + " Einträge)");
+            out.add(Texts.t("dup.module", m.classpath.getName(), m.classpath.getEntries().size()));
             for (Clash c : m.clashes) {
-                out.add("  " + (c.isIdentical() ? "gleich     " : "verschieden") + "  " + c.message());
+                out.add("  " + pad(Texts.t(c.isIdentical() ? "dup.identical" : "dup.differing"), 11) + "  " + c.message());
                 for (Entry e : c.jars) {
                     out.add("      " + (e == c.jars.get(0) ? "1. " : "   ") + e.label() + "  " + via(e));
                 }
-                out.add("      Pakete: " + joinLimited(c.packages(), all ? Integer.MAX_VALUE : 3));
-                out.add("      Klassen: " + joinLimited(c.classes, all ? Integer.MAX_VALUE : MAX_EXAMPLES));
-                out.add("      Empfehlung: " + c.recommendation());
+                out.add("      " + Texts.t("dup.packages") + " " + joinLimited(c.packages(), all ? Integer.MAX_VALUE : 3));
+                out.add("      " + Texts.t("dup.classes") + " " + joinLimited(c.classes, all ? Integer.MAX_VALUE : MAX_EXAMPLES));
+                out.add("      " + Texts.t("dup.recommendation") + " " + c.recommendation());
                 for (FixAction f : c.fixes()) {
                     out.add("        → " + f.getLabel());
                 }
@@ -493,24 +490,24 @@ public final class DuplicateClasses {
                 for (Entry e : m.unreadable) {
                     l.add(e.gav());
                 }
-                out.add("  nicht geprüft (JAR fehlt lokal oder ist kaputt): " + joinLimited(l, all ? Integer.MAX_VALUE : MAX_EXAMPLES));
+                out.add("  " + Texts.t("dup.unreadable") + " " + joinLimited(l, all ? Integer.MAX_VALUE : MAX_EXAMPLES));
             }
         }
         if (clashes().isEmpty()) {
             out.add("");
-            out.add("Keine Klasse liegt in mehr als einem JAR.");
+            out.add(Texts.t("dup.none"));
         }
         return out;
     }
 
     /** Markdown-Tabelle für Ticket oder Review. */
     public String markdown(boolean all) {
-        StringBuilder sb = new StringBuilder("### Doppelte Klassen\n\n").append(summary()).append("\n\n");
+        StringBuilder sb = new StringBuilder("### ").append(Texts.t("dup.title")).append("\n\n").append(summary()).append("\n\n");
         List<Clash> list = clashes();
         if (list.isEmpty()) {
-            return sb.append("Keine Klasse liegt in mehr als einem JAR.\n").toString();
+            return sb.append(Texts.t("dup.none")).append("\n").toString();
         }
-        sb.append("| Modul | JARs (1. gewinnt) | Klassen | Inhalt | Empfehlung |\n|---|---|---|---|---|\n");
+        sb.append(Texts.t("dup.md.table")).append("\n|---|---|---|---|---|\n");
         for (Clash c : list) {
             List<String> jars = new ArrayList<String>();
             for (Entry e : c.jars) {
@@ -518,7 +515,7 @@ public final class DuplicateClasses {
             }
             sb.append("| `").append(c.module.getName()).append("` | ").append(joinLimited(jars, Integer.MAX_VALUE)).append(" | ")
                     .append(c.classes.size()).append(" (").append(joinLimited(c.packages(), all ? Integer.MAX_VALUE : 2)).append(") | ")
-                    .append(c.isIdentical() ? "gleich" : c.differing + " verschieden").append(c.isMain() ? "" : ", nur Tests")
+                    .append(c.isIdentical() ? Texts.t("dup.identical") : c.differing + " " + Texts.t("dup.differing")).append(c.isMain() ? "" : ", " + Texts.t("dup.tests.only"))
                     .append(" | ").append(c.recommendation().replace("|", "\\|")).append(" |\n");
         }
         return sb.toString();
@@ -536,8 +533,7 @@ public final class DuplicateClasses {
             }
         }
         int n = clashes().size();
-        return "Doppelte Klassen: " + n + (n == 1 ? " Fund" : " Funde") + " in " + modules.size() + (modules.size() == 1 ? " Modul" : " Modulen")
-                + " – " + differ + " mit verschiedenem Inhalt, " + main + " im Laufzeit-Classpath";
+        return Texts.t("dup.summary", n, modules.size(), differ, main);
     }
 
     private static String via(Entry e) {
@@ -545,14 +541,22 @@ public final class DuplicateClasses {
             return "";
         }
         if (e.isDirect()) {
-            return "(direkt, " + e.getScope() + ")";
+            return "(" + Texts.t("upgrade.direct") + ", " + e.getScope() + ")";
         }
-        StringBuilder sb = new StringBuilder("(über ");
+        StringBuilder sb = new StringBuilder("(" + Texts.t("via") + " ");
         List<String> p = e.getPath();
         for (int i = 0; i < p.size() - 1; i++) {
             sb.append(i == 0 ? "" : " → ").append(p.get(i));
         }
         return sb.append(", ").append(e.getScope()).append(')').toString();
+    }
+
+    private static String pad(String s, int width) {
+        StringBuilder sb = new StringBuilder(s);
+        while (sb.length() < width) {
+            sb.append(' ');
+        }
+        return sb.toString();
     }
 
     private static String joinLimited(List<String> parts, int max) {

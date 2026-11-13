@@ -12,7 +12,9 @@ import com.intellij.util.ui.JBFont;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.WrapLayout;
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
+import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplanation;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplanation.Station;
 import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
@@ -121,11 +123,19 @@ final class VersionTimeline extends TrackingPanel {
 
     /**
      * Version, die eine {@link Station.Kind#CONFLICT}-Station verdrängt nennt: Der Kern schreibt
-     * „Verdrängt: 1.2 über a:b:1 → … – Grund“. {@code null}, wenn der Text anders aussieht.
+     * „Verdrängt: 1.2 über a:b:1 → … – Grund“ bzw. „Displaced: 1.2 via …“ (Vorlage
+     * {@link VersionExplainer#DISPLACED} in der Sprache des Kerns). {@code null}, wenn der Text anders aussieht.
      */
     static @Nullable String displacedVersion(@NotNull String text) {
-        String prefix = "Verdrängt: ";
-        int over = text.indexOf(" über ");
+        String pattern = Texts.t(VersionExplainer.DISPLACED);
+        int v = pattern.indexOf("{0}");
+        int p = pattern.indexOf("{1}");
+        if (v < 0 || p < v) {
+            return null;
+        }
+        String prefix = pattern.substring(0, v);
+        String middle = pattern.substring(v + 3, p);
+        int over = text.indexOf(middle, prefix.length());
         return text.startsWith(prefix) && over > prefix.length() ? text.substring(prefix.length(), over) : null;
     }
 
@@ -197,8 +207,10 @@ final class VersionTimeline extends TrackingPanel {
     }
 
     /** „über a → b – Grund“ ohne das vorangestellte „Verdrängt: 1.2“. */
-    private static String rest(String text, String version) {
-        return text.substring(("Verdrängt: " + version + " ").length());
+    static String rest(String text, String version) {
+        String pattern = Texts.t(VersionExplainer.DISPLACED);
+        int v = pattern.indexOf("{0}");
+        return v < 0 ? text : text.substring(Math.min(text.length(), v + version.length())).trim();
     }
 
     private static JComponent small(@Nls String text) {

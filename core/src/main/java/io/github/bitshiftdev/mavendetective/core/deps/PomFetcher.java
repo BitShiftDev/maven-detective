@@ -1,6 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
+import io.github.bitshiftdev.mavendetective.core.Texts;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -222,7 +223,7 @@ public final class PomFetcher {
                     cancel.check();
                     if (System.currentTimeMillis() > deadline) {
                         process.destroy();
-                        throw new IOException("Maven lief länger als " + timeoutSeconds + " s und wurde beendet");
+                        throw new IOException(Texts.t("fetch.timeout", timeoutSeconds));
                     }
                 }
                 reader.join(2000);

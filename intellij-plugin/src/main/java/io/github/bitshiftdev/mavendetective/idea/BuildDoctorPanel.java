@@ -335,8 +335,8 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         String md = Reports.markdown(r.diagnoses(), r.failure(), r.changes());
         SetupComparison setup = r.setup();
         if (setup != null && !setup.getDifferences().isEmpty()) {
-            md = md.replace("\n_Erstellt mit Maven Detective_\n",
-                    "\n**IDE gegen Kommandozeile**\n\n" + setup.markdown() + "\n_Erstellt mit Maven Detective_\n");
+            md = md.replace(Reports.footer(),
+                    "\n**" + MavenDetectiveBundle.message("setup.title") + "**\n\n" + setup.markdown() + Reports.footer());
         }
         return md;
     }
@@ -347,7 +347,7 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
     static @NotNull String historyText(@NotNull Run run) {
         StringBuilder sb = new StringBuilder(OverviewPanel.time(run.at())).append(" · ").append(historyLabel(run));
         if (run.result() != null && !run.result().diagnoses().isEmpty()) {
-            sb.append(" · ").append(run.result().diagnoses().get(0).getConfidence().label());
+            sb.append(" · ").append(DiagnosisCard.confidence(run.result().diagnoses().get(0).getConfidence()));
         }
         return sb.toString();
     }

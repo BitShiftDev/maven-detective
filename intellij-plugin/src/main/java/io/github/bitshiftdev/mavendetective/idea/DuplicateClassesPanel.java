@@ -303,10 +303,10 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         } else {
             emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.all.filtered"), null, null);
         }
-        setStatus(result.getModules().size() + " Module, " + n + (n == 1 ? " Fund" : " Funde")
-                + (hidden > 0 ? " (" + hidden + " ausgeblendet)" : "")
-                + (unreadable > 0 ? ", " + unreadable + " JARs lokal nicht lesbar" : "")
-                + (result.isEstimated() ? " – ohne Baum aus den POMs nachgebaut (Maven-Projekt neu laden)" : ""));
+        setStatus(MavenDetectiveBundle.message("duplicates.status", result.getModules().size(), n)
+                + (hidden > 0 ? " " + MavenDetectiveBundle.message("status.hidden", hidden) : "")
+                + (unreadable > 0 ? ", " + MavenDetectiveBundle.message("status.unreadable", unreadable) : "")
+                + (result.isEstimated() ? " – " + MavenDetectiveBundle.message("status.estimated") : ""));
         tree.selectFirstIfNone();
         show(selected());
         updateApplyChecked();
@@ -402,8 +402,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         }
         int n = FixRunner.addExclusions(project, fixes);
         if (n > 0) {
-            showText("<p>" + n + (n == 1 ? " Exclusion" : " Exclusions") + " eingefügt. Nach dem Maven-Import ist die Liste veraltet – "
-                    + "dann oben „Neu prüfen“.</p>");
+            showText("<p>" + MavenDetectiveBundle.message("duplicates.applied", n) + "</p>");
             applyChecked.setEnabled(false);
         }
     }
@@ -423,44 +422,41 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         target.removeAllItems();
         apply.setEnabled(false);
         if (c == null) {
-            showText(result == null
-                    ? "<p>Prüft je Modul, ob dieselbe Klasse in mehreren JARs liegt – auch unter verschiedenen Koordinaten, "
-                    + "etwa <code>commons-logging</code> neben <code>jcl-over-slf4j</code> oder <code>javax.xml.bind:jaxb-api</code> "
-                    + "neben <code>jakarta.xml.bind-api</code> 2.x. Welche Fassung geladen wird, entscheidet dann die Reihenfolge im "
-                    + "Classpath.</p>"
-                    : result.clashes().isEmpty() ? "<p>Keine Klasse liegt in mehr als einem JAR.</p>"
-                    : "<p>Fund wählen, um Klassen, Herkunft und Empfehlung zu sehen.</p>");
+            showText(result == null ? MavenDetectiveBundle.message("duplicates.detail.start")
+                    : result.clashes().isEmpty() ? "<p>" + MavenDetectiveBundle.message("duplicates.empty.none") + "</p>"
+                    : MavenDetectiveBundle.message("duplicates.detail.select"));
             return;
         }
         StringBuilder sb = new StringBuilder("<h3>").append(esc(c.getModule().getName())).append("</h3>");
         sb.append("<p>").append(esc(c.message())).append("</p>");
-        sb.append("<p><b>Classpath-Reihenfolge</b>").append(c.getModule().isFromTree() ? "" : " (ohne Baum geschätzt)")
+        sb.append("<p><b>").append(MavenDetectiveBundle.message("duplicates.order")).append("</b>")
+                .append(c.getModule().isFromTree() ? "" : " (" + MavenDetectiveBundle.message("duplicates.order.estimated") + ")")
                 .append(":</p><ol>");
         for (ModuleClasspath.Entry e : c.getJars()) {
             sb.append("<li><b>").append(esc(e.label())).append("</b> ");
             if (e.isSelf()) {
                 sb.append("– ").append(esc(String.valueOf(e.getFile())));
             } else if (e.isDirect()) {
-                sb.append("direkt, ").append(esc(e.getScope()));
+                sb.append(MavenDetectiveBundle.message("upgrade.editor.direct")).append(", ").append(esc(e.getScope()));
             } else {
-                sb.append("über ").append(esc(String.join(" → ", e.getPath().subList(0, e.getPath().size() - 1))))
+                sb.append(esc(MavenDetectiveBundle.message("upgrade.editor.via", String.join(" → ", e.getPath().subList(0, e.getPath().size() - 1)))))
                         .append(", ").append(esc(e.getScope()));
             }
             sb.append("</li>");
         }
         sb.append("</ol>");
         if (c.getHint() != null) {
-            sb.append("<p><b>Bekannt:</b> ").append(esc(c.getHint())).append("</p>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("duplicates.known")).append("</b> ").append(esc(c.getHint())).append("</p>");
         }
-        sb.append("<p><b>Empfehlung:</b> ").append(esc(c.recommendation())).append("</p>");
-        sb.append("<p><b>Pakete:</b> ").append(esc(String.join(", ", c.packages()))).append("</p>");
-        sb.append("<p><b>Klassen</b> (").append(c.getClasses().size()).append("):</p><p><code>");
+        sb.append("<p><b>").append(MavenDetectiveBundle.message("duplicates.recommendation")).append("</b> ").append(esc(c.recommendation())).append("</p>");
+        sb.append("<p><b>").append(MavenDetectiveBundle.message("duplicates.packages")).append("</b> ").append(esc(String.join(", ", c.packages()))).append("</p>");
+        sb.append("<p><b>").append(MavenDetectiveBundle.message("duplicates.classes.title")).append("</b> (").append(c.getClasses().size()).append("):</p><p><code>");
         List<String> classes = c.getClasses();
         for (int i = 0; i < classes.size() && i < MAX_CLASSES_SHOWN; i++) {
             sb.append(i == 0 ? "" : "<br>").append(esc(classes.get(i)));
         }
         if (classes.size() > MAX_CLASSES_SHOWN) {
-            sb.append("<br>… und ").append(classes.size() - MAX_CLASSES_SHOWN).append(" weitere");
+            sb.append("<br>").append(MavenDetectiveBundle.message("detail.more", classes.size() - MAX_CLASSES_SHOWN));
         }
         sb.append("</code></p>");
         showText(sb.toString());
@@ -486,12 +482,12 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         apply.setEnabled(!fixes.isEmpty());
         if (fixes.isEmpty()) {
             apply.setText(MavenDetectiveBundle.message("duplicates.exclude"));
-            apply.setToolTipText("Keine direkte Dependency im Projekt gefunden, über die " + e.ga() + " kommt");
+            apply.setToolTipText(MavenDetectiveBundle.message("duplicates.exclude.none", e.ga()));
         } else if (FixAction.OPEN_FILE.equals(fixes.get(0).getType())) {
             apply.setText(MavenDetectiveBundle.message("fix.goto.declaration"));
             apply.setToolTipText(fixes.get(0).getLabel());
         } else {
-            apply.setText(fixes.size() == 1 ? "Exclusion einfügen" : fixes.size() + " Exclusions einfügen");
+            apply.setText(MavenDetectiveBundle.message("duplicates.exclude.count", fixes.size()));
             StringBuilder tip = new StringBuilder("<html>");
             for (FixAction f : fixes) {
                 tip.append(esc(f.getLabel())).append("<br>");
@@ -517,8 +513,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         }
         int n = FixRunner.addExclusions(project, fixes);
         if (n > 0) {
-            showText("<p>" + esc(e.ga()) + " ausgeschlossen (" + n + (n == 1 ? " Exclusion" : " Exclusions") + "). Nach dem Maven-Import "
-                    + "ist die Liste veraltet – dann oben „Neu prüfen“.</p>");
+            showText("<p>" + esc(MavenDetectiveBundle.message("duplicates.excluded", e.ga(), n)) + "</p>");
             apply.setEnabled(false);
         }
     }

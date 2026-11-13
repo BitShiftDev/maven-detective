@@ -28,6 +28,8 @@ tasks.compileTestJava {
 
 tasks.test {
     useJUnitPlatform()
+    // Die meisten Tests vergleichen deutsche Texte; Englisch prüfen TextsTest und CatalogLanguagesTest gezielt
+    systemProperty("mavenDetective.language", "de")
 }
 
 tasks.jar {

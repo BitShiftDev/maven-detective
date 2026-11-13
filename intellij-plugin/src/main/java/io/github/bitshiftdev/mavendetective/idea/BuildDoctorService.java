@@ -220,7 +220,7 @@ public final class BuildDoctorService {
                         runEnded();
                     }
                     NotificationGroupManager.getInstance().getNotificationGroup(TOOL_WINDOW_ID)
-                            .createNotification("Maven Detective: Analyse fehlgeschlagen", String.valueOf(e.getMessage()), NotificationType.ERROR)
+                            .createNotification(MavenDetectiveBundle.message("notification.analysis.failed"), String.valueOf(e.getMessage()), NotificationType.ERROR)
                             .notify(project);
                 }, project.getDisposed());
                 return;

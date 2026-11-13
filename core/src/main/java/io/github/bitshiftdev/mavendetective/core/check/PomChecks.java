@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
@@ -89,9 +90,9 @@ final class PomChecks {
                     snippet = pom.lines.get(line - 1).trim();
                 }
             }
-            r.evidence(Evidence.file(snippet != null ? "Zeile " + line + ": " + Text.truncate(snippet, 120)
-                    : (message != null ? message : "Fehlerstelle"), file, line));
-            return r.fix(FixAction.of(FixAction.OPEN_FILE, "Zur fehlerhaften Zeile springen", "file", file, "line", String.valueOf(line)));
+            r.evidence(Evidence.file(snippet != null ? Texts.t("check.pom.line", line, Text.truncate(snippet, 120))
+                    : (message != null ? message : Texts.t("check.pom.location")), file, line));
+            return r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.pom.goto"), "file", file, "line", String.valueOf(line)));
         }
     }
 
@@ -124,7 +125,7 @@ final class PomChecks {
             int parentLine = child.lineOf("<parent>");
             CheckResult r = CheckResult.info().var("parent", expected).var("relativePath", rel);
             if (rel.isEmpty()) {
-                return r.evidence(Evidence.file("<relativePath/> ist leer – Parent kommt nur aus dem Repository", child.file.toString(), parentLine));
+                return r.evidence(Evidence.file(Texts.t("check.parent.relative.empty"), child.file.toString(), parentLine));
             }
             Path target = child.file.getParent().resolve(rel).normalize();
             if (Files.isDirectory(target)) {
@@ -132,16 +133,16 @@ final class PomChecks {
             }
             ProjectPoms.Pom parent = ctx.projectPoms().read(target);
             if (parent == null) {
-                return r.evidence(Evidence.file("Unter relativePath " + rel + " liegt keine POM", child.file.toString(), parentLine))
-                        .fix(FixAction.of(FixAction.OPEN_FILE, "<parent> in der POM öffnen", "file", child.file.toString(), "line", String.valueOf(parentLine)));
+                return r.evidence(Evidence.file(Texts.t("check.parent.relative.none", rel), child.file.toString(), parentLine))
+                        .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.parent.open"), "file", child.file.toString(), "line", String.valueOf(parentLine)));
             }
             String found = parent.gav();
             if (parent.parseable && !found.equals(expected)) {
                 return CheckResult.confirmed().var("parent", expected).var("relativePath", rel).var("foundGav", found)
-                        .cause("relativePath ({relativePath}) zeigt auf eine POM mit {foundGav}, erwartet wird aber {parent} – meist eine veraltete Parent-Version.")
-                        .evidence(Evidence.file("Parent erwartet: " + expected, child.file.toString(), parentLine))
-                        .evidence(Evidence.file("Gefunden: " + found, parent.file.toString(), parent.lineOf("<artifactId>")))
-                        .fix(FixAction.of(FixAction.OPEN_FILE, "<parent> in der POM öffnen", "file", child.file.toString(), "line", String.valueOf(parentLine)));
+                        .cause(Texts.t("check.parent.mismatch.cause"))
+                        .evidence(Evidence.file(Texts.t("check.parent.expected", expected), child.file.toString(), parentLine))
+                        .evidence(Evidence.file(Texts.t("check.parent.found", found), parent.file.toString(), parent.lineOf("<artifactId>")))
+                        .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.parent.open"), "file", child.file.toString(), "line", String.valueOf(parentLine)));
             }
             return r;
         }
@@ -163,7 +164,7 @@ final class PomChecks {
             Path moduleDir = Paths.get(module);
             Path parentPath = Paths.get(parentFile);
             if (Files.isDirectory(moduleDir) && Files.isRegularFile(moduleDir.resolve("pom.xml"))) {
-                return CheckResult.info().evidence(Evidence.file("Verzeichnis existiert inzwischen", module, -1));
+                return CheckResult.info().evidence(Evidence.file(Texts.t("check.module.exists.now"), module, -1));
             }
             Path parentDir = parentPath.getParent();
             String name = parentDir == null ? module : parentDir.relativize(moduleDir).toString().replace(File.separatorChar, '/');
@@ -173,15 +174,15 @@ final class PomChecks {
                 line = parent.lineOf(name);
             }
             CheckResult r = CheckResult.confirmed().var("moduleName", name)
-                    .evidence(Evidence.file(Files.isDirectory(moduleDir) ? "Verzeichnis ohne pom.xml: " + name : "Verzeichnis fehlt: " + name, parentFile, line));
+                    .evidence(Evidence.file(Files.isDirectory(moduleDir) ? Texts.t("check.module.no.pom", name) : Texts.t("check.module.missing", name), parentFile, line));
             if (parentDir != null) {
                 for (String sibling : directories(parentDir)) {
                     if (Text.similar(sibling, moduleDir.getFileName().toString())) {
-                        r.evidence(Evidence.hint("Ähnliches Verzeichnis: '" + sibling + "' – Tippfehler oder Groß-/Kleinschreibung?"));
+                        r.evidence(Evidence.hint(Texts.t("check.module.similar", sibling)));
                     }
                 }
             }
-            return r.fix(FixAction.of(FixAction.OPEN_FILE, "<module>-Eintrag öffnen", "file", parentFile, "line", String.valueOf(line)));
+            return r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.module.open"), "file", parentFile, "line", String.valueOf(line)));
         }
 
         private static List<String> directories(Path dir) {
@@ -262,16 +263,16 @@ final class PomChecks {
                 r = CheckResult.confirmed().var("plugin", known)
                         .var("pluginGroup", known.substring(0, known.indexOf(':')));
                 if (declared.isEmpty()) {
-                    r.cause("Der Prefix '{prefix}' gehört zu {plugin}. Das Plugin ist im Projekt nicht eingebunden und {pluginGroup} steht nicht in <pluginGroups>.");
+                    r.cause(Texts.t("check.prefix.missing.cause"));
                 } else {
                     ProjectPoms.Location l = declared.get(0);
-                    r.cause("Der Prefix '{prefix}' gehört zu {plugin}. Es ist nur in einem anderen Modul eingebunden, nicht in dem, in dem der Befehl lief.")
-                            .evidence(Evidence.file("Plugin eingebunden in", l.pom.file.toString(), l.line));
+                    r.cause(Texts.t("check.prefix.other.module.cause"))
+                            .evidence(Evidence.file(Texts.t("check.prefix.declared.in"), l.pom.file.toString(), l.line));
                 }
-                r.fix(FixAction.of(FixAction.MANUAL, "Vollständig aufrufen: " + known + ":<version>:<goal> oder -pl auf das Modul mit dem Plugin setzen"));
+                r.fix(FixAction.of(FixAction.MANUAL, Texts.t("check.prefix.full", known)));
                 if (root != null) {
                     int line = root.lineOf("<plugins>");
-                    r.fix(FixAction.of(FixAction.OPEN_FILE, "Plugin in der pom.xml eintragen",
+                    r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.prefix.add"),
                             "file", root.file.toString(), "line", String.valueOf(line > 0 ? line : root.lineOf("</project>"))));
                 }
                 return r;
@@ -279,15 +280,15 @@ final class PomChecks {
             r = CheckResult.info();
             for (String candidate : candidates()) {
                 if (Text.similar(prefix, candidate)) {
-                    r.evidence(Evidence.hint("Meinten Sie '" + candidate + "'?"));
+                    r.evidence(Evidence.hint(Texts.t("check.prefix.did.you.mean", candidate)));
                 }
             }
             MavenSettings s = ctx.env().userSettings();
             if (s != null) {
-                r.evidence(Evidence.setting("pluginGroups in settings.xml: " + s.getPluginGroups(), s.getFile().toString(), s.lineOf("<pluginGroups>")));
+                r.evidence(Evidence.setting(Texts.t("check.prefix.groups", s.getPluginGroups()), s.getFile().toString(), s.lineOf("<pluginGroups>")));
             }
             if (Boolean.TRUE.equals(ctx.env().getOffline()) || ctx.anyLineContains("offline")) {
-                r.evidence(Evidence.hint("Offline-Modus: Prefixe werden nur aus bereits geladenen Plugin-Metadaten aufgelöst"));
+                r.evidence(Evidence.hint(Texts.t("check.prefix.offline")));
             }
             return r;
         }
@@ -314,16 +315,16 @@ final class PomChecks {
             String artifactId = plugin.substring(plugin.indexOf(':') + 1);
             List<ProjectPoms.Location> hits = ctx.projectPoms().findText("<artifactId>" + artifactId + "</artifactId>");
             if (hits.isEmpty()) {
-                return CheckResult.info().evidence(Evidence.hint("Plugin ist in keiner Projekt-POM eingetragen – kommt es aus einem Parent außerhalb des Projekts?"));
+                return CheckResult.info().evidence(Evidence.hint(Texts.t("check.plugin.version.not.declared")));
             }
             ProjectPoms.Location l = hits.get(0);
             CheckResult r = CheckResult.confirmed();
             for (ProjectPoms.Location h : hits) {
-                r.evidence(Evidence.file("Plugin ohne <version>", h.pom.file.toString(), h.line));
+                r.evidence(Evidence.file(Texts.t("check.plugin.version.missing"), h.pom.file.toString(), h.line));
             }
-            return r.fix(FixAction.of(FixAction.INSERT_PLUGIN_VERSION, "Version für " + plugin + " einfügen",
+            return r.fix(FixAction.of(FixAction.INSERT_PLUGIN_VERSION, Texts.t("check.plugin.version.insert", plugin),
                             "file", l.pom.file.toString(), "line", String.valueOf(l.line), "plugin", plugin))
-                    .fix(FixAction.of(FixAction.OPEN_FILE, "POM an der Stelle öffnen",
+                    .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.open.pom"),
                             "file", l.pom.file.toString(), "line", String.valueOf(l.line)));
         }
     }
@@ -346,8 +347,7 @@ final class PomChecks {
             }
             List<ProjectPoms.Location> hits = ctx.projectPoms().findText("<artifactId>" + artifactId + "</artifactId>");
             if (hits.isEmpty()) {
-                return CheckResult.info().evidence(Evidence.hint(artifactId + " steht in keiner Projekt-POM – die Version kommt aus einem Parent"
-                        + " außerhalb des Projekts oder aus Mavens Voreinstellung für das packaging."));
+                return CheckResult.info().evidence(Evidence.hint(Texts.t("check.plugin.not.in.project", artifactId)));
             }
             ProjectPoms.Location best = hits.get(0);
             String failed = ctx.var("failedModule");
@@ -361,10 +361,10 @@ final class PomChecks {
             int shown = 0;
             for (ProjectPoms.Location h : hits) {
                 if (shown++ < 3) {
-                    r.evidence(Evidence.file(artifactId + " eingetragen", h.pom.file.toString(), h.line));
+                    r.evidence(Evidence.file(Texts.t("check.plugin.declared", artifactId), h.pom.file.toString(), h.line));
                 }
             }
-            return r.fix(FixAction.of(FixAction.OPEN_FILE, artifactId + " in der POM öffnen",
+            return r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.plugin.open", artifactId),
                     "file", best.pom.file.toString(), "line", String.valueOf(best.line)));
         }
     }
@@ -402,22 +402,22 @@ final class PomChecks {
             CheckResult r = CheckResult.confirmed();
             int entry = lineAfter(ear, ear.lineOf("maven-ear-plugin"), "<artifactId>" + artifactId + "</artifactId>");
             if (entry > 0) {
-                r.evidence(Evidence.file("Im maven-ear-plugin als " + type + "-Modul eingetragen", ear.file.toString(), entry));
+                r.evidence(Evidence.file(Texts.t("check.ear.module", type), ear.file.toString(), entry));
             }
-            r.evidence(Evidence.hint("In den <dependencies> von " + ear.artifactId + " steht kein " + artifactId + "."));
+            r.evidence(Evidence.hint(Texts.t("check.ear.no.dependency", ear.artifactId, artifactId)));
             ProjectPoms.Pom target = ctx.projectPoms().find(groupId, artifactId);
             if (target != null) {
                 String packaging = target.effectivePackaging();
                 r.var("modulePackaging", packaging)
-                        .evidence(Evidence.file("Modul im Projekt: packaging " + packaging, target.file.toString(),
+                        .evidence(Evidence.file(Texts.t("check.reactor.type.module", packaging), target.file.toString(),
                                 target.lineOf("<artifactId>" + artifactId + "</artifactId>")));
                 if (!packaging.equals(type)) {
-                    r.evidence(Evidence.hint("packaging " + packaging + " passt nicht zum Modultyp " + type + " im EAR."));
+                    r.evidence(Evidence.hint(Texts.t("check.ear.packaging", packaging, type)));
                 }
             }
             int deps = ear.lineOf("<dependencies>");
             int at = deps > 0 ? deps : Math.max(1, ear.lineOf("<packaging>"));
-            return r.fix(FixAction.of(FixAction.OPEN_FILE, "EAR-POM öffnen", "file", ear.file.toString(), "line", String.valueOf(at)));
+            return r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.ear.open"), "file", ear.file.toString(), "line", String.valueOf(at)));
         }
 
         private static int lineAfter(ProjectPoms.Pom pom, int from, String needle) {
@@ -465,9 +465,9 @@ final class PomChecks {
                 ProjectPoms.Location l = javax.get(0);
                 CheckResult r = ctx.projectPoms().findText("<groupId>jakarta.").isEmpty()
                         ? CheckResult.confirmed() : CheckResult.info();
-                return r.cause("Der Code importiert {package} (Jakarta EE 9 und neuer), das Projekt bindet aber die alte Java-EE-API mit javax.*-Paketen ein.")
-                        .evidence(Evidence.file("javax-API eingebunden: " + Text.truncate(l.pom.lines.get(l.line - 1).trim(), 100), l.pom.file.toString(), l.line))
-                        .fix(FixAction.of(FixAction.OPEN_FILE, "API-Dependency öffnen (jakarta.platform:jakarta.jakartaee-api, provided)",
+                return r.cause(Texts.t("check.jakarta.old.api.cause"))
+                        .evidence(Evidence.file(Texts.t("check.jakarta.javax.declared", Text.truncate(l.pom.lines.get(l.line - 1).trim(), 100)), l.pom.file.toString(), l.line))
+                        .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.jakarta.open.api"),
                                 "file", l.pom.file.toString(), "line", String.valueOf(l.line)));
             }
             if (!pkg.startsWith("javax.")) {
@@ -477,15 +477,15 @@ final class PomChecks {
             if (!jakarta.isEmpty()) {
                 ProjectPoms.Location l = jakarta.get(0);
                 return CheckResult.info()
-                        .cause("Der Code importiert {package}, das Projekt bindet aber Jakarta-Artefakte ein. Ab Jakarta EE 9 heißen die Pakete jakarta.* statt javax.* – Imports umstellen oder bei einer API-Version bleiben, die noch javax.* enthält (Jakarta EE 8).")
-                        .evidence(Evidence.file("Jakarta-Artefakt: " + Text.truncate(l.pom.lines.get(l.line - 1).trim(), 100), l.pom.file.toString(), l.line))
-                        .fix(FixAction.of(FixAction.MANUAL, "Imports von javax.* auf jakarta.* umstellen"));
+                        .cause(Texts.t("check.jakarta.javax.import.cause"))
+                        .evidence(Evidence.file(Texts.t("check.jakarta.artifact", Text.truncate(l.pom.lines.get(l.line - 1).trim(), 100)), l.pom.file.toString(), l.line))
+                        .fix(FixAction.of(FixAction.MANUAL, Texts.t("check.jakarta.switch.imports")));
             }
             if (REMOVED_FROM_JDK.matcher(pkg).matches()) {
                 return CheckResult.info()
-                        .cause("{package} lag bis Java 10 im JDK und wurde mit Java 11 entfernt; jetzt braucht es die API als eigene Dependency.")
-                        .evidence(Evidence.environment("Maven läuft mit Java " + (ctx.env().getRunnerJavaVersion() == null ? "?" : ctx.env().getRunnerJavaVersion())))
-                        .fix(FixAction.of(FixAction.MANUAL, "API als Dependency ergänzen (z. B. javax.xml.bind:jaxb-api, javax.annotation:javax.annotation-api) oder die Java-EE-API mit Scope provided einbinden"));
+                        .cause(Texts.t("check.jakarta.removed.cause"))
+                        .evidence(Evidence.environment(Texts.t("check.jakarta.java", ctx.env().getRunnerJavaVersion() == null ? "?" : ctx.env().getRunnerJavaVersion())))
+                        .fix(FixAction.of(FixAction.MANUAL, Texts.t("check.jakarta.add.api")));
             }
             return CheckResult.notApplicable();
         }

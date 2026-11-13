@@ -22,7 +22,7 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
 | „Was hat sich geändert?“ (Schnappschuss-Diff) | fertig in Kern, Extension, CLI (`changes`) und IDE |
 | IDE gegen Kommandozeile | fertig: Vergleich als Tabelle im Tool-Window, Hinweis auf der Karte |
-| IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Tool-Window mit drei Tabs (Übersicht mit Kacheln, Build Doctor, Dependencies mit Navigation), Badge an der Leiste bei rotem Build, Ergebnisse veralten sichtbar nach jedem Maven-Import; Diagnose-Karte aus Komponenten mit Verlauf der letzten 20 Läufe, Link „Ursache anzeigen“ hinter `BUILD FAILURE` in der Konsole und Fix-und-Prüf-Schleife (nach dem Fix neu bauen, „Behoben ✓“ oder neue Diagnose); Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option; jede Änderung an einer `pom.xml` zeigt vorher einen Diff (abschaltbar); Einstellungen unter *Settings | Tools | Maven Detective* (Sprechblase bei rotem Build, Neubau nach Fix, Diff-Vorschau, Schnappschüsse an/aus und Ordner, Starter-Funde), „Got it“-Hinweise beim ersten roten Build und beim ersten Öffnen einer `pom.xml`, leere Seiten erklären in zwei Sätzen, was sie tun. **In `runIde` noch nicht durchgeklickt** |
+| IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Tool-Window mit drei Tabs (Übersicht mit Kacheln, Build Doctor, Dependencies mit Navigation), Badge an der Leiste bei rotem Build, Ergebnisse veralten sichtbar nach jedem Maven-Import; Diagnose-Karte aus Komponenten mit Verlauf der letzten 20 Läufe, Link „Ursache anzeigen“ hinter `BUILD FAILURE` in der Konsole und Fix-und-Prüf-Schleife (nach dem Fix neu bauen, „Behoben ✓“ oder neue Diagnose); Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option; jede Änderung an einer `pom.xml` zeigt vorher einen Diff (abschaltbar); Oberfläche und Diagnose-Texte auf Englisch (Standard) oder Deutsch (Einstellung *Sprache*); Einstellungen unter *Settings | Tools | Maven Detective* (Sprache, Sprechblase bei rotem Build, Neubau nach Fix, Diff-Vorschau, Schnappschüsse an/aus und Ordner, Starter-Funde), „Got it“-Hinweise beim ersten roten Build und beim ersten Öffnen einer `pom.xml`, leere Seiten erklären in zwei Sätzen, was sie tun. **In `runIde` noch nicht durchgeklickt** |
 | Gate 1 (30 eigene Logs) | **offen** – braucht deine Logs, siehe unten |
 | A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Popup am Cursor per Alt+Enter oder Rechtsklick in der `pom.xml`, Rechtsklick im Maven-Tool-Window und unter External Libraries, Tab „Dependencies“ → „Warum diese Version?“). **In `runIde` noch nicht durchgeklickt** |
 | Antworten in der `pom.xml` (UI-Plan U4) | Inlay „2.18.2 · jackson-bom“ hinter Dependencies ohne Version, Code Vision „3 Module · 2 Versionen“ bei Abweichungen, Gutter-Icon bei verdrängter höherer Version oder doppelten Klassen, Banner an der Datei, an der der letzte Build scheiterte. **In `runIde` noch nicht durchgeklickt** |
@@ -89,7 +89,9 @@ mvn -Dmaven.ext.class.path=/pfad/maven-detective-extension.jar verify
 mvn -Dmaven.ext.class.path=… -DmavenDetective.eventsFile=target/md-events.jsonl verify
 ```
 
-Für CI über `.mvn/extensions.xml` muss die Extension erst in ein Repository veröffentlicht werden (noch offen). `-DmavenDetective.report=false` schaltet die Karte ab. Die Extension ändert nie etwas am Build; jeder interne Fehler wird geschluckt.
+Für CI über `.mvn/extensions.xml` muss die Extension erst in ein Repository veröffentlicht werden (noch offen). `-DmavenDetective.report=false` schaltet die Karte ab.
+
+**Sprache:** Karte, Kommandozeile und Berichte gibt es auf Englisch und Deutsch. Gewählt wird `-DmavenDetective.language=en|de` (in der Kommandozeile auch `--lang en|de`), sonst die Umgebungsvariable `MAVEN_DETECTIVE_LANGUAGE`, sonst die Sprache des Systems (Deutsch nur bei `de`, sonst Englisch). Im Plugin gilt die Einstellung *Sprache*. Texte stehen in `core/…/texts.properties` (Englisch) und `texts_de.properties`. Die Extension ändert nie etwas am Build; jeder interne Fehler wird geschluckt.
 
 ## Was hat sich geändert?
 
@@ -170,19 +172,22 @@ Der Katalog liegt in [`core/src/main/resources/…/catalog/build-doctor-v1.yaml`
   - id: my-new-rule
     number: 15
     category: Kurzer Titel der Karte
+    category_en: 'Short card title'
     priority: 60            # höher gewinnt, wenn mehrere Regeln passen
     patterns:
       - 'Regex mit (?<artifact>benannter Gruppe)'
     cause: 'Ursache in einem Satz mit {artifact|Ersatztext}.'
+    cause_en: 'Cause in one sentence with {artifact|fallback text}.'
     checks: [last-updated-files]
     fix:
       type: rebuild
       label: 'Mit -U neu bauen'
+      label_en: 'Rebuild with -U'
       params:
         args: '-U'
 ```
 
-Dazu gehört immer ein Testlog unter `core/src/test/resources/logs/<regel-id>__<beschreibung>.log`. `LogCatalogTest` prüft automatisch, dass jede Datei als die Regel im Dateinamen erkannt wird und dass jede Regel mindestens einen Testlog hat. Eigene Kataloge lassen sich mit `--catalog extra.yaml` dazuladen und mit `validate-catalog extra.yaml` prüfen.
+`category`, `cause` und `label` sind deutsch, `*_en` liefert den englischen Text (fehlt er, gilt der Grundtext); im Standardkatalog prüft `TextsTest`, dass zu jedem Text die englische Fassung da ist. Dazu gehört immer ein Testlog unter `core/src/test/resources/logs/<regel-id>__<beschreibung>.log`. `LogCatalogTest` prüft automatisch, dass jede Datei als die Regel im Dateinamen erkannt wird und dass jede Regel mindestens einen Testlog hat. Eigene Kataloge lassen sich mit `--catalog extra.yaml` dazuladen und mit `validate-catalog extra.yaml` prüfen.
 
 Vorhandene Prüfungen: `offline-mode`, `network-failure`, `last-updated-files`, `reactor-sibling`, `requested-repository`, `server-id`, `http-repository`, `corrupt-jar`, `pom-location`, `parent-relative-path`, `child-module`, `plugin-prefix`, `plugin-version`, `plugin-declaration`, `ear-module`, `ee-namespace`, `jdk-version`, `source-location`, `enforcer-rule`, `memory-settings`. Prüfungen lesen nur Dateien und Einstellungen und gehen nie ins Netz.
 
@@ -343,7 +348,7 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - Plugin in `runIde` durchklicken: grüner Lauf → POM ändern → roter Lauf, Quick-Fixes `-U`, Runner-JDK, Plugin-Version. Dabei U3 abnehmen: Karte #4 Kaputtes JAR in Light/Dark, Link „Ursache anzeigen“ in der Konsole von Maven-Läufen (Build-Fenster nutzt `ConsoleViewImpl` – prüfen, ob der Filter dort greift), nach dem Fix „Neu bauen läuft …“ und danach „Behoben ✓“.
 - U4 in `runIde` abnehmen (Spring-Boot-Multi-Modul-Projekt): Inlays hinter Dependencies ohne Version, Code Vision über abweichenden Dependencies (erscheint die Code Vision in XML-Dateien überhaupt?), Gutter-Icons nach „Doppelte Klassen“ → Prüfen, Banner nach einem roten Lauf mit fehlendem Parent, Popup per Alt+Enter, Rechtsklick im Maven-Tool-Window und unter External Libraries; Tipp-Latenz in einer großen `pom.xml` messen. Aktionen und Inlays mit `BasePlatformTestCase` testen (braucht das Test-Framework der Plattform, in der Sandbox nicht offline verfügbar).
 - U5 in `runIde` abnehmen: Zeitleiste und Breadcrumb in „Warum diese Version?“, fixierte Spalte und Versionsfarben der Matrix in Light/Dark/High Contrast, Pin über das Kontextmenü (auch per Shift+F10), Checkbox-Bäume in „Doppelte Klassen“, „Exclusions“ und „Nutzung“ (Leertaste), Diff-Vorschau vor jedem POM-Fix, Upgrade-Ergebnis als Editor-Tab (Diff-Viewer, „Übernehmen“ nach Änderung an der POM verweigert). Jede Seite einmal nur mit der Tastatur bedienen.
-- U6 in `runIde` abnehmen: Einstellungsseite (Schalter wirken ohne Neustart; Schnappschüsse aus → Karte ohne „Seit dem letzten grünen Build“; eigener Ordner landet unter `<ordner>/snapshots/`; Neubau aus → Meldung mit „Neu bauen“), „Got it“ beim ersten roten Build und beim ersten Öffnen einer `pom.xml` („Hinweise erneut zeigen“ auf der Einstellungsseite), New-UI-Icon (16 × 16 und 20 × 20 über `MavenDetectiveIconMappings.json`, auch im Kompaktmodus), Screenreader (NVDA/Orca) über Karte, Badges und Kacheln, High-Contrast-Theme. Offen aus U6: englische Übersetzung (Sprache der Oberfläche noch offen, die Diagnose-Texte kommen auf Deutsch aus dem Kern), Marketplace-Screenshots „nachher“, Test mit einem Nutzer ohne Projektkenntnis.
+- U6 in `runIde` abnehmen: Einstellungsseite (Schalter wirken ohne Neustart; Schnappschüsse aus → Karte ohne „Seit dem letzten grünen Build“; eigener Ordner landet unter `<ordner>/snapshots/`; Neubau aus → Meldung mit „Neu bauen“), „Got it“ beim ersten roten Build und beim ersten Öffnen einer `pom.xml` („Hinweise erneut zeigen“ auf der Einstellungsseite), New-UI-Icon (16 × 16 und 20 × 20 über `MavenDetectiveIconMappings.json`, auch im Kompaktmodus), Screenreader (NVDA/Orca) über Karte, Badges und Kacheln, High-Contrast-Theme. Sprache umschalten (Automatisch/English/Deutsch, nach Neustart überall, auch Karte und Befunde aus dem Kern; Toolbar-Tooltips und Kontextmenüs folgen der Einstellung, Inspection-Namen der IDE); englische Texte von einer Person mit Englisch als Muttersprache gegenlesen lassen. Offen aus U6: Marketplace-Screenshots „nachher“, Test mit einem Nutzer ohne Projektkenntnis.
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
 - Preflight-Check und Log-Navigator aus dem Konzept.
 - Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.

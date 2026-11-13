@@ -271,13 +271,12 @@ public final class DependencyUsagePanel extends DetectivePanel {
         } else {
             emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.all.filtered"), null, null);
         }
-        setStatus(result.getModules().size() + " Module, " + files + " Quelldateien – "
-                + result.findings(DependencyUsage.Kind.UNDECLARED).size() + " undeklariert, "
-                + result.findings(DependencyUsage.Kind.UNUSED).size() + " ungenutzt, "
-                + result.findings(DependencyUsage.Kind.TEST_ONLY).size() + " nur in Tests"
-                + (hidden > 0 ? " (" + hidden + " ausgeblendet)" : "")
-                + (unchecked > 0 ? ", " + unchecked + " JARs lokal nicht lesbar" : "")
-                + (result.isEstimated() ? " – ohne Baum aus den POMs nachgebaut (Maven-Projekt neu laden)" : ""));
+        setStatus(MavenDetectiveBundle.message("usage.status", result.getModules().size(), files,
+                result.findings(DependencyUsage.Kind.UNDECLARED).size(), result.findings(DependencyUsage.Kind.UNUSED).size(),
+                result.findings(DependencyUsage.Kind.TEST_ONLY).size())
+                + (hidden > 0 ? " " + MavenDetectiveBundle.message("status.hidden", hidden) : "")
+                + (unchecked > 0 ? ", " + MavenDetectiveBundle.message("status.unreadable", unchecked) : "")
+                + (result.isEstimated() ? " – " + MavenDetectiveBundle.message("status.estimated") : ""));
         tree.selectFirstIfNone();
         show(tree.single(), selected().size());
         updateApply();
@@ -343,12 +342,12 @@ public final class DependencyUsagePanel extends DetectivePanel {
         });
         SimpleTextAttributes plain = f.isCertain() && !f.isViaBundle() ? SimpleTextAttributes.REGULAR_ATTRIBUTES
                 : SimpleTextAttributes.GRAYED_ATTRIBUTES;
-        r.append(f.getKind().label() + (f.isCertain() ? "" : "?"), strong ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : plain);
+        r.append(kindLabel(f.getKind()) + (f.isCertain() ? "" : "?"), strong ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : plain);
         r.append("  " + f.getEntry().label(), plain);
         r.append("  " + f.getEntry().getScope(), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
         List<ClassUsages.Use> uses = !f.getMainUses().isEmpty() ? f.getMainUses() : f.getTestUses();
         if (uses.isEmpty()) {
-            r.append("  · " + (f.getNote() != null ? f.getNote() : "keine Nennung"), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+            r.append("  · " + (f.getNote() != null ? f.getNote() : MavenDetectiveBundle.message("usage.no.use")), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
         } else {
             int n = f.getMainCount() + f.getTestCount();
             r.append("  · " + uses.get(0).getClassName() + (n > 1 ? " +" + (n - 1) : ""), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
@@ -362,59 +361,59 @@ public final class DependencyUsagePanel extends DetectivePanel {
 
     private void show(@Nullable DependencyUsage.Finding f, int count) {
         if (f == null) {
-            showText(count > 1 ? "<p>" + count + " Befunde gewählt. „Beheben“ wendet die Vorschläge der angekreuzten (sonst der "
-                    + "gewählten) Befunde in einem Undo-Schritt an.</p>"
-                    : result == null
-                    ? "<p>Vergleicht, welche Klassen die Quellen jedes Moduls nennen (über den Code-Index aufgelöst), mit den "
-                    + "Dependencies in der <code>pom.xml</code>:</p><ul>"
-                    + "<li><b>undeklariert</b> – genannt, aber nur transitiv da; fällt die vermittelnde Dependency weg, bricht der Build</li>"
-                    + "<li><b>ungenutzt</b> – deklariert, aber keine Klasse daraus wird genannt</li>"
-                    + "<li><b>nur in Tests</b> – Scope compile, aber nur Tests nennen sie</li></ul>"
-                    + "<p>JDBC-Treiber, Logging-Backends, Test-Engines und Annotation-Prozessoren gelten nie als ungenutzt. "
-                    + "Live im Editor markiert die Inspection <i>Import aus nicht deklarierter Dependency</i> die Imports.</p>"
-                    : result.findings().isEmpty() ? "<p>Alles deklariert, was genannt wird, und alles genannt, was deklariert ist.</p>"
-                    : "<p>Befund wählen, um Belege und Vorschlag zu sehen.</p>");
+            showText(count > 1 ? MavenDetectiveBundle.message("usage.detail.many", count)
+                    : result == null ? MavenDetectiveBundle.message("usage.detail.start")
+                    : result.findings().isEmpty() ? "<p>" + MavenDetectiveBundle.message("usage.empty.none") + "</p>"
+                    : MavenDetectiveBundle.message("usage.detail.select"));
             return;
         }
-        StringBuilder sb = new StringBuilder("<h3>").append(esc(f.getModule().getName())).append(" – ").append(esc(f.getKind().label()))
-                .append(f.isCertain() ? "" : " (unsicher)").append("</h3>");
+        StringBuilder sb = new StringBuilder("<h3>").append(esc(f.getModule().getName())).append(" – ").append(esc(kindLabel(f.getKind())))
+                .append(f.isCertain() ? "" : " (" + MavenDetectiveBundle.message("usage.uncertain") + ")").append("</h3>");
         sb.append("<p>").append(esc(f.message())).append("</p>");
         if (f.getKind() == DependencyUsage.Kind.UNDECLARED && f.getEntry().getPath().size() > 1) {
-            sb.append("<p><b>Pfad:</b> ").append(esc(String.join(" → ", f.getEntry().getPath()))).append(", ").append(esc(f.getEntry().getScope()))
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("detail.path")).append("</b> ").append(esc(String.join(" → ", f.getEntry().getPath()))).append(", ").append(esc(f.getEntry().getScope()))
                     .append("</p>");
         }
         if (f.declarationLocation() != null) {
-            sb.append("<p><b>Deklariert:</b> ").append(link(f.declarationLocation(), f.getDeclared().declaredIn.getArtifactId() + "/pom.xml:"
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("usage.declared")).append("</b> ").append(link(f.declarationLocation(), f.getDeclared().declaredIn.getArtifactId() + "/pom.xml:"
                     + f.getDeclared().dep.getLine())).append("</p>");
         }
-        appendUses(sb, "Genannt in Hauptquellen", f.getMainUses(), f.getMainCount());
-        appendUses(sb, "Genannt in Tests", f.getTestUses(), f.getTestCount());
+        appendUses(sb, MavenDetectiveBundle.message("usage.named.main"), f.getMainUses(), f.getMainCount());
+        appendUses(sb, MavenDetectiveBundle.message("usage.named.test"), f.getTestUses(), f.getTestCount());
         if (f.getNote() != null) {
-            sb.append("<p><b>Hinweis:</b> ").append(esc(f.getNote())).append("</p>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("detail.note")).append("</b> ").append(esc(f.getNote())).append("</p>");
         }
         if (f.isViaBundle()) {
-            sb.append("<p><b>Hinweis:</b> kommt über einen Starter ohne eigene Klassen – dort ist Deklarieren üblich nicht nötig, "
-                    + "macht den Classpath aber unabhängig vom Starter.</p>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("detail.note")).append("</b> ")
+                    .append(MavenDetectiveBundle.message("usage.via.bundle")).append("</p>");
         }
         List<FixAction> fixes = f.fixes();
         if (!fixes.isEmpty()) {
-            sb.append("<p><b>Vorschlag:</b> ").append(esc(fixes.get(0).getLabel())).append("</p>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("detail.suggestion")).append("</b> ").append(esc(fixes.get(0).getLabel())).append("</p>");
         }
         showText(sb.toString());
+    }
+
+    static String kindLabel(DependencyUsage.Kind kind) {
+        return MavenDetectiveBundle.message(switch (kind) {
+            case UNDECLARED -> "usage.kind.undeclared";
+            case UNUSED -> "usage.kind.unused";
+            case TEST_ONLY -> "usage.kind.test.only";
+        });
     }
 
     private static void appendUses(StringBuilder sb, String title, List<ClassUsages.Use> uses, int count) {
         if (uses.isEmpty()) {
             return;
         }
-        sb.append("<p><b>").append(title).append("</b> (").append(count).append(count == 1 ? " Klasse" : " Klassen").append("):</p><ul>");
+        sb.append("<p><b>").append(title).append("</b> (").append(MavenDetectiveBundle.message("duplicates.classes", count)).append("):</p><ul>");
         for (ClassUsages.Use u : uses) {
             sb.append("<li><code>").append(esc(u.getClassName())).append("</code> – ");
             sb.append(u.getFile() == null ? "" : link(u.location(), u.getFile().getFileName() + (u.getLine() > 0 ? ":" + u.getLine() : "")));
             sb.append("</li>");
         }
         if (count > uses.size()) {
-            sb.append("<li>… und ").append(count - uses.size()).append(" weitere</li>");
+            sb.append("<li>").append(MavenDetectiveBundle.message("detail.more", count - uses.size())).append("</li>");
         }
         sb.append("</ul>");
     }
@@ -455,10 +454,9 @@ public final class DependencyUsagePanel extends DetectivePanel {
             }
             return;
         }
-        int n = FixRunner.editPoms(project, pomFixes, "Dependencies bereinigen (Maven Detective)");
+        int n = FixRunner.editPoms(project, pomFixes, MavenDetectiveBundle.message("command.clean.dependencies"));
         if (n > 0) {
-            showText("<p>" + n + (n == 1 ? " Änderung" : " Änderungen") + " an der POM. Nach dem Maven-Import ist die Liste "
-                    + "veraltet – dann oben „Neu prüfen“.</p>");
+            showText("<p>" + MavenDetectiveBundle.message("usage.applied", n) + "</p>");
             apply.setEnabled(false);
         }
     }

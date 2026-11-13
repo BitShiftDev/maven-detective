@@ -1,6 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 
 import java.nio.file.Files;
@@ -76,7 +77,7 @@ public final class PomLocator {
             try {
                 parsed.put(key, PomFile.parse(key, e.getValue()));
             } catch (Exception ex) {
-                throw new IllegalArgumentException(key + " wäre nach der Änderung kein gültiges XML: " + ex.getMessage(), ex);
+                throw new IllegalArgumentException(Texts.t("pom.invalid.after.change", key, ex.getMessage()), ex);
             }
         }
         return new PomLocator(this, Collections.unmodifiableMap(parsed));

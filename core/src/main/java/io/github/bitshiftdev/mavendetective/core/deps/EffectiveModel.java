@@ -1,5 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -149,8 +151,7 @@ public final class EffectiveModel {
             }
             PomFile parent = locator.parentOf(current);
             if (parent == null) {
-                notes.add("Parent " + current.parentGav() + " nicht lokal gefunden (weder relativePath noch lokales Repository)"
-                        + " – die Kette endet bei " + current.getFile());
+                notes.add(Texts.t("model.parent.missing", current.parentGav(), current.getFile()));
             }
             current = parent;
         }
@@ -188,7 +189,7 @@ public final class EffectiveModel {
                 }
                 EffectiveModel bomModel = locator.model(bom);
                 if (bomModel.building) {
-                    notes.add("Import-Zyklus bei BOM " + bom.gav());
+                    notes.add(Texts.t("model.import.cycle", bom.gav()));
                     continue;
                 }
                 for (ImportStep missing : bomModel.missingImports) {

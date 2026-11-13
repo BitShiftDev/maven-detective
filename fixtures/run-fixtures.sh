@@ -8,6 +8,9 @@
 # Voraussetzungen: mvn im PATH, Java 8+. Jede Fixture bekommt ein eigenes, leeres lokales Repository.
 set -uo pipefail
 
+# Die Prüfungen unten suchen deutsche Texte der Karte; Englisch ist sonst Standard außerhalb deutscher Systeme
+export MAVEN_DETECTIVE_LANGUAGE=de
+
 EXT_JAR="${1:?Pfad zum Extension-JAR angeben}"
 EXT_JAR="$(cd "$(dirname "$EXT_JAR")" && pwd)/$(basename "$EXT_JAR")"
 HERE="$(cd "$(dirname "$0")" && pwd)"

@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Managed;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplanation.Source;
@@ -73,15 +74,15 @@ public final class ConflictMatrix {
         public String sourceLabel() {
             switch (source) {
                 case DIRECT:
-                    return "direkt angegeben";
+                    return Texts.t("matrix.source.direct");
                 case MANAGED:
                     return "dependencyManagement";
                 case BOM:
                     return "BOM";
                 case TRANSITIVE:
-                    return "transitiv (Tiefe " + depth + ")";
+                    return Texts.t("matrix.source.transitive", depth);
                 default:
-                    return "unbekannt";
+                    return Texts.t("unknown");
             }
         }
     }
@@ -132,7 +133,7 @@ public final class ConflictMatrix {
         /** Quick-Fix {@code pin-version} für eine beliebige Version der Zeile. */
         public FixAction fix(String groupId, String artifactId, String version) {
             return FixAction.of(FixAction.PIN_VERSION,
-                    "Version " + version + " in " + target.getArtifactId() + " unter dependencyManagement festlegen",
+                    Texts.t("matrix.fix.pin", version, target.getArtifactId()),
                     "file", target.getFile().toString(), "artifact", groupId + ":" + artifactId, "version", version);
         }
 
@@ -333,8 +334,7 @@ public final class ConflictMatrix {
             }
         }
         if (common == null || common.isEmpty()) {
-            row.pinProblem = "Die betroffenen Module haben keinen gemeinsamen Parent im Projekt – die Version muss in jedem Modul "
-                    + "einzeln festgelegt werden (oder ein gemeinsamer Parent eingeführt).";
+            row.pinProblem = Texts.t("matrix.no.parent");
             return;
         }
         PomFile target = common.get(0);
@@ -350,8 +350,7 @@ public final class ConflictMatrix {
             if (d != null && d.dep.getVersion() != null) {
                 String key = d.declaredIn.getFile() + ":" + d.dep.getVersionLine();
                 if (seen.add(key)) {
-                    overrides.add(new Blocker(m, "Direkte Angabe <version>" + d.dep.getVersion() + "</version> in "
-                            + d.declaredIn.getArtifactId() + " überstimmt dependencyManagement – nach dem Pin dort die Version entfernen",
+                    overrides.add(new Blocker(m, Texts.t("matrix.blocker.direct", d.dep.getVersion(), d.declaredIn.getArtifactId()),
                             d.declaredIn.getFile().toString(), d.dep.getVersionLine()));
                 }
             }
@@ -362,8 +361,7 @@ public final class ConflictMatrix {
                 } else if (chain.indexOf(mg.declaredIn) >= 0 && chain.indexOf(mg.declaredIn) < targetIdx) {
                     String key = mg.declaredIn.getFile() + ":" + mg.dep.getVersionLine();
                     if (seen.add(key)) {
-                        overrides.add(new Blocker(m, "dependencyManagement in " + mg.declaredIn.getArtifactId() + " ("
-                                + mg.version().value + ") liegt näher am Modul und überstimmt den Parent – dort entfernen oder anpassen",
+                        overrides.add(new Blocker(m, Texts.t("matrix.blocker.managed", mg.declaredIn.getArtifactId(), mg.version().value),
                                 mg.declaredIn.getFile().toString(), mg.dep.getVersionLine()));
                     }
                 }
@@ -377,14 +375,14 @@ public final class ConflictMatrix {
     public List<String> lines(boolean all) {
         List<String> out = new ArrayList<String>();
         List<Row> shown = all ? rows : divergent();
-        out.add("Konflikt-Matrix: " + modules.size() + " Module, " + rows.size() + " Artifacts, " + divergent().size() + " mit abweichenden Versionen");
+        out.add(Texts.t("matrix.summary", modules.size(), rows.size(), divergent().size()));
         if (isPartial()) {
-            out.add("(ohne Baum für " + partialNames() + ": nur direkte Dependencies – vollständig mit mvn dependency:tree -Dverbose > tree.txt, dann --tree tree.txt)");
+            out.add("(" + Texts.t("matrix.partial", partialNames()) + ")");
         }
         for (Row r : shown) {
             out.add("");
             Map<String, List<Module>> byVersion = r.modulesByVersion();
-            out.add(r.ga() + (r.isDivergent() ? "  – " + byVersion.size() + " Versionen" : ""));
+            out.add(r.ga() + (r.isDivergent() ? "  – " + Texts.t("matrix.versions", byVersion.size()) : ""));
             for (Map.Entry<String, List<Module>> e : byVersion.entrySet()) {
                 StringBuilder sb = new StringBuilder("    ").append(e.getKey()).append(": ");
                 boolean first = true;
@@ -397,9 +395,8 @@ public final class ConflictMatrix {
                 out.add(sb.toString());
             }
             if (r.pin != null) {
-                out.add("    Vorschlag: " + r.pin.version + " in " + r.pin.target.getArtifactId() + " (" + r.pin.target.getFile()
-                        + ") unter dependencyManagement festlegen"
-                        + (r.pin.existing == null ? "" : " – dort steht bisher " + r.pin.existing));
+                out.add("    " + Texts.t("matrix.suggestion", r.pin.version, r.pin.target.getArtifactId() + " (" + r.pin.target.getFile() + ")")
+                        + (r.pin.existing == null ? "" : " – " + Texts.t("matrix.existing", r.pin.existing)));
                 for (Blocker o : r.pin.overrides) {
                     out.add("      ! " + o.text + "  → " + o.file + (o.line > 0 ? ":" + o.line : ""));
                 }
@@ -409,7 +406,7 @@ public final class ConflictMatrix {
         }
         if (shown.isEmpty()) {
             out.add("");
-            out.add("Alle Module nutzen jeweils dieselbe Version.");
+            out.add(Texts.t("matrix.all.same"));
         }
         return out;
     }
@@ -417,20 +414,20 @@ public final class ConflictMatrix {
     /** Markdown-Tabelle (Zeile = Artifact, Spalte = Modul); abweichende Zellen fett. */
     public String markdown(boolean all) {
         List<Row> shown = all ? rows : divergent();
-        StringBuilder sb = new StringBuilder("### Konflikt-Matrix\n\n");
-        sb.append(modules.size()).append(" Module, ").append(divergent().size()).append(" Artifacts mit abweichenden Versionen.");
+        StringBuilder sb = new StringBuilder("### ").append(Texts.t("matrix.title")).append("\n\n");
+        sb.append(Texts.t("matrix.md.summary", modules.size(), divergent().size()));
         if (isPartial()) {
-            sb.append(" Ohne Baum für ").append(partialNames()).append(" – nur direkte Dependencies.");
+            sb.append(" ").append(Texts.t("matrix.md.partial", partialNames()));
         }
         sb.append("\n\n");
         if (shown.isEmpty()) {
-            return sb.append("Alle Module nutzen jeweils dieselbe Version.\n").toString();
+            return sb.append(Texts.t("matrix.all.same")).append("\n").toString();
         }
         sb.append("| Artifact |");
         for (Module m : modules) {
             sb.append(' ').append(m.getName()).append(" |");
         }
-        sb.append(" Vorschlag |\n|---|");
+        sb.append(' ').append(Texts.t("matrix.md.suggestion")).append(" |\n|---|");
         for (int i = 0; i < modules.size(); i++) {
             sb.append("---|");
         }
@@ -451,11 +448,11 @@ public final class ConflictMatrix {
             if (r.pin != null) {
                 sb.append(' ').append(r.pin.version).append(" in `").append(r.pin.target.getArtifactId()).append("`");
                 if (!r.pin.overrides.isEmpty()) {
-                    sb.append(" (").append(r.pin.overrides.size()).append(r.pin.overrides.size() == 1 ? " Stelle überstimmt ihn)" : " Stellen überstimmen ihn)");
+                    sb.append(" (").append(Texts.t("matrix.md.overrides", r.pin.overrides.size())).append(')');
                 }
                 sb.append(" |\n");
             } else {
-                sb.append(r.isDivergent() ? " kein gemeinsamer Parent |\n" : " |\n");
+                sb.append(r.isDivergent() ? " " + Texts.t("matrix.md.no.parent") + " |\n" : " |\n");
             }
         }
         return sb.toString();

@@ -32,6 +32,7 @@ public final class SimulateUpgradeAction extends AnAction implements DumbAware {
 
     @Override
     public void update(@NotNull AnActionEvent e) {
+        MavenDetectiveBundle.localize(this, e.getPresentation());
         Project project = e.getProject();
         boolean inPom = e.getData(CommonDataKeys.EDITOR) != null && WhyThisVersionAction.isProjectPom(e.getData(CommonDataKeys.VIRTUAL_FILE));
         e.getPresentation().setEnabledAndVisible(project != null

@@ -262,34 +262,31 @@ public final class ExclusionsPanel extends DetectivePanel {
         ExclusionAudit.Finding f = tree.single();
         if (f == null) {
             List<ExclusionAudit.Finding> sel = tree.selected();
-            details.show(result == null
-                    ? "<p>Prüft jede <code>&lt;exclusion&gt;</code> in den POMs des Projekts: Der transitive Baum der Dependency wird "
-                    + "aus den POMs im lokalen Repository nachgebaut – ohne die geprüfte Exclusion. Taucht das ausgeschlossene "
-                    + "Artifact darin nicht auf, ist die Exclusion <b>veraltet</b> (typisch nach einem Upgrade); kappt eine andere "
-                    + "Exclusion derselben Dependency den Pfad schon, ist sie <b>doppelt</b>.</p>"
-                    : sel.size() > 1 ? "<p>" + sel.size() + " Exclusions gewählt. Angekreuzte entfernt „Entfernen“ in einem Undo-Schritt.</p>"
-                    : result.removable().isEmpty() ? "<p>Keine Exclusion ist veraltet oder doppelt.</p>"
-                    : "<p>Exclusion wählen, um Befund und Pfad zu sehen. Angekreuzte entfernt „Entfernen“ in einem Undo-Schritt.</p>");
+            details.show(result == null ? MavenDetectiveBundle.message("exclusions.detail.start")
+                    : "<p>" + (sel.size() > 1 ? MavenDetectiveBundle.message("exclusions.detail.many", sel.size())
+                    : result.removable().isEmpty() ? MavenDetectiveBundle.message("exclusions.empty.none")
+                    : MavenDetectiveBundle.message("exclusions.detail.select")) + "</p>");
             return;
         }
         StringBuilder sb = new StringBuilder("<h3>").append(esc(label(f.getStatus()))).append(": ").append(esc(f.getExclusion().ga()))
                 .append("</h3>");
         sb.append("<p>").append(esc(f.message())).append("</p>");
-        sb.append("<p><b>Steht in:</b> ").append(Html.pomLink(f.getFile(), f.getLine())).append(" bei ")
-                .append(esc(f.getDependency().ga() + (f.getDependencyVersion() == null ? "" : ":" + f.getDependencyVersion())))
+        sb.append("<p><b>").append(MavenDetectiveBundle.message("exclusions.detail.file")).append("</b> ").append(Html.pomLink(f.getFile(), f.getLine()))
+                .append(" ").append(esc(MavenDetectiveBundle.message("exclusions.at",
+                        f.getDependency().ga() + (f.getDependencyVersion() == null ? "" : ":" + f.getDependencyVersion()))))
                 .append(f.isManaged() ? " (dependencyManagement)" : "").append("</p>");
         if (!f.getPath().isEmpty()) {
-            sb.append("<p><b>Pfad:</b> ").append(esc(String.join(" → ", f.getPath()))).append("</p>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("detail.path")).append("</b> ").append(esc(String.join(" → ", f.getPath()))).append("</p>");
         }
         if (f.getCoveredBy() != null) {
-            sb.append("<p><b>Kappt schon:</b> ").append(esc(f.getCoveredBy())).append("</p>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("exclusions.detail.covered")).append("</b> ").append(esc(f.getCoveredBy())).append("</p>");
         }
         if (!f.getMissing().isEmpty()) {
-            sb.append("<p><b>Lokal fehlt:</b> ").append(esc(String.join(", ", f.getMissing()))).append("</p>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("exclusions.detail.missing")).append("</b> ").append(esc(String.join(", ", f.getMissing()))).append("</p>");
         }
         FixAction fix = f.fix();
         if (fix != null) {
-            sb.append("<p><b>Vorschlag:</b> ").append(esc(fix.getLabel())).append("</p>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("detail.suggestion")).append("</b> ").append(esc(fix.getLabel())).append("</p>");
         }
         details.show(sb.toString());
     }
@@ -311,7 +308,7 @@ public final class ExclusionsPanel extends DetectivePanel {
         if (fixes.isEmpty()) {
             return;
         }
-        int n = FixRunner.editPoms(project, fixes, "Exclusions entfernen (Maven Detective)");
+        int n = FixRunner.editPoms(project, fixes, MavenDetectiveBundle.message("command.remove.exclusions"));
         if (n > 0) {
             remove.setEnabled(false);
             setStatus(MavenDetectiveBundle.message("exclusions.removed", n));

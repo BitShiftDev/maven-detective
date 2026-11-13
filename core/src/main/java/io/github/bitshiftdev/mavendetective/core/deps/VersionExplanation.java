@@ -1,5 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -107,7 +109,7 @@ public final class VersionExplanation {
     /** Textform für Konsole und Tests. */
     public List<String> lines() {
         List<String> out = new ArrayList<String>();
-        out.add("Warum " + groupId + ":" + artifactId + (version == null ? "" : " " + version) + " in " + module + "?");
+        out.add(Texts.t("why.title", groupId + ":" + artifactId + (version == null ? "" : " " + version), module));
         out.add(summary);
         int n = 0;
         for (Station s : stations) {
@@ -124,7 +126,7 @@ public final class VersionExplanation {
         }
         List<Station> hints = hints();
         if (!hints.isEmpty()) {
-            out.add("Hinweise:");
+            out.add(Texts.t("why.hints") + ":");
             for (Station h : hints) {
                 out.add("  - " + h.text + (h.file == null ? "" : "  → " + h.file + (h.line > 0 ? ":" + h.line : "")));
             }
@@ -135,11 +137,8 @@ public final class VersionExplanation {
     /** Markdown für Ticket oder Chat. */
     public String markdown() {
         StringBuilder sb = new StringBuilder();
-        sb.append("### Warum `").append(groupId).append(':').append(artifactId).append('`');
-        if (version != null) {
-            sb.append(" ").append(version);
-        }
-        sb.append(" in `").append(module).append("`?\n\n");
+        sb.append("### ").append(Texts.t("why.title", "`" + groupId + ":" + artifactId + "`" + (version == null ? "" : " " + version),
+                "`" + module + "`")).append("\n\n");
         sb.append(summary).append("\n\n");
         for (Station s : stations) {
             if (s.kind == Station.Kind.HINT) {
@@ -153,7 +152,7 @@ public final class VersionExplanation {
         }
         List<Station> hints = hints();
         if (!hints.isEmpty()) {
-            sb.append("\n**Hinweise**\n\n");
+            sb.append("\n**").append(Texts.t("why.hints")).append("**\n\n");
             for (Station h : hints) {
                 sb.append("- ").append(h.text).append('\n');
             }

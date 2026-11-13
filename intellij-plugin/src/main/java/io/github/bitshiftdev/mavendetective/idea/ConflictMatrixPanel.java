@@ -351,8 +351,8 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         } else {
             emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.match"), null, null);
         }
-        setStatus(matrix.getModules().size() + " Module, " + divergent + (divergent == 1 ? " Abweichung" : " Abweichungen")
-                + (matrix.isPartial() ? " – ohne Baum nur direkte Dependencies (Maven-Projekt neu laden)" : ""));
+        setStatus(MavenDetectiveBundle.message("matrix.status", matrix.getModules().size(), divergent)
+                + (matrix.isPartial() ? " – " + MavenDetectiveBundle.message("matrix.status.partial") : ""));
         int idx = before == null ? -1 : rows.indexOf(before);
         if (idx < 0) {
             for (int i = 0; i < rows.size(); i++) {
@@ -379,15 +379,13 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         pin.setEnabled(false);
         if (row == null) {
             pin.setText(MavenDetectiveBundle.message("matrix.pin"));
-            showText(matrix != null && matrix.divergent().isEmpty() && onlyDivergent
-                    ? "<p>Alle Module nutzen jeweils dieselbe Version. „Nur Abweichungen“ abwählen, um alle Artifacts zu sehen.</p>"
-                    : "<p>Zeile wählen, um Versionen, Herkunft und den Vorschlag zu sehen. Doppelklick auf eine Zelle zeigt "
-                    + "„Warum diese Version?“ für dieses Modul.</p>");
+            showText("<p>" + MavenDetectiveBundle.message(matrix != null && matrix.divergent().isEmpty() && onlyDivergent
+                    ? "matrix.detail.none" : "matrix.detail.select") + "</p>");
             return;
         }
         StringBuilder sb = new StringBuilder("<h3>").append(esc(row.ga())).append("</h3>");
         if (!row.isDivergent()) {
-            sb.append("<p>Alle Module nutzen ").append(esc(row.versions().get(0))).append(".</p>");
+            sb.append("<p>").append(esc(MavenDetectiveBundle.message("matrix.detail.same", row.versions().get(0)))).append("</p>");
         }
         sb.append("<ul>");
         for (Map.Entry<String, List<ConflictMatrix.Module>> e : row.modulesByVersion().entrySet()) {
@@ -412,16 +410,13 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         sb.append("</ul>");
         ConflictMatrix.Pin p = row.getPin();
         if (p != null) {
-            sb.append("<p><b>Vorschlag:</b> ").append(esc(p.getVersion())).append(" im gemeinsamen Parent <a href=\"")
-                    .append(esc(p.getTarget().getFile().toString())).append("\">").append(esc(p.getTarget().getArtifactId()))
-                    .append("</a> unter <code>dependencyManagement</code> festlegen");
-            if (p.getExisting() != null) {
-                sb.append(" – dort steht bisher ").append(esc(p.getExisting()));
-            }
-            sb.append(". Das gilt dann auch für transitive Vorkommen. Vorgeschlagen ist die höchste Version; Maven selbst nähme "
-                    + "die nächste im Baum.</p>");
+            String parent = "<a href=\"" + esc(p.getTarget().getFile().toString()) + "\">" + esc(p.getTarget().getArtifactId()) + "</a>";
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("detail.suggestion")).append("</b> ")
+                    .append(MavenDetectiveBundle.message(p.getExisting() != null ? "matrix.detail.pin.existing" : "matrix.detail.pin",
+                            esc(p.getVersion()), parent, p.getExisting() == null ? "" : esc(p.getExisting())))
+                    .append("</p>");
             if (!p.getBlockers().isEmpty()) {
-                sb.append("<p><b>Überstimmt den Pin danach noch:</b></p><ul>");
+                sb.append("<p><b>").append(MavenDetectiveBundle.message("matrix.detail.blockers")).append("</b></p><ul>");
                 for (ConflictMatrix.Blocker b : p.getBlockers()) {
                     sb.append("<li>").append(esc(b.getText())).append(" – ").append(Html.pomLink(b.getFile(), b.getLine())).append("</li>");
                 }
@@ -454,8 +449,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             return;
         }
         if (FixRunner.pinVersion(project, row.getPin().fix(row.getGroupId(), row.getArtifactId(), version))) {
-            showText("<p>Version " + esc(version) + " für " + esc(row.ga()) + " eingetragen. Nach dem Maven-Import "
-                    + "rechnet die Matrix von selbst neu.</p>");
+            showText("<p>" + esc(MavenDetectiveBundle.message("matrix.pinned", version, row.ga())) + "</p>");
             pin.setEnabled(false);
         }
     }
@@ -569,7 +563,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
 
         @Override
         public String getColumnName(int column) {
-            return column == 0 ? "Artifact" : modules.get(column - 1).getName();
+            return column == 0 ? MavenDetectiveBundle.message("matrix.column.artifact") : modules.get(column - 1).getName();
         }
 
         @Override
@@ -587,7 +581,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             if (value instanceof ConflictMatrix.Row) {
                 append(r.ga(), r.isDivergent() ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : SimpleTextAttributes.REGULAR_ATTRIBUTES);
                 if (r.isDivergent()) {
-                    append("  " + r.versions().size() + " Versionen", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+                    append("  " + MavenDetectiveBundle.message("matrix.versions", r.versions().size()), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
                 }
                 return;
             }
@@ -616,10 +610,10 @@ public final class ConflictMatrixPanel extends DetectivePanel {
 
         private static String shortSource(ConflictMatrix.Cell c) {
             return switch (c.getSource()) {
-                case DIRECT -> "direkt";
-                case MANAGED -> "verwaltet";
+                case DIRECT -> MavenDetectiveBundle.message("upgrade.editor.direct");
+                case MANAGED -> MavenDetectiveBundle.message("matrix.source.managed");
                 case BOM -> "BOM";
-                case TRANSITIVE -> "transitiv";
+                case TRANSITIVE -> MavenDetectiveBundle.message("matrix.source.transitive");
                 default -> "";
             };
         }

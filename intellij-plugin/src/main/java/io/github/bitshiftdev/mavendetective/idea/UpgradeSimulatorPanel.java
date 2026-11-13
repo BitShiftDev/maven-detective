@@ -175,10 +175,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         splitter.setFirstComponent(rows(table, this::selectedLocation, this::selectedText));
         splitter.setSecondComponent(bottom);
         setBody(splitter);
-        showText("<p>Artifact (<code>groupId:artifactId</code>, auch BOM oder Parent) oder <code>${property}</code> und Zielversion "
-                + "wählen, dann „Simulieren“. Die POMs bleiben unverändert, bis „Übernehmen“ geklickt wird.</p>"
-                + "<p>Im Editor: Rechtsklick auf eine <code>&lt;dependency&gt;</code> oder den <code>&lt;parent&gt;</code> in der "
-                + "<code>pom.xml</code> → „Upgrade simulieren…“.</p>");
+        showText(MavenDetectiveBundle.message("upgrade.detail.start"));
         AnalysisResults.getInstance(project).addListener(new AnalysisResults.Listener() {
             @Override
             public void changed(@NotNull AnalysisResults.Analysis analysis, @NotNull AnalysisResults.Summary summary) {
@@ -306,7 +303,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         if (result == null || result.getSteps().isEmpty()) {
             return;
         }
-        applied(FixRunner.editPoms(project, result.fixes(), "Upgrade übernehmen (Maven Detective)", shown));
+        applied(FixRunner.editPoms(project, result.fixes(), MavenDetectiveBundle.message("command.apply.upgrade"), shown));
     }
 
     private void loadSuggestions() {
@@ -362,7 +359,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             }
             String newer = versions.isEmpty() || now == null || MavenVersion.compare(versions.get(0), now) <= 0 ? null : versions.get(0);
             version.setSelectedItem(newer);
-            setStatus(now == null ? null : "heute " + now + (newer == null ? " – keine neuere Version lokal, Zielversion eintippen" : ""));
+            setStatus(now == null ? null : MavenDetectiveBundle.message(newer == null ? "upgrade.status.current.only" : "upgrade.status.current", now));
             if (autoSimulateFor != null && newer != null) {
                 simulate();
             } else if (autoSimulateFor != null) {
@@ -463,7 +460,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                     if (gavs.isEmpty()) {
                         break;
                     }
-                    indicator.setText("Lade " + gavs.size() + (gavs.size() == 1 ? " POM" : " POMs") + " (Runde " + round + ") …");
+                    indicator.setText(MavenDetectiveBundle.message("upgrade.fetch.progress", gavs.size(), round));
                     List<Path> files = new ArrayList<>();
                     for (PomFile p : poms(project, DependenciesPanel.locator(project, root), root)) {
                         files.add(p.getFile());
@@ -472,14 +469,14 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                     try {
                         outcome = PomFetcher.fetch(mvn, root, repo, gavs, files, env, indicator::checkCanceled, 900);
                     } catch (java.io.IOException e) {
-                        error = "Maven ließ sich nicht starten (" + mvn + "): " + e.getMessage();
+                        error = MavenDetectiveBundle.message("upgrade.fetch.start.failed", mvn, e.getMessage());
                         break;
                     }
                     if (!outcome.isOk()) {
-                        error = "Maven konnte nicht alles laden (Exit " + outcome.getExitCode() + "):\n" + String.join("\n", outcome.errors());
+                        error = MavenDetectiveBundle.message("upgrade.fetch.failed", String.valueOf(outcome.getExitCode())) + "\n" + String.join("\n", outcome.errors());
                         break;
                     }
-                    indicator.setText("Simuliere erneut …");
+                    indicator.setText(MavenDetectiveBundle.message("upgrade.fetch.again"));
                     UpgradeSimulator.Result next = compute(project, r);
                     boolean progress = next != null && !next.getMissing().equals(last.getMissing());
                     last = next;
@@ -505,7 +502,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         if (result == null || result.getSteps().isEmpty()) {
             return;
         }
-        applied(FixRunner.editPoms(project, result.fixes(), "Upgrade übernehmen (Maven Detective)"));
+        applied(FixRunner.editPoms(project, result.fixes(), MavenDetectiveBundle.message("command.apply.upgrade")));
     }
 
     private void applied(int n) {
@@ -546,8 +543,8 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         } else {
             emptyText(table.getEmptyText(), MavenDetectiveBundle.message("upgrade.empty.unchanged"), null, null);
             int changed = res.changed().size();
-            setStatus(changed + (changed == 1 ? " Modul ändert sich" : " Module ändern sich")
-                    + (res.isComplete() ? "" : " – unvollständig, POMs fehlen lokal"));
+            setStatus(MavenDetectiveBundle.message("upgrade.editor.badge.modules", changed)
+                    + (res.isComplete() ? "" : " – " + MavenDetectiveBundle.message("upgrade.status.incomplete")));
         }
         this.fetchError = error;
         setStale(false);
@@ -564,7 +561,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
     private void render() {
         UpgradeSimulator.Result res = result;
         if (res == null) {
-            showText(fetchError == null ? "<p>Kein Maven-Projekt gefunden.</p>" : "<p>" + esc(fetchError) + "</p>");
+            showText("<p>" + (fetchError == null ? MavenDetectiveBundle.message("empty.no.maven.project") : esc(fetchError)) + "</p>");
             return;
         }
         StringBuilder sb = new StringBuilder("<h3>").append(esc(res.headline())).append("</h3>");
@@ -572,7 +569,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             sb.append("<p><b>").append(Html.error(esc(fetchError).replace("\n", "<br>"))).append("</b></p>");
         }
         if (!res.getSteps().isEmpty()) {
-            sb.append("<p><b>Änderung an den POMs</b> (noch nicht angewendet):</p><ol>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("upgrade.editor.diff")).append("</b></p><ol>");
             for (UpgradeSimulator.Step s : res.getSteps()) {
                 sb.append("<li>").append(esc(s.getDescription())).append(" – ").append(Html.pomLink(s.getFile(), s.getLine()));
                 if (s.getReason() != null) {
@@ -587,26 +584,25 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         }
         if (!res.isComplete()) {
             List<String> m = res.getMissing();
-            sb.append("<p><b>Unvollständig:</b> lokal fehlen ").append(m.size()).append(m.size() == 1 ? " POM" : " POMs").append(" (")
-                    .append(esc(String.join(", ", m.subList(0, Math.min(6, m.size()))))).append(m.size() > 6 ? ", …" : "")
-                    .append("). Was darunter hängt, fehlt in der Simulation. „Fehlende POMs laden“ holt sie mit Maven.</p>");
+            sb.append("<p>").append(esc(MavenDetectiveBundle.message("upgrade.editor.incomplete", m.size(),
+                    String.join(", ", m.subList(0, Math.min(6, m.size()))) + (m.size() > 6 ? ", …" : "")))).append("</p>");
         }
         Row row = selected();
         if (row != null) {
             sb.append("<hr>");
             if (row.delta != null) {
                 UpgradeSimulator.Delta d = row.delta;
-                sb.append("<p><b>").append(esc(d.label())).append("</b> in ").append(esc(row.module.getName())).append("</p><ul>");
+                sb.append("<p>").append(MavenDetectiveBundle.message("upgrade.detail.delta", esc(d.label()), esc(row.module.getName()))).append("</p><ul>");
                 if (d.getBefore() != null) {
-                    sb.append("<li>vorher: ").append(esc(path(d.getBefore()))).append("</li>");
+                    sb.append("<li>").append(MavenDetectiveBundle.message("upgrade.detail.before", esc(path(d.getBefore())))).append("</li>");
                 }
                 if (d.getAfter() != null) {
-                    sb.append("<li>nachher: ").append(esc(path(d.getAfter()))).append("</li>");
+                    sb.append("<li>").append(MavenDetectiveBundle.message("upgrade.detail.after", esc(path(d.getAfter())))).append("</li>");
                 }
                 sb.append("</ul>");
             } else {
-                sb.append("<p><b>Neuer Konflikt</b> in ").append(esc(row.module.getName())).append(": ").append(esc(row.risk.message()))
-                        .append("</p><p>Pfad: ").append(esc(row.risk.getPath())).append("</p>");
+                sb.append("<p>").append(MavenDetectiveBundle.message("upgrade.detail.risk", esc(row.module.getName()), esc(row.risk.message())))
+                        .append("</p><p>").append(MavenDetectiveBundle.message("detail.path")).append(" ").append(esc(row.risk.getPath())).append("</p>");
             }
         }
         TreeSet<String> notes = new TreeSet<>();
@@ -619,20 +615,21 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             }
         }
         if (!notes.isEmpty()) {
-            sb.append("<p><b>Hinweise</b></p><ul>");
+            sb.append("<p><b>").append(MavenDetectiveBundle.message("upgrade.detail.notes")).append("</b></p><ul>");
             for (String n : notes) {
                 sb.append("<li>").append(esc(n)).append("</li>");
             }
             sb.append("</ul>");
         }
         if (res.changed().isEmpty() && res.getProblems().isEmpty()) {
-            sb.append("<p>Kein Modul ändert sich.</p>");
+            sb.append("<p>").append(MavenDetectiveBundle.message("upgrade.empty.unchanged")).append("</p>");
         }
         showText(sb.toString());
     }
 
     private static String path(DepNode n) {
-        return n.depth() <= 1 ? n.gav() + " (direkt" + (n.getScope() == null || "compile".equals(n.getScope()) ? "" : ", " + n.getScope()) + ")"
+        return n.depth() <= 1 ? n.gav() + " (" + MavenDetectiveBundle.message("upgrade.editor.direct")
+                + (n.getScope() == null || "compile".equals(n.getScope()) ? "" : ", " + n.getScope()) + ")"
                 : n.pathText() + (n.getScope() == null || "compile".equals(n.getScope()) ? "" : " (" + n.getScope() + ")");
     }
 
@@ -659,7 +656,8 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
     }
 
     private static final class DeltaModel extends AbstractTableModel {
-        private static final String[] COLUMNS = {"Modul", "", "Artifact", "vorher", "nachher", "über"};
+        private static final String[] COLUMNS = {"upgrade.column.module", null, "matrix.column.artifact", "upgrade.column.before",
+                "upgrade.column.after", "upgrade.column.via"};
         private List<Row> rows = List.of();
 
         void set(List<Row> rows) {
@@ -679,7 +677,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
 
         @Override
         public String getColumnName(int column) {
-            return COLUMNS[column];
+            return COLUMNS[column] == null ? "" : MavenDetectiveBundle.message(COLUMNS[column]);
         }
 
         @Override
@@ -692,8 +690,8 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                 return switch (columnIndex) {
                     case 1 -> "!";
                     case 2 -> r.risk.ga();
-                    case 3 -> r.risk.getWanted() + " verlangt";
-                    case 4 -> r.risk.getChosen() + " gewinnt";
+                    case 3 -> MavenDetectiveBundle.message("upgrade.cell.wanted", r.risk.getWanted());
+                    case 4 -> MavenDetectiveBundle.message("upgrade.cell.chosen", r.risk.getChosen());
                     default -> r.risk.getRequester();
                 };
             }
@@ -711,7 +709,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                 case 4 -> d.getAfter() == null ? "–" : d.getAfter().getVersion() + scope(d.getAfter(), d.getKind());
                 default -> {
                     DepNode n = d.getAfter() != null ? d.getAfter() : d.getBefore();
-                    yield n.depth() <= 1 ? "direkt" : n.getParent().gav();
+                    yield n.depth() <= 1 ? MavenDetectiveBundle.message("upgrade.editor.direct") : n.getParent().gav();
                 }
             };
         }

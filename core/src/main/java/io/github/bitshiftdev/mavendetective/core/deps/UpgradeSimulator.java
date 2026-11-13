@@ -1,6 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.ImportStep;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Managed;
@@ -83,7 +84,7 @@ public final class UpgradeSimulator {
             }
             String[] p = s.split(":");
             if (p.length != 3 || p[0].isEmpty() || p[1].isEmpty() || p[2].isEmpty()) {
-                throw new IllegalArgumentException("Erwartet groupId:artifactId:version oder property=wert, nicht '" + spec + "'");
+                throw new IllegalArgumentException(Texts.t("upgrade.request.invalid", spec));
             }
             return artifact(p[0], p[1], p[2]);
         }
@@ -185,15 +186,15 @@ public final class UpgradeSimulator {
         public String message() {
             switch (kind) {
                 case ADDED:
-                    return "neu: " + label() + ":" + after.getVersion() + scopeNote(after) + " über " + after.pathText();
+                    return Texts.t("upgrade.delta.added", label() + ":" + after.getVersion() + scopeNote(after), after.pathText());
                 case REMOVED:
-                    return "fällt weg: " + label() + ":" + before.getVersion() + scopeNote(before) + " (bisher über " + before.pathText() + ")";
+                    return Texts.t("upgrade.delta.removed", label() + ":" + before.getVersion() + scopeNote(before), before.pathText());
                 case UPGRADED:
                     return label() + " " + before.getVersion() + " → " + after.getVersion() + via(after);
                 case DOWNGRADED:
-                    return label() + " sinkt " + before.getVersion() + " → " + after.getVersion() + via(after);
+                    return Texts.t("upgrade.delta.downgraded", label(), before.getVersion(), after.getVersion()) + via(after);
                 default:
-                    return label() + ":" + after.getVersion() + " Scope " + before.getScope() + " → " + after.getScope() + via(after);
+                    return Texts.t("upgrade.delta.scope", label() + ":" + after.getVersion(), before.getScope(), after.getScope()) + via(after);
             }
         }
 
@@ -202,7 +203,7 @@ public final class UpgradeSimulator {
         }
 
         private static String via(DepNode n) {
-            return n.depth() <= 1 ? " (direkt)" : " über " + n.pathText();
+            return n.depth() <= 1 ? " (" + Texts.t("upgrade.direct") + ")" : " " + Texts.t("upgrade.via", n.pathText());
         }
     }
 
@@ -229,8 +230,7 @@ public final class UpgradeSimulator {
         }
 
         public String message() {
-            return ga() + ": " + getRequester() + " verlangt " + getWanted() + ", im Classpath landet " + getChosen()
-                    + " (nearest wins) – Gefahr von NoSuchMethodError/NoClassDefFoundError";
+            return Texts.t("upgrade.risk", ga(), getRequester(), getWanted(), getChosen());
         }
 
         String key() {
@@ -353,18 +353,18 @@ public final class UpgradeSimulator {
         public String headline() {
             String from = currentVersions.isEmpty() ? "" : join(new ArrayList<String>(currentVersions), "/") + " → ";
             String what = target == Target.BOM ? "BOM " : target == Target.PARENT ? "Parent " : "";
-            return "Upgrade-Simulation: " + what + request.label() + " " + from + request.version;
+            return Texts.t("upgrade.headline", what + request.label() + " " + from + request.version);
         }
 
         /** Konsolenausgabe; ohne {@code all} Module ohne Änderung nur als Liste. */
         public List<String> lines(boolean all) {
             List<String> out = new ArrayList<String>();
-            out.add(headline() + " (POMs unverändert)");
+            out.add(headline() + " (" + Texts.t("upgrade.poms.unchanged") + ")");
             out.add("");
             if (steps.isEmpty()) {
-                out.add("Keine Änderung möglich.");
+                out.add(Texts.t("upgrade.no.change.possible"));
             } else {
-                out.add("Änderung" + (steps.size() == 1 ? "" : "en") + " an den POMs:");
+                out.add(Texts.t("upgrade.steps", steps.size()));
                 int i = 1;
                 for (Step s : steps) {
                     out.add("  " + i++ + ". " + s.description + "  → " + s.file + (s.line > 0 ? ":" + s.line : ""));
@@ -383,7 +383,7 @@ public final class UpgradeSimulator {
                     continue;
                 }
                 out.add("");
-                out.add("Modul " + m.getName() + ": " + moduleSummary(m));
+                out.add(Texts.t("upgrade.module", m.getName()) + ": " + moduleSummary(m));
                 if (m.note != null) {
                     out.add("  ! " + m.note);
                 }
@@ -391,7 +391,7 @@ public final class UpgradeSimulator {
                     out.add("  " + symbol(d.kind) + " " + d.message());
                 }
                 for (Risk r : m.risks) {
-                    out.add("  ! Konflikt " + r.message());
+                    out.add("  ! " + Texts.t("upgrade.conflict") + " " + r.message());
                 }
                 if (m.deviation != null) {
                     out.add("  (" + m.deviation + ")");
@@ -399,13 +399,13 @@ public final class UpgradeSimulator {
             }
             if (!unchanged.isEmpty()) {
                 out.add("");
-                out.add("Ohne Änderung: " + join(unchanged, ", "));
+                out.add(Texts.t("upgrade.unchanged.modules") + " " + join(unchanged, ", "));
             }
             if (!missing.isEmpty()) {
                 out.add("");
-                out.add("Unvollständig – lokal fehlen " + missing.size() + (missing.size() == 1 ? " POM" : " POMs") + ": "
+                out.add(Texts.t("upgrade.incomplete", missing.size()) + " "
                         + join(first(new ArrayList<String>(missing), 8), ", ") + (missing.size() > 8 ? ", …" : ""));
-                out.add("  Was darunter hängt, fehlt in der Simulation. Laden mit --fetch (mvn dependency:collect) und erneut simulieren.");
+                out.add("  " + Texts.t("upgrade.incomplete.hint"));
             }
             return out;
         }
@@ -414,7 +414,7 @@ public final class UpgradeSimulator {
         public String markdown(boolean all) {
             StringBuilder sb = new StringBuilder("### ").append(headline()).append("\n\n");
             if (!steps.isEmpty()) {
-                sb.append("**Änderung an den POMs** (noch nicht angewendet)\n\n");
+                sb.append("**").append(Texts.t("upgrade.md.steps")).append("** (").append(Texts.t("upgrade.md.not.applied")).append(")\n\n");
                 for (Step s : steps) {
                     sb.append("1. ").append(s.description).append(" — `").append(s.file).append(s.line > 0 ? ":" + s.line : "").append("`\n");
                 }
@@ -427,18 +427,18 @@ public final class UpgradeSimulator {
                 if (m.isUnchanged() && !all && m.note == null) {
                     continue;
                 }
-                sb.append("#### Modul `").append(m.getName()).append("` – ").append(moduleSummary(m)).append("\n\n");
+                sb.append("#### ").append(Texts.t("upgrade.module", "`" + m.getName() + "`")).append("` – ").append(moduleSummary(m)).append("\n\n");
                 if (m.note != null) {
                     sb.append("> ").append(m.note).append("\n\n");
                 }
                 if (!m.deltas.isEmpty()) {
-                    sb.append("| | Artifact | vorher | nachher | Pfad |\n|---|---|---|---|---|\n");
+                    sb.append(Texts.t("upgrade.md.table")).append("\n|---|---|---|---|---|\n");
                     for (Delta d : m.deltas) {
                         DepNode via = d.after != null ? d.after : d.before;
                         sb.append("| ").append(symbol(d.kind)).append(" | `").append(d.label()).append("` | ")
                                 .append(d.before == null ? "–" : d.before.getVersion() + scopeSuffix(d.before)).append(" | ")
                                 .append(d.after == null ? "–" : d.after.getVersion() + scopeSuffix(d.after)).append(" | ")
-                                .append(via.depth() <= 1 ? "direkt" : via.pathText().replace("|", "\\|")).append(" |\n");
+                                .append(via.depth() <= 1 ? Texts.t("upgrade.direct") : via.pathText().replace("|", "\\|")).append(" |\n");
                     }
                     sb.append('\n');
                 }
@@ -450,10 +450,10 @@ public final class UpgradeSimulator {
                 }
             }
             if (changed().isEmpty()) {
-                sb.append("Kein Modul ändert sich.\n");
+                sb.append(Texts.t("upgrade.no.module.changes")).append("\n");
             }
             if (!missing.isEmpty()) {
-                sb.append("\n**Unvollständig:** lokal fehlen ").append(join(first(new ArrayList<String>(missing), 12), ", "))
+                sb.append("\n**").append(Texts.t("upgrade.md.incomplete")).append("** ").append(join(first(new ArrayList<String>(missing), 12), ", "))
                         .append(missing.size() > 12 ? ", …" : "").append('\n');
             }
             return sb.toString();
@@ -465,16 +465,16 @@ public final class UpgradeSimulator {
 
         private String moduleSummary(ModuleResult m) {
             if (m.isUnchanged()) {
-                return m.targetBefore != null && m.targetBefore.equals(m.targetAfter) ? "keine Änderung (bleibt " + m.targetAfter + ")"
-                        : "keine Änderung";
+                return m.targetBefore != null && m.targetBefore.equals(m.targetAfter) ? Texts.t("upgrade.summary.stays", m.targetAfter)
+                        : Texts.t("upgrade.summary.none");
             }
             List<String> parts = new ArrayList<String>();
-            add(parts, m.count(Kind.UPGRADED), "gehoben");
-            add(parts, m.count(Kind.DOWNGRADED), "gesenkt");
-            add(parts, m.count(Kind.ADDED), "neu");
-            add(parts, m.count(Kind.REMOVED), "fällt weg");
-            add(parts, m.count(Kind.SCOPE), "Scope");
-            add(parts, m.risks.size(), m.risks.size() == 1 ? "neuer Konflikt" : "neue Konflikte");
+            add(parts, m.count(Kind.UPGRADED), Texts.t("upgrade.summary.upgraded"));
+            add(parts, m.count(Kind.DOWNGRADED), Texts.t("upgrade.summary.downgraded"));
+            add(parts, m.count(Kind.ADDED), Texts.t("upgrade.summary.added"));
+            add(parts, m.count(Kind.REMOVED), Texts.t("upgrade.summary.removed"));
+            add(parts, m.count(Kind.SCOPE), Texts.t("upgrade.summary.scope"));
+            add(parts, m.risks.size(), Texts.t("upgrade.summary.risks", m.risks.size()));
             return join(parts, ", ");
         }
 
@@ -527,9 +527,9 @@ public final class UpgradeSimulator {
                 changed.put(file, edit.apply(xml));
                 result.steps.add(s);
             } catch (IOException e) {
-                result.problems.add(s.file + " nicht lesbar: " + e.getMessage());
+                result.problems.add(Texts.t("upgrade.unreadable", s.file, e.getMessage()));
             } catch (IllegalArgumentException e) {
-                result.problems.add(s.fix.getLabel() + " geht nicht: " + e.getMessage());
+                result.problems.add(Texts.t("upgrade.step.failed", s.fix.getLabel(), e.getMessage()));
             }
         }
         PomLocator after;
@@ -566,7 +566,7 @@ public final class UpgradeSimulator {
                 }
                 if (result.target == Target.ARTIFACT && ta != null && !request.version.equals(ta.getVersion())) {
                     VersionExplanation x = new VersionExplainer(after, null).explain(changedPom, request.groupId, request.artifactId, a.getRoot());
-                    m.note = request.ga() + " bleibt hier bei " + ta.getVersion() + ": " + x.getSummary();
+                    m.note = Texts.t("upgrade.note.stays", request.ga(), ta.getVersion(), x.getSummary());
                 }
             }
             DepNode real = realTrees == null ? null : realTrees.get(p.getGroupId() + ":" + p.getArtifactId());
@@ -676,14 +676,13 @@ public final class UpgradeSimulator {
             n++;
             if (examples.size() < 3) {
                 DepNode any = x != null ? x : y;
-                examples.add(any.ga() + " " + (x == null ? "–" : x.getVersion()) + " statt " + (y == null ? "–" : y.getVersion()));
+                examples.add(Texts.t("upgrade.deviation.example", any.ga(), x == null ? "–" : x.getVersion(), y == null ? "–" : y.getVersion()));
             }
         }
         if (n == 0) {
             return null;
         }
-        return "Die Simulation weicht schon heute bei " + n + (n == 1 ? " Artifact" : " Artifacts") + " vom aufgelösten Baum ab, z. B. "
-                + join(examples, "; ") + " – meist Profile oder Versionsbereiche; dort mit Vorsicht lesen";
+        return Texts.t("upgrade.deviation", n, join(examples, "; "));
     }
 
     private static boolean same(String a, String b) {
@@ -725,7 +724,7 @@ public final class UpgradeSimulator {
             }
             result.problems.addAll(problems);
             if (steps.isEmpty() && problems.isEmpty()) {
-                result.problems.add(request.label() + " kommt in keinem Modul vor – weder deklariert, verwaltet, als BOM, Parent noch transitiv.");
+                result.problems.add(Texts.t("upgrade.not.found", request.label()));
             }
         }
 
@@ -753,20 +752,19 @@ public final class UpgradeSimulator {
         }
 
         private void setProperty(PomFile file, String name, String current, String reason) {
-            add(FixAction.of(FixAction.SET_VERSION, "Property ${" + name + "} in " + file.getArtifactId() + " auf " + request.version + " setzen",
+            add(FixAction.of(FixAction.SET_VERSION, Texts.t("upgrade.fix.property", "${" + name + "}", file.getArtifactId(), request.version),
                     "file", file.getFile().toString(), "property", name, "version", request.version, "current", current), reason);
         }
 
         private void setVersion(PomFile file, String section, String ga, String current, String reason) {
-            add(FixAction.of(FixAction.SET_VERSION, ga + " in " + file.getArtifactId() + " auf " + request.version + " setzen",
+            add(FixAction.of(FixAction.SET_VERSION, Texts.t("upgrade.fix.version", ga, file.getArtifactId(), request.version),
                     "file", file.getFile().toString(), "artifact", ga, "section", section, "version", request.version, "current", current),
                     reason);
         }
 
         private void pin(PomFile module, String current, String reason) {
             PomFile top = topmost(module);
-            add(FixAction.of(FixAction.PIN_VERSION, request.ga() + ":" + request.version + " in " + top.getArtifactId()
-                            + " unter dependencyManagement festlegen",
+            add(FixAction.of(FixAction.PIN_VERSION, Texts.t("upgrade.fix.pin", request.ga() + ":" + request.version, top.getArtifactId()),
                     "file", top.getFile().toString(), "artifact", request.ga(), "version", request.version, "current", current), reason);
         }
 
@@ -785,11 +783,9 @@ public final class UpgradeSimulator {
                 return false;
             }
             if (isProject(o.pom)) {
-                setProperty(o.pom, name, o.value, what + " über die Property ${" + name + "}, definiert in " + o.pom.getArtifactId()
-                        + " – alles, was sie nutzt, ändert sich mit");
+                setProperty(o.pom, name, o.value, Texts.t("upgrade.reason.property", what, "${" + name + "}", o.pom.getArtifactId()));
             } else {
-                setProperty(topmost(module), name, o.value, what + " über die Property ${" + name + "} aus " + o.pom.getArtifactId()
-                        + " (außerhalb des Projekts); sie wird im Projekt überschrieben – alles, was sie nutzt, ändert sich mit");
+                setProperty(topmost(module), name, o.value, Texts.t("upgrade.reason.property.outside", what, "${" + name + "}", o.pom.getArtifactId()));
             }
             return true;
         }
@@ -800,7 +796,7 @@ public final class UpgradeSimulator {
                 if (p.getProperties().containsKey(request.property)) {
                     defined = true;
                     setProperty(p, request.property, p.getProperties().get(request.property).getValue(),
-                            "Property ist in " + p.getArtifactId() + " definiert");
+                            Texts.t("upgrade.reason.property.defined", p.getArtifactId()));
                 }
             }
             if (defined) {
@@ -811,12 +807,11 @@ public final class UpgradeSimulator {
                 PomFile top = topmost(p);
                 PropertyOrigin o = locator.model(p).property(request.property);
                 if (o != null && tops.add(top.getFile())) {
-                    setProperty(top, request.property, o.value, "Property kommt aus " + (o.pom == null ? "Maven" : o.pom.getArtifactId())
-                            + " und wird im Projekt überschrieben");
+                    setProperty(top, request.property, o.value, Texts.t("upgrade.reason.property.override", o.pom == null ? "Maven" : o.pom.getArtifactId()));
                 }
             }
             if (tops.isEmpty()) {
-                problems.add("Property ${" + request.property + "} ist weder im Projekt noch in seinen Parents definiert.");
+                problems.add(Texts.t("upgrade.property.undefined", "${" + request.property + "}"));
             }
         }
 
@@ -829,10 +824,10 @@ public final class UpgradeSimulator {
                 found = true;
                 String v = p.getParentVersion();
                 if (v != null && v.contains("${")) {
-                    problems.add("Parent-Version in " + p.getFile() + " ist " + v + " – bitte dort selbst ändern.");
+                    problems.add(Texts.t("upgrade.parent.expression", p.getFile(), v));
                     continue;
                 }
-                setVersion(p, "parent", request.ga(), v, "Parent von " + p.getArtifactId());
+                setVersion(p, "parent", request.ga(), v, Texts.t("upgrade.reason.parent", p.getArtifactId()));
             }
             return found;
         }
@@ -846,17 +841,16 @@ public final class UpgradeSimulator {
                         continue;
                     }
                     found = true;
-                    String what = "BOM " + s.declaration.getArtifactId() + " importiert in " + s.declaredIn.getArtifactId();
+                    String what = Texts.t("upgrade.reason.bom", s.declaration.getArtifactId(), s.declaredIn.getArtifactId());
                     if (viaProperty(module, model, s.declaration.getVersion(), s.version.value, what)) {
                         continue;
                     }
                     if (isProject(s.declaredIn) && s.declaration.getVersion() != null && !s.declaration.getVersion().contains("${")) {
                         setVersion(s.declaredIn, "dependencyManagement", request.ga(), s.version.value, what);
                     } else if (isProject(s.declaredIn)) {
-                        problems.add(what + " mit der Version " + s.declaration.getVersion() + " – bitte dort selbst ändern.");
+                        problems.add(Texts.t("upgrade.bom.expression", what, s.declaration.getVersion()));
                     } else {
-                        problems.add(what + " mit fester Version " + s.version.value + " außerhalb des Projekts – dort nicht änderbar. "
-                                + "Das BOM selbst ins dependencyManagement des Projekts importieren, dann geht es.");
+                        problems.add(Texts.t("upgrade.bom.outside", what, s.version.value));
                     }
                 }
             }
@@ -877,42 +871,41 @@ public final class UpgradeSimulator {
                 String current = inc != null ? inc.getVersion() : declared != null || managed != null
                         ? ExclusionAudit.dependencyVersion(model, declared != null ? declared.dep : managed.dep) : null;
                 if (request.pin) {
-                    pin(module, current, "Festlegen wie gewünscht (--pin) – gilt für direkte und transitive Vorkommen");
+                    pin(module, current, Texts.t("upgrade.reason.pin"));
                     continue;
                 }
                 if (declared != null && declared.dep.getVersion() != null) {
                     planDirect(module, model, declared, current);
                 } else if (managed != null && managed.via.isEmpty()) {
-                    String what = "Verwaltet in " + managed.declaredIn.getArtifactId();
+                    String what = Texts.t("upgrade.reason.managed", managed.declaredIn.getArtifactId());
                     if (viaProperty(module, model, managed.dep.getVersion(), current, what)) {
                         continue;
                     }
                     if (isProject(managed.declaredIn) && managed.dep.getVersion() != null && !managed.dep.getVersion().contains("${")) {
                         setVersion(managed.declaredIn, "dependencyManagement", request.ga(), current, what + " (dependencyManagement)");
                     } else {
-                        pin(module, current, what + " außerhalb des Projekts – der Eintrag im Projekt geht vor");
+                        pin(module, current, Texts.t("upgrade.reason.managed.outside", what));
                     }
                 } else if (managed != null) {
                     planBomManaged(module, model, managed, current);
                 } else {
-                    pin(module, current, "Kommt nur transitiv – ein Eintrag im dependencyManagement gilt für alle Vorkommen");
+                    pin(module, current, Texts.t("upgrade.reason.transitive"));
                 }
             }
         }
 
         private void planDirect(PomFile module, EffectiveModel model, Declared declared, String current) {
             String raw = declared.dep.getVersion();
-            String what = "Direkt angegeben in " + declared.declaredIn.getArtifactId();
+            String what = Texts.t("upgrade.reason.direct", declared.declaredIn.getArtifactId());
             if (viaProperty(module, model, raw, current, what)) {
                 return;
             }
             if (raw.contains("${")) {
-                problems.add(request.ga() + " in " + declared.declaredIn.getFile() + " hat die Version " + raw + " – bitte dort selbst ändern.");
+                problems.add(Texts.t("upgrade.direct.expression", request.ga(), declared.declaredIn.getFile(), raw));
             } else if (isProject(declared.declaredIn)) {
                 setVersion(declared.declaredIn, "dependencies", request.ga(), current, what);
             } else {
-                problems.add(request.ga() + " ist in " + declared.declaredIn.gav() + " (außerhalb des Projekts) mit Version " + raw
-                        + " deklariert – ein Eintrag im dependencyManagement überstimmt das nicht.");
+                problems.add(Texts.t("upgrade.direct.outside", request.ga(), declared.declaredIn.gav(), raw));
             }
         }
 
@@ -924,7 +917,7 @@ public final class UpgradeSimulator {
             ImportStep first = managed.via.get(0);
             String bom = first.declaration.ga();
             if (current != null && current.equals(first.version.value)) {
-                String what = "Kommt aus dem BOM " + first.declaration.getArtifactId() + " mit derselben Versionsnummer – das BOM wird gehoben";
+                String what = Texts.t("upgrade.reason.bom.train", first.declaration.getArtifactId());
                 if (viaProperty(module, model, first.declaration.getVersion(), current, what)) {
                     return;
                 }
@@ -933,7 +926,7 @@ public final class UpgradeSimulator {
                     return;
                 }
             }
-            pin(module, current, "Kommt aus dem BOM " + bom + ":" + first.version.value + " – der eigene Eintrag im Projekt geht vor");
+            pin(module, current, Texts.t("upgrade.reason.bom.pin", bom + ":" + first.version.value));
         }
     }
 

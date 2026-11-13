@@ -79,19 +79,19 @@ final class FixRunner {
                     }
                 }
                 case FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE -> {
-                    if (editPoms(project, List.of(fix), "Dependency ändern (Maven Detective)") > 0) {
+                    if (editPoms(project, List.of(fix), MavenDetectiveBundle.message("command.change.dependency")) > 0) {
                         rebuild(project, result, null, fix.getLabel());
                     }
                 }
                 case FixAction.SET_VERSION -> {
-                    if (editPoms(project, List.of(fix), "Version ändern (Maven Detective)") > 0) {
+                    if (editPoms(project, List.of(fix), MavenDetectiveBundle.message("command.change.version")) > 0) {
                         rebuild(project, result, null, fix.getLabel());
                     }
                 }
                 default -> notify(project, fix.getLabel(), NotificationType.INFORMATION);
             }
         } catch (RuntimeException e) {
-            notify(project, "Quick-Fix fehlgeschlagen: " + e.getMessage(), NotificationType.ERROR);
+            notify(project, MavenDetectiveBundle.message("fix.failed", e.getMessage()), NotificationType.ERROR);
         }
     }
 
@@ -134,7 +134,7 @@ final class FixRunner {
             public void onThrowable(@NotNull Throwable error) {
                 Throwable cause = error instanceof UncheckedIOException u ? u.getCause() : error;
                 // qualifiziert: im anonymen Task verdeckt Object.notify() die statische Methode
-                FixRunner.notify(project, "Quick-Fix fehlgeschlagen: " + cause.getMessage(), NotificationType.ERROR);
+                FixRunner.notify(project, MavenDetectiveBundle.message("fix.failed", cause.getMessage()), NotificationType.ERROR);
             }
         }.queue();
     }
@@ -222,7 +222,7 @@ final class FixRunner {
         if (hasArgs) {
             String cmd = "mvn " + String.join(" ", result.failure().getSession().getGoals()) + " " + args;
             CopyPasteManager.getInstance().setContents(new StringSelection(cmd.replaceAll(" +", " ").trim()));
-            notify(project, "Neu bauen mit " + args + " – Befehl liegt in der Zwischenablage.", NotificationType.INFORMATION);
+            notify(project, MavenDetectiveBundle.message("fix.rebuild.copied", args), NotificationType.INFORMATION);
         }
     }
 
@@ -232,18 +232,18 @@ final class FixRunner {
      */
     private static void switchJdk(Project project, BuildDoctorService.Result result, FixAction fix) {
         String required = fix.param("required");
-        String hint = required == null || required.isBlank() ? "Passendes JDK wählen." : "JDK " + required + " oder neuer wählen.";
+        String hint = required == null || required.isBlank() ? MavenDetectiveBundle.message("fix.jdk.any") : MavenDetectiveBundle.message("fix.jdk.min", required);
         MavenRunConfiguration cfg = result.configuration();
         if (cfg != null && cfg.getRunnerSettings() != null && result.environment() != null
                 && result.environment().getRunnerAndConfigurationSettings() != null) {
-            notify(project, "Diese Run-Konfiguration hat eigene Runner-Einstellungen. " + hint + " (Reiter Runner › JRE)",
+            notify(project, MavenDetectiveBundle.message("fix.jdk.run.configuration", hint),
                     NotificationType.INFORMATION);
-            if (RunDialog.editConfiguration(project, result.environment().getRunnerAndConfigurationSettings(), "JDK des Maven-Laufs")) {
+            if (RunDialog.editConfiguration(project, result.environment().getRunnerAndConfigurationSettings(), MavenDetectiveBundle.message("fix.jdk.dialog"))) {
                 rebuild(project, result, null, fix.getLabel());
             }
             return;
         }
-        notify(project, hint + " (Feld JRE)", NotificationType.INFORMATION);
+        notify(project, MavenDetectiveBundle.message("fix.jdk.settings", hint), NotificationType.INFORMATION);
         ShowSettingsUtil.getInstance().showSettingsDialog(project,
                 c -> c instanceof SearchableConfigurable sc && RUNNER_SETTINGS_ID.equals(sc.getId()), null);
     }
@@ -268,14 +268,14 @@ final class FixRunner {
         String version = IdeMaven.resolvedPluginVersion(project, groupId, artifactId);
         if (version == null) {
             openLocation(project, file + ":" + line);
-            notify(project, "Keine aufgelöste Version für " + plugin + " bekannt. Bitte die gewünschte Version eintragen.",
+            notify(project, MavenDetectiveBundle.message("fix.plugin.version.unknown", plugin),
                     NotificationType.WARNING);
             return;
         }
         VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Paths.get(file));
         Document doc = vf == null ? null : FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) {
-            notify(project, "Datei nicht gefunden: " + file, NotificationType.WARNING);
+            notify(project, MavenDetectiveBundle.message("notification.file.not.found", file), NotificationType.WARNING);
             return;
         }
         String tag = "<artifactId>" + artifactId + "</artifactId>";
@@ -286,20 +286,19 @@ final class FixRunner {
         int at = pluginArtifactIdWithoutVersion(text.toString(), tag, from);
         if (at < 0) {
             openLocation(project, file + ":" + line);
-            notify(project, "Plugin-Eintrag für " + plugin + " ohne <version> nicht eindeutig gefunden. "
-                    + "Bitte Version " + version + " selbst eintragen.", NotificationType.WARNING);
+            notify(project, MavenDetectiveBundle.message("fix.plugin.version.ambiguous", plugin, version), NotificationType.WARNING);
             return;
         }
         int insertAt = at + tag.length();
         Path pom = Paths.get(file);
-        String description = "Version " + version + " für " + plugin + " eintragen";
+        String description = MavenDetectiveBundle.message("fix.plugin.version.insert", version, plugin);
         Supplier<PomChanges.Plan> plan = () -> {
             int lineNo = doc.getLineNumber(at);
             String indent = doc.getCharsSequence().subSequence(doc.getLineStartOffset(lineNo), at).toString().replaceAll("\\S.*", "");
             PomChanges.Edit edit = new PomChanges.Edit(insertAt, 0, "\n" + indent + "<version>" + version + "</version>", lineNo + 2);
             return new PomChanges.Plan(List.of(PomChanges.FileChange.single(pom, doc.getText(), edit, description)), List.of(), null);
         };
-        if (apply(project, plan.get(), plan, "Plugin-Version einfügen (Maven Detective)", false) > 0) {
+        if (apply(project, plan.get(), plan, MavenDetectiveBundle.message("command.insert.plugin.version"), false) > 0) {
             rebuild(project, result, null, fix.getLabel());
         }
     }
@@ -332,7 +331,7 @@ final class FixRunner {
             notify(project, fix.getLabel(), NotificationType.INFORMATION);
             return false;
         }
-        return editPoms(project, List.of(fix), "Version festlegen (Maven Detective)") > 0;
+        return editPoms(project, List.of(fix), MavenDetectiveBundle.message("command.pin.version")) > 0;
     }
 
     /**
@@ -342,7 +341,7 @@ final class FixRunner {
      * @return wie viele eingefügt wurden
      */
     static int addExclusions(Project project, List<FixAction> fixes) {
-        return editPoms(project, fixes, "Exclusion einfügen (Maven Detective)");
+        return editPoms(project, fixes, MavenDetectiveBundle.message("command.add.exclusion"));
     }
 
     /**
@@ -381,7 +380,7 @@ final class FixRunner {
                     openLocation(project, plan.failed().toString());
                 }
                 notify(project, escape(String.join("\n", plan.problems())).replace("\n", "<br>")
-                        + "<br>Bitte von Hand ändern.", NotificationType.WARNING);
+                        + "<br>" + MavenDetectiveBundle.message("fix.by.hand"), NotificationType.WARNING);
             }
             return 0;
         }
@@ -391,7 +390,7 @@ final class FixRunner {
         // Hat sich ein Dokument seit der Vorschau geändert (Editor-Tab ist nicht modal), nichts schreiben
         PomChanges.Plan now = replan.get();
         if (!sameTexts(plan, now)) {
-            notify(project, "Die POM hat sich seit der Vorschau geändert – bitte erneut prüfen.", NotificationType.WARNING);
+            notify(project, MavenDetectiveBundle.message("fix.changed.since.preview"), NotificationType.WARNING);
             return 0;
         }
         List<Document> docs = new ArrayList<>();
@@ -420,7 +419,7 @@ final class FixRunner {
         for (String p : now.problems()) {
             done.add(escape(p));
         }
-        notify(project, String.join("<br>", done) + "<br>Maven-Projekt wird neu geladen.", NotificationType.INFORMATION);
+        notify(project, String.join("<br>", done) + "<br>" + MavenDetectiveBundle.message("fix.reimport"), NotificationType.INFORMATION);
         IdeMaven.reimport(project);
         return now.editCount();
     }
@@ -486,10 +485,10 @@ final class FixRunner {
                 String base = file.getFileName().toString();
                 Files.write(dir.resolve(base.substring(0, base.length() - 4) + ".txt"), note.trim().concat("\n").getBytes(StandardCharsets.UTF_8));
             }
-            notify(project, "Testfall gespeichert: " + file + "\nBitte prüfen (keine Geheimnisse im Log?) und per Pull Request einreichen.",
+            notify(project, MavenDetectiveBundle.message("misdiagnosis.saved", file),
                     NotificationType.INFORMATION);
         } catch (IOException e) {
-            notify(project, "Testfall konnte nicht gespeichert werden: " + e.getMessage(), NotificationType.ERROR);
+            notify(project, MavenDetectiveBundle.message("misdiagnosis.save.failed", e.getMessage()), NotificationType.ERROR);
         }
     }
 

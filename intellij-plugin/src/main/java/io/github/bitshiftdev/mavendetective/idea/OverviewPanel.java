@@ -39,7 +39,6 @@ import java.util.List;
 public final class OverviewPanel extends DetectivePanel implements BuildDoctorService.Listener, AnalysisResults.Listener {
 
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
-    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd.MM. HH:mm");
 
     private final BuildDoctorService service;
     private final AnalysisResults results;
@@ -306,14 +305,24 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
     /** Uhrzeit, bei älteren Tagen mit Datum davor. */
     static @Nls String time(long millis) {
         LocalDateTime t = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault());
-        return (t.toLocalDate().equals(LocalDate.now()) ? TIME : DATE_TIME).format(t);
+        return (t.toLocalDate().equals(LocalDate.now()) ? TIME : dateTime()).format(t);
     }
 
-    /** {@code 2026-11-12T07:45:12…} → „12.11. 07:45“; Unlesbares bleibt, wie es ist. */
+    /** {@code 2026-11-12T07:45:12…} → „12.11. 07:45“ bzw. „Nov 12, 07:45“; Unlesbares bleibt, wie es ist. */
     static @NotNull String formatCreatedAt(@Nullable String iso) {
         if (iso == null || iso.length() < 16 || iso.charAt(4) != '-' || iso.charAt(10) != 'T') {
             return iso == null ? "" : iso;
         }
-        return iso.substring(8, 10) + "." + iso.substring(5, 7) + ". " + iso.substring(11, 16);
+        try {
+            return dateTime().format(LocalDateTime.parse(iso.substring(0, 16)));
+        } catch (java.time.DateTimeException e) {
+            return iso;
+        }
+    }
+
+    /** Tag und Uhrzeit ohne Jahr, Muster aus dem Bundle ({@code format.date.time}). */
+    private static DateTimeFormatter dateTime() {
+        java.util.Locale l = MavenDetectiveBundle.bundleLocale();
+        return DateTimeFormatter.ofPattern(MavenDetectiveBundle.message("format.date.time"), l == java.util.Locale.ROOT ? java.util.Locale.ENGLISH : l);
     }
 }

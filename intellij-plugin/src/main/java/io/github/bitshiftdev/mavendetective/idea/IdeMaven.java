@@ -134,7 +134,7 @@ final class IdeMaven {
                 if (version != null) {
                     s.setMavenVersion(version);
                 }
-                s.setMavenSource(home.getClass().getSimpleName().startsWith("Bundled") ? "gebündelt (IntelliJ)" : String.valueOf(path));
+                s.setMavenSource(home.getClass().getSimpleName().startsWith("Bundled") ? MavenDetectiveBundle.message("setup.maven.bundled") : String.valueOf(path));
             }
         } catch (ProcessCanceledException e) {
             throw e;
@@ -151,7 +151,7 @@ final class IdeMaven {
         } catch (ProcessCanceledException e) {
             throw e;
         } catch (ExecutionException | RuntimeException e) {
-            s.getNotes().add("Runner-JDK nicht auflösbar: " + e.getMessage());
+            s.getNotes().add(MavenDetectiveBundle.message("setup.runner.jdk.unresolved", e.getMessage()));
         }
         String settings = general.getUserSettingsFile();
         if (settings != null && !settings.isBlank()) {

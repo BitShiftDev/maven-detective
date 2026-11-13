@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.report;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
@@ -33,7 +34,7 @@ public final class Reports {
         Diagnosis d = diagnoses.get(0);
         out.add("+-- Maven Detective · Build Doctor ----------------------------");
         out.add("| " + headline(d));
-        out.add("| Ursache: " + d.getCause());
+        out.add("| " + Texts.t("card.cause") + " " + d.getCause());
         int shown = 0;
         for (Evidence e : d.getEvidence()) {
             if (shown++ >= MAX_EVIDENCE) {
@@ -42,13 +43,13 @@ public final class Reports {
             out.add("|   - " + evidence(e));
         }
         if (!d.getFixes().isEmpty()) {
-            out.add("| Behebung: " + fixLine(d.getFixes().get(0)));
+            out.add("| " + Texts.t("card.fix") + " " + fixLine(d.getFixes().get(0)));
             for (int i = 1; i < d.getFixes().size() && i < 3; i++) {
-                out.add("|   oder: " + fixLine(d.getFixes().get(i)));
+                out.add("|   " + Texts.t("card.or") + " " + fixLine(d.getFixes().get(i)));
             }
         }
         if (diagnoses.size() > 1) {
-            StringBuilder more = new StringBuilder("| Weitere Treffer: ");
+            StringBuilder more = new StringBuilder("| " + Texts.t("card.more") + " ");
             for (int i = 1; i < diagnoses.size(); i++) {
                 more.append(i > 1 ? ", " : "").append(diagnoses.get(i).getCategory());
             }
@@ -124,7 +125,7 @@ public final class Reports {
         }
         if (FixAction.DELETE_FILES.equals(f.getType())) {
             String[] files = f.param("files").split("\n");
-            return label + "  (" + files.length + (files.length == 1 ? " Datei: " + files[0] : " Dateien") + ")";
+            return label + "  (" + (files.length == 1 ? Texts.t("card.files.one", files[0]) : Texts.t("card.files.many", files.length)) + ")";
         }
         if (FixAction.OPEN_FILE.equals(f.getType())) {
             return label + "  (" + f.param("file") + (f.param("line") != null && !"-1".equals(f.param("line")) ? ":" + f.param("line") : "") + ")";
@@ -141,12 +142,12 @@ public final class Reports {
     public static String markdown(List<Diagnosis> diagnoses, BuildFailure failure, SnapshotDiff changes) {
         StringBuilder sb = new StringBuilder();
         if (diagnoses.isEmpty()) {
-            return "Build ohne Fehler.\n";
+            return Texts.t("report.no.errors") + "\n";
         }
         Diagnosis d = diagnoses.get(0);
-        sb.append("### Maven-Build fehlgeschlagen: ").append(d.getCategory()).append('\n').append('\n');
-        sb.append("**Ursache** (").append(d.getConfidence().label()).append("): ").append(d.getCause()).append("\n\n");
-        sb.append("**Belege**\n\n");
+        sb.append("### ").append(Texts.t("report.failed", d.getCategory())).append('\n').append('\n');
+        sb.append("**").append(Texts.t("report.cause")).append("** (").append(d.getConfidence().label()).append("): ").append(d.getCause()).append("\n\n");
+        sb.append("**").append(Texts.t("report.evidence")).append("**\n\n");
         for (Evidence e : d.getEvidence()) {
             if (e.getKind() == Evidence.Kind.LOG_LINE) {
                 sb.append("- `").append(shorten(e.getText(), 300).replace("`", "'")).append("`\n");
@@ -155,7 +156,7 @@ public final class Reports {
             }
         }
         if (!d.getFixes().isEmpty()) {
-            sb.append("\n**Vorgeschlagene Behebung:** ").append(fixLine(d.getFixes().get(0))).append('\n');
+            sb.append("\n**").append(Texts.t("report.fix")).append("** ").append(fixLine(d.getFixes().get(0))).append('\n');
         }
         if (changes != null && !changes.isEmpty()) {
             sb.append("\n**").append(changes.headline()).append("**\n\n");
@@ -163,18 +164,23 @@ public final class Reports {
                 sb.append("- ").append(line).append('\n');
             }
         }
-        sb.append("\n**Umgebung**\n\n");
+        sb.append("\n**").append(Texts.t("report.environment")).append("**\n\n");
         SessionInfo s = failure.getSession();
         appendIf(sb, "Maven", s.getMavenVersion());
         appendIf(sb, "JDK", s.getJavaVersion() == null ? null
                 : s.getJavaVersion() + (s.getJavaHome() == null ? "" : " (" + s.getJavaHome() + ")"));
         appendIf(sb, "Offline", s.getOffline() == null ? null : String.valueOf(s.getOffline()));
         appendIf(sb, "settings.xml", s.getUserSettings());
-        appendIf(sb, "Profile", s.getActiveProfiles().isEmpty() ? null : String.valueOf(s.getActiveProfiles()));
+        appendIf(sb, Texts.t("report.profiles"), s.getActiveProfiles().isEmpty() ? null : String.valueOf(s.getActiveProfiles()));
         appendIf(sb, "Goals", s.getGoals().isEmpty() ? null : String.join(" ", s.getGoals()));
         appendIf(sb, "OS", System.getProperty("os.name") + " " + System.getProperty("os.version"));
-        sb.append("\n_Erstellt mit Maven Detective_\n");
+        sb.append(footer());
         return sb.toString();
+    }
+
+    /** Schlusszeile des Markdown-Berichts (das Plugin hängt davor den Umgebungsvergleich ein). */
+    public static String footer() {
+        return "\n_" + Texts.t("report.footer") + "_\n";
     }
 
     private static void appendIf(StringBuilder sb, String key, String value) {

@@ -1,5 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.snapshot;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -29,7 +31,7 @@ public final class Change {
         }
 
         public String label() {
-            return label;
+            return Texts.t("change.area." + name().toLowerCase(java.util.Locale.ROOT));
         }
     }
 
@@ -75,14 +77,14 @@ public final class Change {
         StringBuilder sb = new StringBuilder(area.label());
         String what = subject == null || subject.isEmpty() ? "" : " " + subject;
         if (before == null) {
-            sb.append(" neu:").append(what).append(' ').append(after);
+            sb.append(' ').append(Texts.t("change.added")).append(what).append(' ').append(after);
         } else if (after == null) {
-            sb.append(" entfernt:").append(what).append(" (war ").append(before).append(')');
+            sb.append(' ').append(Texts.t("change.removed")).append(what).append(" (").append(Texts.t("change.was", before)).append(')');
         } else {
             sb.append(what).append(' ').append(before).append(" → ").append(after);
         }
         if (modules.size() > 1) {
-            sb.append(" (").append(modules.size()).append(" Module)");
+            sb.append(" (").append(Texts.t("change.modules", modules.size())).append(')');
         }
         return sb.toString();
     }

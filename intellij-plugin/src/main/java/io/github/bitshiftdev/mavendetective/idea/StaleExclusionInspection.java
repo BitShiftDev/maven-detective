@@ -143,12 +143,12 @@ public final class StaleExclusionInspection extends LocalInspectionTool {
 
         @Override
         public @NotNull String getName() {
-            return "Exclusion " + exclusion + " entfernen";
+            return MavenDetectiveBundle.message("inspection.stale.exclusion.fix", exclusion);
         }
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Exclusion entfernen";
+            return MavenDetectiveBundle.message("inspection.stale.exclusion.family");
         }
 
         @Override

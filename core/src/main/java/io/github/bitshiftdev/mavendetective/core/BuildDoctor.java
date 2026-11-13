@@ -157,7 +157,7 @@ public final class BuildDoctor {
                 result = check.run(new CheckContext(failure, env, vars, lines, poms));
             } catch (RuntimeException e) {
                 // Eine fehlerhafte Prüfung darf die Diagnose nicht verhindern
-                result = CheckResult.info().evidence(Evidence.hint("Prüfung '" + id + "' fehlgeschlagen: " + e));
+                result = CheckResult.info().evidence(Evidence.hint(Texts.t("check.failed", id, e)));
             }
             if (result.getStatus() == CheckResult.Status.NOT_APPLICABLE) {
                 continue;
@@ -266,9 +266,9 @@ public final class BuildDoctor {
         }
         String first = lines.isEmpty() ? "" : lines.get(0);
         List<FixAction> fixes = new ArrayList<FixAction>();
-        fixes.add(FixAction.of(FixAction.MANUAL, "Als Testfall melden („Falsch erkannt“), damit der Katalog wächst"));
-        return new Diagnosis(Diagnosis.UNKNOWN_RULE, 0, "Unbekannter Fehler",
-                "Kein Eintrag im Fehlerkatalog passt. Erste Fehlermeldung: " + first,
+        fixes.add(FixAction.of(FixAction.MANUAL, Texts.t("unknown.fix")));
+        return new Diagnosis(Diagnosis.UNKNOWN_RULE, 0, Texts.t("unknown.category"),
+                Texts.t("unknown.cause", first),
                 Confidence.LIKELY, evidence, fixes);
     }
 }

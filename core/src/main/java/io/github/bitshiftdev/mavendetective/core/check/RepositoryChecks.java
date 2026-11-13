@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.env.MavenSettings;
@@ -51,30 +52,30 @@ final class RepositoryChecks {
             CheckResult base;
             if (Text.isMavenCentral(repoUrl)) {
                 return CheckResult.info().var("repoId", repoId).var("repoUrl", repoUrl)
-                        .cause("Maven Central antwortet mit {status|401/403} – Central braucht keine Zugangsdaten; meist blockiert ein Proxy, eine Firewall oder ein Repository-Manager den Zugriff.")
-                        .fix(FixAction.of(FixAction.MANUAL, "Proxy/Firewall prüfen oder einen Mirror auf den Firmen-Repository-Manager eintragen"));
+                        .cause(Texts.t("check.central.denied.cause"))
+                        .fix(FixAction.of(FixAction.MANUAL, Texts.t("check.central.denied.fix")));
             }
             MavenSettings user = ctx.env().userSettings();
             MavenSettings global = ctx.env().globalSettings();
             if (user == null && global == null) {
                 Path expected = ctx.env().getUserSettingsFile();
                 return CheckResult.confirmed().var("repoId", repoId)
-                        .cause("Es gibt keine settings.xml (" + expected + ") – also auch keine Zugangsdaten für '{repoId}'.")
-                        .evidence(Evidence.file("Datei fehlt", String.valueOf(expected), -1))
-                        .fix(FixAction.of(FixAction.MANUAL, "settings.xml mit <server><id>" + repoId + "</id>…</server> anlegen"));
+                        .cause(Texts.t("check.server.no.settings.cause", expected))
+                        .evidence(Evidence.file(Texts.t("check.file.missing"), String.valueOf(expected), -1))
+                        .fix(FixAction.of(FixAction.MANUAL, Texts.t("check.server.create.settings", repoId)));
             }
             MavenSettings settings = user != null ? user : global;
             for (MavenSettings s : new MavenSettings[] {user, global}) {
                 if (s != null && s.getServerIds().contains(repoId)) {
                     int line = s.lineOf("<id>" + repoId + "</id>");
                     base = CheckResult.info().var("repoId", repoId)
-                            .evidence(Evidence.setting("<server> mit ID '" + repoId + "' vorhanden", s.getFile().toString(), line))
-                            .fix(FixAction.of(FixAction.OPEN_FILE, "settings.xml an der Stelle öffnen",
+                            .evidence(Evidence.setting(Texts.t("check.server.present", repoId), s.getFile().toString(), line))
+                            .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.open.settings"),
                                     "file", s.getFile().toString(), "line", String.valueOf(line)));
                     if ("403".equals(status)) {
-                        return base.cause("Die Zugangsdaten für '{repoId}' werden angenommen, das Konto darf {artifact|dieses Artifact} aber nicht lesen (403).");
+                        return base.cause(Texts.t("check.server.forbidden.cause"));
                     }
-                    return base.cause("Für '{repoId}' sind Zugangsdaten hinterlegt, das Repository lehnt sie aber ab – falsches Passwort oder abgelaufenes Token.");
+                    return base.cause(Texts.t("check.server.rejected.cause"));
                 }
             }
             int line = settings.lineOf("<servers>");
@@ -82,18 +83,18 @@ final class RepositoryChecks {
                 line = settings.lineOf("</settings>");
             }
             CheckResult r = CheckResult.confirmed().var("repoId", repoId)
-                    .cause("In settings.xml gibt es keinen <server> mit der ID '{repoId}'; Maven schickt deshalb keine Zugangsdaten an {repoUrl|das Repository}.")
-                    .evidence(Evidence.setting("Server-IDs in settings.xml: " + settings.getServerIds(), settings.getFile().toString(), line));
+                    .cause(Texts.t("check.server.missing.cause"))
+                    .evidence(Evidence.setting(Texts.t("check.server.ids", settings.getServerIds()), settings.getFile().toString(), line));
             for (String id : settings.getServerIds()) {
                 if (Text.similar(id, repoId)) {
-                    r.evidence(Evidence.hint("Ähnliche ID gefunden: '" + id + "' – Tippfehler? Die ID muss exakt zur Repository- bzw. Mirror-ID passen."));
+                    r.evidence(Evidence.hint(Texts.t("check.server.similar", id)));
                 }
             }
             MavenSettings.Mirror mirror = settings.mirrorFor(repoId, repoUrl);
             if (mirror != null && !repoId.equals(mirror.id)) {
-                r.evidence(Evidence.hint("Mirror '" + mirror.id + "' greift – die <server>-ID muss dann '" + mirror.id + "' heißen, nicht '" + repoId + "'."));
+                r.evidence(Evidence.hint(Texts.t("check.server.mirror", mirror.id, repoId)));
             }
-            return r.fix(FixAction.of(FixAction.OPEN_FILE, "settings.xml an der Stelle öffnen",
+            return r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.open.settings"),
                     "file", settings.getFile().toString(), "line", String.valueOf(line)));
         }
     }
@@ -117,32 +118,32 @@ final class RepositoryChecks {
                 ProjectPoms.Location loc = hits.get(0);
                 CheckResult r = CheckResult.confirmed()
                         .var("file", loc.pom.file.toString()).var("line", String.valueOf(loc.line))
-                        .cause("Das Repository '{repoId|?}' ist mit http:// eingetragen; Maven blockiert seit 3.8.1 unverschlüsselte Repositories.");
+                        .cause(Texts.t("check.http.pom.cause"));
                 for (ProjectPoms.Location l : hits) {
-                    r.evidence(Evidence.file("http-URL in der POM", l.pom.file.toString(), l.line));
+                    r.evidence(Evidence.file(Texts.t("check.http.pom.evidence"), l.pom.file.toString(), l.line));
                 }
-                return r.fix(FixAction.of(FixAction.REPLACE_IN_FILE, "URL auf https umstellen",
+                return r.fix(FixAction.of(FixAction.REPLACE_IN_FILE, Texts.t("check.http.switch"),
                                 "file", loc.pom.file.toString(), "search", trimmed, "replace", https))
-                        .fix(FixAction.of(FixAction.OPEN_FILE, "POM an der Stelle öffnen",
+                        .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.open.pom"),
                                 "file", loc.pom.file.toString(), "line", String.valueOf(loc.line)));
             }
             MavenSettings s = ctx.env().userSettings();
             if (s != null && s.lineOf(trimmed) > 0) {
                 int line = s.lineOf(trimmed);
                 return CheckResult.confirmed()
-                        .cause("Das Repository '{repoId|?}' ist in settings.xml mit http:// eingetragen; Maven blockiert seit 3.8.1 unverschlüsselte Repositories.")
-                        .evidence(Evidence.setting("http-URL in settings.xml", s.getFile().toString(), line))
-                        .fix(FixAction.of(FixAction.REPLACE_IN_FILE, "URL auf https umstellen",
+                        .cause(Texts.t("check.http.settings.cause"))
+                        .evidence(Evidence.setting(Texts.t("check.http.settings.evidence"), s.getFile().toString(), line))
+                        .fix(FixAction.of(FixAction.REPLACE_IN_FILE, Texts.t("check.http.switch"),
                                 "file", s.getFile().toString(), "search", trimmed, "replace", https));
             }
             CheckResult r = CheckResult.info()
-                    .cause("Das http-Repository '{repoId|?}' ({repoUrl}) steht nicht in diesem Projekt, sondern in der POM einer Dependency; Maven blockiert es seit 3.8.1.")
-                    .evidence(Evidence.hint("URL weder in den Projekt-POMs noch in settings.xml gefunden"));
+                    .cause(Texts.t("check.http.transitive.cause"))
+                    .evidence(Evidence.hint(Texts.t("check.http.transitive.evidence")));
             if (s != null) {
-                r.fix(FixAction.of(FixAction.OPEN_FILE, "In settings.xml einen https-Mirror für '" + ctx.var("repoId") + "' eintragen",
+                r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.http.mirror", ctx.var("repoId")),
                         "file", s.getFile().toString(), "line", String.valueOf(Math.max(1, s.lineOf("<mirrors>")))));
             } else {
-                r.fix(FixAction.of(FixAction.MANUAL, "In settings.xml einen https-Mirror für '" + ctx.var("repoId") + "' eintragen"));
+                r.fix(FixAction.of(FixAction.MANUAL, Texts.t("check.http.mirror", ctx.var("repoId"))));
             }
             return r;
         }
@@ -177,25 +178,25 @@ final class RepositoryChecks {
             }
             if (!Files.isRegularFile(file)) {
                 return CheckResult.info()
-                        .evidence(Evidence.file("Datei existiert nicht (mehr) – evtl. schon gelöscht", file.toString(), -1))
-                        .fix(FixAction.of(FixAction.REBUILD, "Neu bauen"));
+                        .evidence(Evidence.file(Texts.t("check.jar.gone"), file.toString(), -1))
+                        .fix(FixAction.of(FixAction.REBUILD, Texts.t("fix.rebuild")));
             }
             CheckResult r;
             String zipError = openZip(file);
             String checksum = compareSha1(file);
             if (zipError == null && checksum == null) {
                 return CheckResult.info()
-                        .evidence(Evidence.file("JAR lässt sich öffnen und Prüfsumme passt – evtl. schon repariert", file.toString(), -1));
+                        .evidence(Evidence.file(Texts.t("check.jar.ok"), file.toString(), -1));
             }
             r = CheckResult.confirmed().var("file", file.toString())
-                    .cause("Die Datei {file} im lokalen Repository ist beschädigt (abgebrochener Download oder volle Platte).");
+                    .cause(Texts.t("check.jar.cause"));
             if (zipError != null) {
-                r.evidence(Evidence.file("Lässt sich nicht als ZIP öffnen: " + zipError, file.toString(), -1));
+                r.evidence(Evidence.file(Texts.t("check.jar.zip", zipError), file.toString(), -1));
             }
             if (checksum != null) {
                 r.evidence(Evidence.file(checksum, file.toString(), -1));
             }
-            return r.fix(FixAction.of(FixAction.DELETE_FILES, "Datei löschen und neu laden",
+            return r.fix(FixAction.of(FixAction.DELETE_FILES, Texts.t("check.jar.delete"),
                     "files", file.toString(), "args", ""));
         }
 
@@ -243,7 +244,7 @@ final class RepositoryChecks {
                     actual.append(String.format("%02x", b & 0xff));
                 }
                 return expected.equals(actual.toString()) ? null
-                        : "SHA-1 weicht ab: erwartet " + expected + ", lokal " + actual;
+                        : Texts.t("check.jar.sha1", expected, actual);
             } catch (Exception e) {
                 return null;
             }

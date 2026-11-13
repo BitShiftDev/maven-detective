@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.ImportStep;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Interpolated;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Managed;
@@ -108,18 +109,17 @@ public final class PomHints {
 
     private static String description(EffectiveModel model, Managed m, String version) {
         if (m.via.isEmpty()) {
-            return "Version " + version + " aus dependencyManagement in "
-                    + (m.declaredIn == model.getPom() ? "dieser POM" : "dem Parent " + m.declaredIn.gav());
+            return m.declaredIn == model.getPom() ? Texts.t("hint.managed.self", version)
+                    : Texts.t("hint.managed.parent", version, m.declaredIn.gav());
         }
         ImportStep first = m.via.get(0);
         ImportStep last = m.via.get(m.via.size() - 1);
-        StringBuilder sb = new StringBuilder("Version ").append(version).append(" aus dem BOM ")
-                .append(last.declaration.ga()).append(':').append(last.version.value);
+        StringBuilder sb = new StringBuilder(Texts.t("hint.bom", version, last.declaration.ga() + ":" + last.version.value));
         if (m.via.size() > 1) {
-            sb.append(", importiert über ").append(first.declaration.ga());
+            sb.append(", ").append(Texts.t("why.summary.bom.via", first.declaration.ga()));
         }
         if (first.declaredIn != model.getPom()) {
-            sb.append(" (Import geerbt von ").append(first.declaredIn.getArtifactId()).append(')');
+            sb.append(" (").append(Texts.t("why.summary.bom.inherited", first.declaredIn.getArtifactId())).append(')');
         }
         return sb.toString();
     }

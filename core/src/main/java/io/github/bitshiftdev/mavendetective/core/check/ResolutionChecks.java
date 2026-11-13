@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
@@ -61,15 +62,15 @@ final class ResolutionChecks {
                 return CheckResult.notApplicable();
             }
             CheckResult r = CheckResult.confirmed()
-                    .cause("Maven läuft im Offline-Modus und {artifact|das benötigte Artifact} liegt noch nicht im lokalen Repository.");
+                    .cause(Texts.t("check.offline.cause"));
             if (fromSettings) {
                 int line = settings.lineOf("<offline>");
-                r.evidence(Evidence.setting("<offline>true</offline> in settings.xml", settings.getFile().toString(), line))
-                        .fix(FixAction.of(FixAction.OPEN_FILE, "Offline-Modus in settings.xml abschalten",
+                r.evidence(Evidence.setting(Texts.t("check.offline.settings"), settings.getFile().toString(), line))
+                        .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.offline.settings.fix"),
                                 "file", settings.getFile().toString(), "line", String.valueOf(line)));
             } else {
-                r.evidence(Evidence.environment("Maven wurde mit -o / --offline gestartet"))
-                        .fix(FixAction.of(FixAction.REBUILD, "Ohne Offline-Modus neu bauen", "removeArgs", "-o --offline"));
+                r.evidence(Evidence.environment(Texts.t("check.offline.flag")))
+                        .fix(FixAction.of(FixAction.REBUILD, Texts.t("check.offline.flag.fix"), "removeArgs", "-o --offline"));
             }
             return r;
         }
@@ -95,20 +96,20 @@ final class ResolutionChecks {
             Matcher m;
             if ((m = ctx.find(TLS)) != null) {
                 return CheckResult.confirmed()
-                        .cause("Dem TLS-Zertifikat von {repoUrl,repoId|des Repositorys} wird nicht vertraut – typisch für Firmen-Proxys mit eigener CA.")
+                        .cause(Texts.t("check.network.tls.cause"))
                         .evidence(Evidence.log(m.group()))
                         .evidence(jdkEvidence(ctx))
                         .fix(FixAction.of(FixAction.MANUAL,
-                                "Firmen-CA in den Truststore des Maven-JDK importieren: keytool -importcert -cacerts -file firma-ca.crt"));
+                                Texts.t("check.network.tls.fix")));
             }
             if ((m = ctx.find(PROXY_AUTH)) != null) {
                 MavenSettings s = ctx.env().userSettings();
                 CheckResult r = CheckResult.confirmed()
-                        .cause("Der HTTP-Proxy verlangt eine Anmeldung (407); in settings.xml fehlen Proxy-Zugangsdaten.")
+                        .cause(Texts.t("check.network.proxy.cause"))
                         .evidence(Evidence.log(m.group()));
                 if (s != null) {
                     int line = s.lineOf("<proxies>");
-                    r.fix(FixAction.of(FixAction.OPEN_FILE, "Proxy-Einstellungen in settings.xml öffnen",
+                    r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.network.proxy.fix"),
                             "file", s.getFile().toString(), "line", String.valueOf(line)));
                 }
                 return r;
@@ -117,12 +118,12 @@ final class ResolutionChecks {
             String host = null;
             if ((m = ctx.find(UNKNOWN_HOST)) != null) {
                 host = m.group(1) != null ? m.group(1) : m.group(2);
-                reason = "Hostname " + host + " lässt sich nicht auflösen (DNS, VPN oder Proxy?)";
+                reason = Texts.t("check.network.dns", host);
             } else if ((m = ctx.find(REFUSED)) != null) {
                 host = m.group(1);
-                reason = "die Verbindung wurde abgelehnt";
+                reason = Texts.t("check.network.refused");
             } else if ((m = ctx.find(TIMEOUT)) != null) {
-                reason = "Zeitüberschreitung beim Verbindungsaufbau";
+                reason = Texts.t("check.network.timeout");
             }
             if (reason == null) {
                 return CheckResult.notApplicable();
@@ -130,15 +131,15 @@ final class ResolutionChecks {
             return CheckResult.confirmed()
                     .var("networkReason", reason)
                     .var("host", host)
-                    .cause("{repoId|Das Repository} ({repoUrl,host|unbekannte URL}) war nicht erreichbar: {networkReason}.")
+                    .cause(Texts.t("check.network.cause"))
                     .evidence(Evidence.log(m.group()))
-                    .fix(FixAction.of(FixAction.MANUAL, "Netzwerk, VPN und Proxy-Einstellungen prüfen (Preflight-Check)"))
-                    .fix(FixAction.of(FixAction.REBUILD, "Neu bauen, sobald das Netz steht"));
+                    .fix(FixAction.of(FixAction.MANUAL, Texts.t("check.network.fix")))
+                    .fix(FixAction.of(FixAction.REBUILD, Texts.t("check.network.rebuild")));
         }
 
         private static Evidence jdkEvidence(CheckContext ctx) {
             String v = ctx.env().getRunnerJavaVersion();
-            return Evidence.environment("JDK des Maven-Laufs: " + (v == null ? "unbekannt" : v)
+            return Evidence.environment(Texts.t("check.jdk.of.run", v == null ? Texts.t("unknown") : v)
                     + (ctx.failure().getSession().getJavaHome() == null ? "" : " (" + ctx.failure().getSession().getJavaHome() + ")"));
         }
     }
@@ -165,19 +166,19 @@ final class ResolutionChecks {
                     return CheckResult.notApplicable();
                 }
                 return CheckResult.info()
-                        .evidence(Evidence.hint("Maven meldet einen gecachten Fehlversuch, eine .lastUpdated-Datei wurde aber nicht gefunden"))
-                        .fix(FixAction.of(FixAction.REBUILD, "Mit -U neu bauen (Update erzwingen)", "args", "-U"));
+                        .evidence(Evidence.hint(Texts.t("check.cached.no.file")))
+                        .fix(FixAction.of(FixAction.REBUILD, Texts.t("check.cached.rebuild"), "args", "-U"));
             }
             CheckResult r = CheckResult.confirmed()
-                    .cause("Ein früherer Fehlversuch für {artifact|das Artifact} ist im lokalen Repository gecacht; Maven fragt erst nach Ablauf des Update-Intervalls erneut.");
+                    .cause(Texts.t("check.cached.cause"));
             for (String f : files) {
-                r.evidence(Evidence.file("Fehlversuch gecacht", f, -1));
+                r.evidence(Evidence.file(Texts.t("check.cached.evidence"), f, -1));
             }
             StringBuilder joined = new StringBuilder();
             for (String f : files) {
                 joined.append(joined.length() == 0 ? "" : "\n").append(f);
             }
-            return r.fix(FixAction.of(FixAction.DELETE_FILES, ".lastUpdated löschen und mit -U neu bauen",
+            return r.fix(FixAction.of(FixAction.DELETE_FILES, Texts.t("check.cached.delete"),
                     "files", joined.toString(), "args", "-U"));
         }
 
@@ -235,10 +236,10 @@ final class ResolutionChecks {
                 }
                 return CheckResult.confirmed()
                         .var("module", rel.replace(File.separatorChar, '/'))
-                        .cause("{artifact} ist ein Modul dieses Projekts ({module}), wurde in diesem Lauf aber nicht mitgebaut und liegt nicht im lokalen Repository – typisch für -pl ohne -am.")
-                        .evidence(Evidence.file("Modul im Projekt gefunden", module.file.toString(), module.lineOf("<artifactId>" + c.artifactId)))
-                        .fix(FixAction.of(FixAction.REBUILD, "Mit -am neu bauen (benötigte Module mitbauen)", "args", "-am"))
-                        .fix(FixAction.of(FixAction.MANUAL, "Oder das Modul vorher einmal mit mvn install bauen"));
+                        .cause(Texts.t("check.reactor.module.cause"))
+                        .evidence(Evidence.file(Texts.t("check.reactor.module.found"), module.file.toString(), module.lineOf("<artifactId>" + c.artifactId)))
+                        .fix(FixAction.of(FixAction.REBUILD, Texts.t("check.reactor.module.am"), "args", "-am"))
+                        .fix(FixAction.of(FixAction.MANUAL, Texts.t("check.reactor.module.install")));
             }
             return CheckResult.notApplicable();
         }
@@ -252,19 +253,18 @@ final class ResolutionChecks {
                     .var("module", rel.replace(File.separatorChar, '/'))
                     .var("packaging", packaging)
                     .var("requestedType", c.extension)
-                    .cause("{artifact} ist das Modul {module} mit packaging {packaging}; die Dependency verlangt aber type {requestedType}"
-                            + " – in der Dependency fehlt <type>{packaging}</type>.")
-                    .evidence(Evidence.file("Modul im Projekt: packaging " + packaging, module.file.toString(),
+                    .cause(Texts.t("check.reactor.type.cause"))
+                    .evidence(Evidence.file(Texts.t("check.reactor.type.module", packaging), module.file.toString(),
                             module.lineOf("<packaging>")));
             Coordinates consumer = Coordinates.parse(ctx.var("project"));
             ProjectPoms.Pom pom = consumer == null ? null : ctx.projectPoms().find(consumer.groupId, consumer.artifactId);
             PomFile.Dep dep = pom == null ? null : PomChecks.dependency(pom, c.artifactId);
             if (dep != null && dep.getLine() > 0) {
-                r.evidence(Evidence.file("Dependency ohne <type>" + packaging + "</type>", pom.file.toString(), dep.getLine()))
-                        .fix(FixAction.of(FixAction.OPEN_FILE, "Dependency öffnen und <type>" + packaging + "</type> ergänzen",
+                r.evidence(Evidence.file(Texts.t("check.reactor.type.dependency", packaging), pom.file.toString(), dep.getLine()))
+                        .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.reactor.type.open", packaging),
                                 "file", pom.file.toString(), "line", String.valueOf(dep.getLine())));
             } else {
-                r.fix(FixAction.of(FixAction.MANUAL, "In der Dependency auf " + c.ga() + " <type>" + packaging + "</type> ergänzen"));
+                r.fix(FixAction.of(FixAction.MANUAL, Texts.t("check.reactor.type.manual", c.ga(), packaging)));
             }
             return r;
         }
@@ -292,7 +292,7 @@ final class ResolutionChecks {
             for (RepositoryRequest req : ctx.failure().getRepositoryRequests()) {
                 if (req.isFailed() && req.getRepositoryId() != null
                         && seen.add(req.getRepositoryId() + " " + req.getRepositoryUrl()) && seen.size() <= 5) {
-                    r.evidence(Evidence.environment("Gefragt: " + req.getRepositoryId() + " (" + req.getRepositoryUrl() + ") → " + req.getFailure()));
+                    r.evidence(Evidence.environment(Texts.t("check.requested", req.getRepositoryId() + " (" + req.getRepositoryUrl() + ") → " + req.getFailure())));
                     r.var("repoId", req.getRepositoryId()).var("repoUrl", req.getRepositoryUrl());
                     any = true;
                 }
@@ -300,21 +300,21 @@ final class ResolutionChecks {
             String repoId = ctx.var("repoId");
             String repoUrl = ctx.var("repoUrl");
             if (!any && repoId != null) {
-                r.evidence(Evidence.environment("Gefragt: " + repoId + (repoUrl == null ? "" : " (" + repoUrl + ")")));
+                r.evidence(Evidence.environment(Texts.t("check.requested", repoId + (repoUrl == null ? "" : " (" + repoUrl + ")"))));
                 any = true;
             }
             MavenSettings settings = ctx.env().userSettings();
             if (settings != null && repoId != null) {
                 for (MavenSettings.Mirror m : settings.getMirrors()) {
                     if (repoId.equals(m.id)) {
-                        r.evidence(Evidence.setting("Anfrage lief über Mirror '" + m.id + "' (mirrorOf " + m.mirrorOf + ") → " + m.url,
+                        r.evidence(Evidence.setting(Texts.t("check.requested.mirror", m.id, m.mirrorOf, m.url),
                                 settings.getFile().toString(), settings.lineOf("<id>" + m.id + "</id>")));
                         any = true;
                     }
                 }
                 MavenSettings.Mirror m = settings.mirrorFor(repoId, repoUrl);
                 if (m != null && !repoId.equals(m.id)) {
-                    r.evidence(Evidence.setting("Mirror '" + m.id + "' greift für '" + repoId + "' → " + m.url,
+                    r.evidence(Evidence.setting(Texts.t("check.requested.mirror.applies", m.id, repoId, m.url),
                             settings.getFile().toString(), settings.lineOf("<id>" + m.id + "</id>")));
                     any = true;
                 }

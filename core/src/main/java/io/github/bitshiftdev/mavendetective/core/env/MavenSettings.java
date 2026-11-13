@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.env;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -95,7 +96,7 @@ public final class MavenSettings {
             b.setErrorHandler(null);
             doc = b.parse(file.toFile());
         } catch (Exception e) {
-            throw new IOException("settings.xml ist kein gültiges XML: " + file + ": " + e.getMessage(), e);
+            throw new IOException(Texts.t("settings.invalid", file, e.getMessage()), e);
         }
         Element root = doc.getDocumentElement();
         List<String> servers = new ArrayList<String>();

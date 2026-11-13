@@ -1,19 +1,19 @@
 <html>
 <body>
-Meldet <code>&lt;exclusion&gt;</code>-Einträge in der <code>pom.xml</code>, die nichts mehr ausschließen –
-typisch nach einem Upgrade der Dependency (Maven Detective, Modul A4).
+Reports <code>&lt;exclusion&gt;</code> entries in the <code>pom.xml</code> that no longer exclude anything –
+typically after an upgrade of the dependency (Maven Detective, module A4).
 <!-- tooltip end -->
 <p>
-Maven Detective baut den transitiven Baum der Dependency aus den POMs im lokalen Repository nach, und zwar
-ohne die geprüfte Exclusion. Taucht das ausgeschlossene Artifact darin nicht auf, ist die Exclusion
-<b>veraltet</b>. Kommt es nur über einen Pfad, den eine andere Exclusion derselben Dependency schon kappt,
-ist sie <b>doppelt</b>.
+Maven Detective rebuilds the transitive tree of the dependency from the POMs in the local repository,
+without the exclusion being checked. If the excluded artifact does not show up in it, the exclusion is
+<b>stale</b>. If it only comes through a path that another exclusion of the same dependency already cuts,
+it is <b>redundant</b>.
 </p>
 <p>
-Fehlen unterwegs POMs im lokalen Repository, meldet die Inspection nichts – lieber keine Meldung als eine
-falsche. Einmal bauen, dann prüft sie vollständig. Projektweit: <i>Code | Inspect Code</i> oder
-<code>maven-detective-core.jar exclusions</code>.
+If POMs along the way are missing from the local repository, the inspection reports nothing – better no
+report than a wrong one. Build once, then it checks completely. Project-wide: <i>Code | Inspect Code</i>, the
+<i>Exclusions</i> page in the <i>Maven Detective</i> tool window, or <code>maven-detective-core.jar exclusions</code>.
 </p>
-<p>Quick-Fix: Exclusion entfernen (bei der letzten samt <code>&lt;exclusions&gt;</code>).</p>
+<p>Quick fix: remove the exclusion (for the last one together with <code>&lt;exclusions&gt;</code>).</p>
 </body>
 </html>

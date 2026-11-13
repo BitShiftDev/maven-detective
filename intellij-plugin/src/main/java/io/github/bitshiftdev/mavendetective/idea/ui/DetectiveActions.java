@@ -4,6 +4,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.DumbAwareAction;
+import io.github.bitshiftdev.mavendetective.idea.MavenDetectiveBundle;
 import org.jetbrains.annotations.NotNull;
 
 import java.awt.datatransfer.StringSelection;
@@ -34,6 +35,7 @@ public final class DetectiveActions {
     public static final class Refresh extends PanelAction {
         @Override
         public void update(@NotNull AnActionEvent e) {
+            MavenDetectiveBundle.localize(this, e.getPresentation());
             DetectivePanel p = panel(e);
             boolean shown = p != null && p.supportsRefresh();
             // Ohne Seite (Find Action woanders) ausgegraut sichtbar, in Seiten ohne Neuberechnung unsichtbar
@@ -58,6 +60,7 @@ public final class DetectiveActions {
     public static final class Stop extends PanelAction {
         @Override
         public void update(@NotNull AnActionEvent e) {
+            MavenDetectiveBundle.localize(this, e.getPresentation());
             DetectivePanel p = panel(e);
             e.getPresentation().setEnabled(p != null && p.isRunning());
         }
@@ -75,6 +78,7 @@ public final class DetectiveActions {
     public static final class CopyMarkdown extends PanelAction {
         @Override
         public void update(@NotNull AnActionEvent e) {
+            MavenDetectiveBundle.localize(this, e.getPresentation());
             DetectivePanel p = panel(e);
             e.getPresentation().setEnabled(p != null && p.canCopyMarkdown());
             if (p != null && p.copyMarkdownText() != null) {

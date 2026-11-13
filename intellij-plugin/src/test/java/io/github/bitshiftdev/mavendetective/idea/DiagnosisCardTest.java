@@ -5,6 +5,8 @@ import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.model.BuildFailure;
 import io.github.bitshiftdev.mavendetective.core.snapshot.Change;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
@@ -15,6 +17,17 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DiagnosisCardTest {
+
+    /** Erwartete Texte auf Deutsch (wie die Diagnosen aus dem Kern); beide Sprachen prüft MavenDetectiveBundleTest. */
+    @BeforeEach
+    void deutsch() {
+        MavenDetectiveBundle.useForTests(MavenDetectiveBundle.Language.GERMAN);
+    }
+
+    @AfterEach
+    void zuruecksetzen() {
+        MavenDetectiveBundle.useForTests(null);
+    }
 
     private static Diagnosis diagnosis(String rule, List<FixAction> fixes) {
         return new Diagnosis(rule, 4, "Kaputtes JAR", "Das JAR ist beschädigt.", Confidence.CERTAIN, List.of(), fixes);

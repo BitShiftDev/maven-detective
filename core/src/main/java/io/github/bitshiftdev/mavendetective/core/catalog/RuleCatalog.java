@@ -37,7 +37,11 @@ public final class RuleCatalog {
 
     private static final Set<String> RULE_KEYS = new HashSet<String>(Arrays.asList(
             "id", "number", "category", "priority", "confidence", "patterns", "extract", "unless",
-            "cause", "checks", "fix", "description"));
+            "cause", "checks", "fix", "description",
+            "category_en", "category_de", "cause_en", "cause_de"));
+
+    /** Sprachen, für die {@code feld_<code>} neben dem Grundtext stehen darf. */
+    private static final String[] LANGUAGES = {"en", "de"};
 
     private final int version;
     private final List<Rule> rules;
@@ -161,11 +165,11 @@ public final class RuleCatalog {
         }
         return new Rule(id,
                 toInt(m.get("number"), 0, where + ".number"),
-                category,
+                category, variants(m, "category"),
                 toInt(m.get("priority"), 50, where + ".priority"),
                 confidence(string(m, "confidence"), Confidence.LIKELY, where),
                 patterns, extract, unless,
-                string(m, "cause"),
+                string(m, "cause"), variants(m, "cause"),
                 checks,
                 fix(m.get("fix"), where + ".fix"));
     }
@@ -190,7 +194,7 @@ public final class RuleCatalog {
                 if (regex == null) {
                     throw new CatalogException(w + ": 'regex' fehlt");
                 }
-                out.add(new Rule.PatternSpec(compile(regex, w), string(pm, "cause"),
+                out.add(new Rule.PatternSpec(compile(regex, w), string(pm, "cause"), variants(pm, "cause"),
                         fix(pm.get("fix"), w + ".fix"), confidence(string(pm, "confidence"), null, w)));
             } else {
                 throw new CatalogException(w + ": Regex-Text oder Mapping mit 'regex' erwartet");
@@ -225,7 +229,7 @@ public final class RuleCatalog {
         } else if (p != null) {
             throw new CatalogException(where + ".params: Mapping erwartet");
         }
-        return new Rule.FixSpec(type, label, params);
+        return new Rule.FixSpec(type, label, variants(m, "label"), params);
     }
 
     private static Pattern compile(String regex, String where) {
@@ -247,6 +251,18 @@ public final class RuleCatalog {
             return Confidence.LIKELY;
         }
         throw new CatalogException(where + ": confidence muss 'certain' oder 'likely' sein");
+    }
+
+    /** Übersetzungen eines Felds: {@code cause_en}, {@code cause_de} → {"en": …, "de": …}. */
+    private static Map<String, String> variants(Map<String, Object> m, String key) {
+        Map<String, String> out = new LinkedHashMap<String, String>();
+        for (String lang : LANGUAGES) {
+            String v = string(m, key + "_" + lang);
+            if (v != null) {
+                out.put(lang, v);
+            }
+        }
+        return out;
     }
 
     private static String string(Map<String, Object> m, String key) {

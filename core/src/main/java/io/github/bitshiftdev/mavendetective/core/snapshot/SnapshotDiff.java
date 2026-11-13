@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.snapshot;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.env.BuildSetup;
 
 import java.util.ArrayList;
@@ -49,7 +50,7 @@ public final class SnapshotDiff {
         String gp = joinSorted(green.getActiveProfiles());
         String cp = joinSorted(current.getActiveProfiles());
         if (!gp.equals(cp)) {
-            out.add(new Change(Change.Area.PROFILES, null, gp.isEmpty() ? "(keine)" : gp, cp.isEmpty() ? "(keine)" : cp));
+            out.add(new Change(Change.Area.PROFILES, null, gp.isEmpty() ? Texts.t("changes.none") : gp, cp.isEmpty() ? Texts.t("changes.none") : cp));
         }
         if (sameOrigin) {
             map(out, Change.Area.MIRRORS, null, green.getMirrors(), current.getMirrors(), true);
@@ -77,7 +78,7 @@ public final class SnapshotDiff {
             map(local, Change.Area.DEPENDENCY, null, g.getDependencies(), c.getDependencies(), comparable);
             if (local.isEmpty() && sameOrigin && g.getEffectivePomHash() != null && c.getEffectivePomHash() != null
                     && !g.getEffectivePomHash().equals(c.getEffectivePomHash())) {
-                local.add(new Change(Change.Area.EFFECTIVE_POM, key, "Stand grüner Build", "geändert"));
+                local.add(new Change(Change.Area.EFFECTIVE_POM, key, Texts.t("changes.green.state"), Texts.t("changes.changed")));
             }
             for (Change ch : local) {
                 add(out, ch, key);
@@ -112,7 +113,7 @@ public final class SnapshotDiff {
             out.add(changes.get(i).text());
         }
         if (changes.size() > max) {
-            out.add("… und " + (changes.size() - max) + " weitere Änderungen");
+            out.add(Texts.t("changes.more", changes.size() - max));
         }
         return out;
     }
@@ -123,7 +124,7 @@ public final class SnapshotDiff {
         if (at != null && at.length() >= 16) {
             at = at.substring(0, 10) + " " + at.substring(11, 16);
         }
-        return "Seit dem letzten grünen Build" + (at == null ? "" : " (" + at + ")");
+        return Texts.t("changes.headline") + (at == null ? "" : " (" + at + ")");
     }
 
     // ---------------------------------------------------------------- intern
@@ -173,7 +174,7 @@ public final class SnapshotDiff {
     }
 
     private static String onOff(Boolean b) {
-        return b ? "an" : "aus";
+        return Texts.t(b ? "changes.on" : "changes.off");
     }
 
     private static String joinSorted(List<String> list) {

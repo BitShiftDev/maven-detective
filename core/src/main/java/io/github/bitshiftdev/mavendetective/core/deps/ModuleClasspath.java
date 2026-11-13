@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Managed;
 
@@ -91,7 +92,7 @@ public final class ModuleClasspath {
 
         /** Für die Anzeige: {@code a:v}, beim Modul selbst „(eigene Klassen)“. */
         public String label() {
-            return self ? artifactId + " (eigene Klassen)" : artifactId + (classifier == null ? "" : ":" + classifier) + ":" + version;
+            return self ? artifactId + " (" + Texts.t("classpath.own.classes") + ")" : artifactId + (classifier == null ? "" : ":" + classifier) + ":" + version;
         }
 
         @Override
@@ -257,7 +258,7 @@ public final class ModuleClasspath {
             offer(winners, new Candidate(dep.getGroupId(), dep.getArtifactId(), version, dep.getType(), dep.getClassifier(), scope,
                     Collections.singletonList(directGav), directIndex, order++));
             if (version == null) {
-                missing.add("Version von " + dep.ga());
+                missing.add(Texts.t("excl.missing.version", dep.ga()));
                 continue;
             }
             List<PomFile.Exclusion> exclusions = new ArrayList<PomFile.Exclusion>(dep.getExclusionEntries());

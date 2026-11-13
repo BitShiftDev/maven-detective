@@ -22,6 +22,12 @@ public final class PreviewPomFixesAction extends DumbAwareToggleAction {
     }
 
     @Override
+    public void update(@NotNull AnActionEvent e) {
+        MavenDetectiveBundle.localize(this, e.getPresentation());
+        super.update(e);
+    }
+
+    @Override
     public @NotNull ActionUpdateThread getActionUpdateThread() {
         return ActionUpdateThread.BGT;
     }

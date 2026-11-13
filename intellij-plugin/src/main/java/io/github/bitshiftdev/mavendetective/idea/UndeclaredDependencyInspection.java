@@ -60,7 +60,7 @@ public final class UndeclaredDependencyInspection extends LocalInspectionTool {
     @Override
     public @NotNull OptPane getOptionsPane() {
         return OptPane.pane(OptPane.checkbox("reportViaStarters",
-                "Auch melden, wenn die Klasse über einen Starter ohne eigene Klassen kommt"));
+                MavenDetectiveBundle.message("inspection.undeclared.option.starters")));
     }
 
     @Override
@@ -179,7 +179,7 @@ public final class UndeclaredDependencyInspection extends LocalInspectionTool {
 
         @Override
         public @NotNull String getFamilyName() {
-            return "Dependency deklarieren";
+            return MavenDetectiveBundle.message("inspection.undeclared.family");
         }
 
         @Override
@@ -194,7 +194,7 @@ public final class UndeclaredDependencyInspection extends LocalInspectionTool {
 
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-            FixRunner.editPoms(project, List.of(fix), "Dependency deklarieren (Maven Detective)");
+            FixRunner.editPoms(project, List.of(fix), MavenDetectiveBundle.message("command.declare.dependency"));
         }
     }
 }

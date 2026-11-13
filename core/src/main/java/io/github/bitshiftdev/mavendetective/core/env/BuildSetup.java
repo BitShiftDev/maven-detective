@@ -1,5 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.env;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -90,7 +92,7 @@ public final class BuildSetup {
      * @param env Umgebungsvariablen der Shell (in der IDE: die der IDE, das ist eine Näherung)
      */
     public static BuildSetup detectCommandLine(Path projectDir, Path userHome, Map<String, String> env) {
-        BuildSetup s = new BuildSetup("Kommandozeile");
+        BuildSetup s = new BuildSetup(Texts.t("setup.command.line"));
         Path mvnDir = projectDir == null ? null : projectDir.resolve(".mvn");
 
         // Maven: Wrapper vor installiertem Maven
@@ -101,7 +103,7 @@ public final class BuildSetup {
             Properties p = load(wrapperProps);
             Matcher m = WRAPPER_VERSION.matcher(p.getProperty("distributionUrl", ""));
             s.mavenVersion = m.find() ? m.group(1) : null;
-            s.mavenSource = hasWrapperScript ? "Wrapper (./mvnw)" : "Wrapper-Konfiguration ohne mvnw-Skript";
+            s.mavenSource = hasWrapperScript ? "Wrapper (./mvnw)" : Texts.t("setup.wrapper.no.script");
         } else {
             Path home = mavenHomeFromEnv(env);
             if (home == null) {
@@ -111,7 +113,7 @@ public final class BuildSetup {
                 s.mavenVersion = mavenVersionOf(home);
                 s.mavenSource = home.toString();
             } else {
-                s.notes.add("Kein Maven-Wrapper im Projekt und kein mvn im PATH gefunden.");
+                s.notes.add(Texts.t("setup.note.no.maven"));
             }
         }
 
@@ -122,7 +124,7 @@ public final class BuildSetup {
             Path java = which("java", env);
             if (java != null) {
                 jh = realParent(java, 2);
-                s.notes.add("JAVA_HOME ist nicht gesetzt, java kommt aus dem PATH.");
+                s.notes.add(Texts.t("setup.note.no.java.home"));
             }
         }
         if (jh != null) {

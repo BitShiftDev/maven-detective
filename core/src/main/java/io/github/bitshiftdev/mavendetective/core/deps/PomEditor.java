@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 
 import java.util.ArrayList;
@@ -53,7 +54,7 @@ public final class PomEditor {
     public static Edit pinManagedVersion(String xml, String groupId, String artifactId, String version) {
         Scan s = Scan.of(xml);
         if (s.projectEnd < 0) {
-            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
         String nl = xml.contains("\r\n") ? "\r\n" : "\n";
         String unit = s.indentUnit(xml);
@@ -73,7 +74,7 @@ public final class PomEditor {
                 String indent = lineIndent(xml, a.tagStart);
                 String text = nl + indent + "<version>" + version + "</version>";
                 return new Edit(a.tagEnd, 0, text, lineOf(xml, a.tagEnd) + 1,
-                        "Version " + version + " im vorhandenen dependencyManagement-Eintrag ergänzt");
+                        Texts.t("edit.managed.version.added", version));
             }
             String current = xml.substring(v.contentStart, v.contentEnd).trim();
             if (current.startsWith("${") && current.endsWith("}") && current.indexOf('}') == current.length() - 1) {
@@ -81,12 +82,11 @@ public final class PomEditor {
                 Range p = s.properties.get(prop);
                 if (p != null) {
                     return new Edit(p.contentStart, p.contentEnd - p.contentStart, version, lineOf(xml, p.contentStart),
-                            "Property ${" + prop + "} von " + xml.substring(p.contentStart, p.contentEnd).trim() + " auf " + version
-                                    + " gesetzt (wirkt auf alle Stellen, die sie nutzen)");
+                            Texts.t("edit.property.changed", "${" + prop + "}", xml.substring(p.contentStart, p.contentEnd).trim(), version));
                 }
             }
             return new Edit(v.contentStart, v.contentEnd - v.contentStart, version, lineOf(xml, v.contentStart),
-                    "Version im vorhandenen dependencyManagement-Eintrag von " + current + " auf " + version + " geändert");
+                    Texts.t("edit.managed.version.changed", current, version));
         }
 
         if (s.dmDependenciesEnd >= 0) {
@@ -94,7 +94,7 @@ public final class PomEditor {
             String closingIndent = lineIndent(xml, at);
             String block = dependency(groupId, artifactId, version, closingIndent + unit, unit, nl);
             return insertBefore(xml, at, block, closingIndent, nl,
-                    groupId + ":" + artifactId + ":" + version + " in dependencyManagement eingetragen");
+                    Texts.t("edit.managed.added", groupId + ":" + artifactId + ":" + version));
         }
         if (s.dmEnd >= 0) {
             int at = s.dmEnd;
@@ -104,7 +104,7 @@ public final class PomEditor {
                     + dependency(groupId, artifactId, version, inner + unit, unit, nl)
                     + inner + "</dependencies>" + nl;
             return insertBefore(xml, at, block, closingIndent, nl,
-                    groupId + ":" + artifactId + ":" + version + " in dependencyManagement eingetragen");
+                    Texts.t("edit.managed.added", groupId + ":" + artifactId + ":" + version));
         }
         int at = s.dependenciesStart >= 0 ? s.dependenciesStart : s.buildStart >= 0 ? s.buildStart : s.projectEnd;
         String indent = at == s.projectEnd ? lineIndent(xml, at) + unit : lineIndent(xml, at);
@@ -118,7 +118,7 @@ public final class PomEditor {
         }
         String followIndent = at == s.projectEnd ? lineIndent(xml, at) : indent;
         return insertBefore(xml, at, block, followIndent, nl,
-                "<dependencyManagement> mit " + groupId + ":" + artifactId + ":" + version + " angelegt");
+                Texts.t("edit.managed.created", groupId + ":" + artifactId + ":" + version));
     }
 
     /**
@@ -132,11 +132,11 @@ public final class PomEditor {
     public static Edit removeExclusion(String xml, String groupId, String artifactId, String exclusion, boolean managed) {
         Scan s = Scan.of(xml);
         if (s.projectEnd < 0) {
-            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
         int colon = exclusion.indexOf(':');
         if (colon < 0) {
-            throw new IllegalArgumentException("Exclusion erwartet groupId:artifactId: " + exclusion);
+            throw new IllegalArgumentException(Texts.t("edit.exclusion.format", exclusion));
         }
         String eg = exclusion.substring(0, colon);
         String ea = exclusion.substring(colon + 1);
@@ -155,8 +155,7 @@ public final class PomEditor {
             }
         }
         if (target == null) {
-            throw new IllegalArgumentException("Exclusion " + exclusion + " bei " + groupId + ":" + artifactId + " unter " + where
-                    + " nicht gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.exclusion.not.found", exclusion, groupId + ":" + artifactId, where));
         }
         Range r = found.exclusions.size() == 1 && found.exclusionsRange != null ? found.exclusionsRange : target.range;
         int start = r.tagStart;
@@ -167,8 +166,8 @@ public final class PomEditor {
             start = lineStart;
             end = lineEnd < xml.length() ? lineEnd + 1 : lineEnd;
         }
-        String what = r == target.range ? "<exclusion> " + exclusion : "<exclusions> mit " + exclusion;
-        return new Edit(start, end - start, "", lineOf(xml, start), what + " bei " + groupId + ":" + artifactId + " entfernt");
+        return new Edit(start, end - start, "", lineOf(xml, start),
+                Texts.t(r == target.range ? "edit.exclusion.removed" : "edit.exclusions.removed", exclusion, groupId + ":" + artifactId));
     }
 
     /**
@@ -182,11 +181,11 @@ public final class PomEditor {
     public static Edit addExclusion(String xml, String groupId, String artifactId, String exclusion) {
         Scan s = Scan.of(xml);
         if (s.projectEnd < 0) {
-            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
         int colon = exclusion.indexOf(':');
         if (colon < 0) {
-            throw new IllegalArgumentException("Exclusion erwartet groupId:artifactId: " + exclusion);
+            throw new IllegalArgumentException(Texts.t("edit.exclusion.format", exclusion));
         }
         String eg = exclusion.substring(0, colon);
         String ea = exclusion.substring(colon + 1);
@@ -201,16 +200,16 @@ public final class PomEditor {
             }
         }
         if (found == null || found.range == null) {
-            throw new IllegalArgumentException("Dependency " + groupId + ":" + artifactId + " unter dependencies nicht gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.dependency.not.found", groupId + ":" + artifactId));
         }
         for (ExclusionEntry e : found.exclusions) {
             if (eg.equals(e.fields.get("groupId")) && ea.equals(e.fields.get("artifactId"))) {
-                throw new IllegalArgumentException(exclusion + " ist bei " + groupId + ":" + artifactId + " schon ausgeschlossen");
+                throw new IllegalArgumentException(Texts.t("edit.exclusion.exists", exclusion, groupId + ":" + artifactId));
             }
         }
         String nl = xml.contains("\r\n") ? "\r\n" : "\n";
         String unit = s.indentUnit(xml);
-        String description = "<exclusion> " + exclusion + " bei " + groupId + ":" + artifactId + " eingefügt";
+        String description = Texts.t("edit.exclusion.added", exclusion, groupId + ":" + artifactId);
         Range child = found.ranges.get("artifactId");
         String childIndent = child != null && xml.substring(lineStart(xml, child.tagStart), child.tagStart).trim().isEmpty()
                 ? lineIndent(xml, child.tagStart) : lineIndent(xml, found.range.tagStart) + unit;
@@ -240,12 +239,12 @@ public final class PomEditor {
                                      String classifier) {
         Scan s = Scan.of(xml);
         if (s.projectEnd < 0) {
-            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
         for (DepEntry d : s.deps) {
             if (!d.managed && groupId.equals(d.fields.get("groupId")) && artifactId.equals(d.fields.get("artifactId"))
                     && same(classifier, d.fields.get("classifier"))) {
-                throw new IllegalArgumentException(groupId + ":" + artifactId + " ist schon deklariert");
+                throw new IllegalArgumentException(Texts.t("edit.dependency.exists", groupId + ":" + artifactId));
             }
         }
         String nl = xml.contains("\r\n") ? "\r\n" : "\n";
@@ -256,7 +255,7 @@ public final class PomEditor {
             int at = s.dependencies.contentEnd;
             String closingIndent = lineIndent(xml, s.dependencies.tagStart);
             String block = dependencyBlock(groupId, artifactId, version, scope, type, classifier, closingIndent + unit, unit, nl);
-            return insertBefore(xml, at, block, closingIndent, nl, coords + " deklariert");
+            return insertBefore(xml, at, block, closingIndent, nl, Texts.t("edit.dependency.added", coords));
         }
         int at = s.buildStart >= 0 ? s.buildStart : s.projectEnd;
         String indent = at == s.projectEnd ? lineIndent(xml, at) + unit : lineIndent(xml, at);
@@ -267,7 +266,7 @@ public final class PomEditor {
             block += nl;
         }
         String followIndent = at == s.projectEnd ? lineIndent(xml, at) : indent;
-        return insertBefore(xml, at, block, followIndent, nl, "<dependencies> mit " + coords + " angelegt");
+        return insertBefore(xml, at, block, followIndent, nl, Texts.t("edit.dependencies.created", coords));
     }
 
     /**
@@ -295,7 +294,7 @@ public final class PomEditor {
             end = lineEnd < xml.length() ? lineEnd + 1 : lineEnd;
         }
         return new Edit(start, end - start, "", lineOf(xml, start),
-                groupId + ":" + artifactId + (r == found.range ? "" : " samt leerem <dependencies>") + " entfernt");
+                Texts.t(r == found.range ? "edit.dependency.removed" : "edit.dependency.removed.block", groupId + ":" + artifactId));
     }
 
     /**
@@ -308,15 +307,15 @@ public final class PomEditor {
     public static Edit setScope(String xml, String groupId, String artifactId, String scope, String classifier) {
         Scan s = Scan.of(xml);
         DepEntry found = find(s, groupId, artifactId, classifier);
-        String description = "Scope von " + groupId + ":" + artifactId + " auf " + scope + " gesetzt";
+        String description = Texts.t("edit.scope.set", groupId + ":" + artifactId, scope);
         Range current = found.ranges.get("scope");
         if (current != null) {
             String old = xml.substring(current.contentStart, current.contentEnd).trim();
             if (scope.equals(old)) {
-                throw new IllegalArgumentException(groupId + ":" + artifactId + " hat schon Scope " + scope);
+                throw new IllegalArgumentException(Texts.t("edit.scope.exists", groupId + ":" + artifactId, scope));
             }
             return new Edit(current.contentStart, current.contentEnd - current.contentStart, scope, lineOf(xml, current.contentStart),
-                    "Scope von " + groupId + ":" + artifactId + " von " + old + " auf " + scope + " gesetzt");
+                    Texts.t("edit.scope.changed", groupId + ":" + artifactId, old, scope));
         }
         Range after = null;
         for (String child : new String[] {"artifactId", "version", "type", "classifier"}) {
@@ -326,7 +325,7 @@ public final class PomEditor {
             }
         }
         if (after == null) {
-            throw new IllegalArgumentException(groupId + ":" + artifactId + " ohne <artifactId>-Element");
+            throw new IllegalArgumentException(Texts.t("edit.no.artifact.id", groupId + ":" + artifactId));
         }
         String nl = xml.contains("\r\n") ? "\r\n" : "\n";
         boolean ownLine = xml.substring(lineStart(xml, after.tagStart), after.tagStart).trim().isEmpty();
@@ -350,13 +349,13 @@ public final class PomEditor {
     public static Edit setVersion(String xml, String section, String groupId, String artifactId, String version) {
         Scan s = Scan.of(xml);
         if (s.projectEnd < 0) {
-            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
         Range v;
         String what;
         if ("parent".equals(section)) {
             if (!groupId.equals(s.parentFields.get("groupId")) || !artifactId.equals(s.parentFields.get("artifactId"))) {
-                throw new IllegalArgumentException("Parent ist nicht " + groupId + ":" + artifactId);
+                throw new IllegalArgumentException(Texts.t("edit.parent.mismatch", groupId + ":" + artifactId));
             }
             v = s.parentRanges.get("version");
             what = "Parent " + artifactId;
@@ -371,17 +370,17 @@ public final class PomEditor {
                 }
             }
             if (found == null) {
-                throw new IllegalArgumentException(groupId + ":" + artifactId + " mit <version> unter " + section + " nicht gefunden");
+                throw new IllegalArgumentException(Texts.t("edit.version.not.found", groupId + ":" + artifactId, section));
             }
             v = found.ranges.get("version");
-            what = (managed ? "dependencyManagement-Eintrag " : "Dependency ") + artifactId;
+            what = Texts.t(managed ? "edit.what.managed" : "edit.what.dependency", artifactId);
         }
         if (v == null) {
-            throw new IllegalArgumentException(groupId + ":" + artifactId + " hat dort keine <version>");
+            throw new IllegalArgumentException(Texts.t("edit.no.version", groupId + ":" + artifactId));
         }
         String current = xml.substring(v.contentStart, v.contentEnd).trim();
         return new Edit(v.contentStart, v.contentEnd - v.contentStart, version, lineOf(xml, v.contentStart),
-                what + ": Version von " + current + " auf " + version + " geändert");
+                what + ": " + Texts.t("edit.version.changed", current, version));
     }
 
     /**
@@ -392,13 +391,13 @@ public final class PomEditor {
     public static Edit setProperty(String xml, String name, String value) {
         Scan s = Scan.of(xml);
         if (s.projectEnd < 0) {
-            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
         Range p = s.properties.get(name);
         if (p != null) {
             String current = xml.substring(p.contentStart, p.contentEnd).trim();
             return new Edit(p.contentStart, p.contentEnd - p.contentStart, value, lineOf(xml, p.contentStart),
-                    "Property ${" + name + "} von " + current + " auf " + value + " gesetzt (wirkt auf alle Stellen, die sie nutzen)");
+                    Texts.t("edit.property.changed", "${" + name + "}", current, value));
         }
         String nl = xml.contains("\r\n") ? "\r\n" : "\n";
         String unit = s.indentUnit(xml);
@@ -407,7 +406,7 @@ public final class PomEditor {
             int at = s.propertiesRange.contentEnd;
             String closingIndent = lineIndent(xml, s.propertiesRange.tagStart);
             return insertBefore(xml, at, closingIndent + unit + element + nl, closingIndent, nl,
-                    "Property ${" + name + "} = " + value + " eingetragen (überschreibt den Wert aus dem Parent)", "<" + name + ">");
+                    Texts.t("edit.property.added", "${" + name + "} = " + value), "<" + name + ">");
         }
         int at = s.dmStart >= 0 ? s.dmStart : s.dependenciesStart >= 0 ? s.dependenciesStart : s.buildStart >= 0 ? s.buildStart : s.projectEnd;
         String indent = at == s.projectEnd ? lineIndent(xml, at) + unit : lineIndent(xml, at);
@@ -417,7 +416,7 @@ public final class PomEditor {
         }
         String followIndent = at == s.projectEnd ? lineIndent(xml, at) : indent;
         return insertBefore(xml, at, block, followIndent, nl,
-                "<properties> mit ${" + name + "} = " + value + " angelegt (überschreibt den Wert aus dem Parent)", "<" + name + ">");
+                Texts.t("edit.properties.created", "${" + name + "} = " + value), "<" + name + ">");
     }
 
     /**
@@ -435,7 +434,7 @@ public final class PomEditor {
         String artifact = fix.param("artifact");
         int colon = artifact == null ? -1 : artifact.indexOf(':');
         if (colon < 0) {
-            throw new IllegalArgumentException(type + " braucht artifact (groupId:artifactId)");
+            throw new IllegalArgumentException(Texts.t("edit.needs.artifact", type));
         }
         String g = artifact.substring(0, colon);
         String a = artifact.substring(colon + 1);
@@ -460,7 +459,7 @@ public final class PomEditor {
         if (FixAction.SET_VERSION.equals(type)) {
             return setVersion(xml, required(fix, "section"), g, a, required(fix, "version"));
         }
-        throw new IllegalArgumentException("Kein POM-Quick-Fix: " + type);
+        throw new IllegalArgumentException(Texts.t("edit.not.pom.fix", type));
     }
 
     /** Ändert dieser Quick-Fix-Typ eine POM über {@link #forFix}? */
@@ -473,7 +472,7 @@ public final class PomEditor {
     private static String required(FixAction fix, String key) {
         String v = fix.param(key);
         if (v == null || v.isEmpty()) {
-            throw new IllegalArgumentException(fix.getType() + " braucht " + key);
+            throw new IllegalArgumentException(Texts.t("edit.needs", fix.getType(), key));
         }
         return v;
     }
@@ -481,7 +480,7 @@ public final class PomEditor {
     /** Dependency unter {@code project/dependencies}; ohne Classifier bevorzugt die ohne. */
     private static DepEntry find(Scan s, String groupId, String artifactId, String classifier) {
         if (s.projectEnd < 0) {
-            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
         DepEntry found = null;
         for (DepEntry d : s.deps) {
@@ -498,7 +497,7 @@ public final class PomEditor {
             }
         }
         if (found == null || found.range == null) {
-            throw new IllegalArgumentException("Dependency " + groupId + ":" + artifactId + " unter dependencies nicht gefunden");
+            throw new IllegalArgumentException(Texts.t("edit.dependency.not.found", groupId + ":" + artifactId));
         }
         return found;
     }

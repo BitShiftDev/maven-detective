@@ -1,5 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.env;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -51,42 +53,40 @@ public final class SetupComparison {
         int rj = BuildSetup.javaMajor(right.getJavaVersion());
         boolean jdkDiff = lj > 0 && rj > 0 && lj != rj;
         rows.add(new Row("JDK", javaText(left), javaText(right), jdkDiff,
-                jdkDiff ? left.getLabel() + " baut mit Java " + lj + ", " + right.getLabel() + " mit Java " + rj
-                        + ". Das ändert, welche --release-Werte, Toolchains und Plugin-Versionen funktionieren." : null));
+                jdkDiff ? Texts.t("setup.hint.jdk", left.getLabel(), lj, right.getLabel(), rj) : null));
 
         boolean mvnDiff = known(left.getMavenVersion()) && known(right.getMavenVersion())
                 && !left.getMavenVersion().equals(right.getMavenVersion());
         rows.add(new Row("Maven", mavenText(left), mavenText(right), mvnDiff,
-                mvnDiff ? "Unterschiedliche Maven-Versionen lösen Plugins und Defaults verschieden auf"
-                        + (majorMinor(left.getMavenVersion()).equals(majorMinor(right.getMavenVersion())) ? "." : " – hier sogar über eine Minor-Version hinweg.")
+                mvnDiff ? Texts.t(majorMinor(left.getMavenVersion()).equals(majorMinor(right.getMavenVersion())) ? "setup.hint.maven" : "setup.hint.maven.minor")
                         : null));
 
         boolean settingsDiff = !same(left.getUserSettings(), right.getUserSettings());
         rows.add(new Row("settings.xml", orNone(left.getUserSettings()), orNone(right.getUserSettings()), settingsDiff,
-                settingsDiff ? "Andere settings.xml heißt andere Mirrors, Zugangsdaten und Repositories." : null));
+                settingsDiff ? Texts.t("setup.hint.settings") : null));
 
         boolean repoDiff = known(left.getLocalRepository()) && known(right.getLocalRepository())
                 && !same(left.getLocalRepository(), right.getLocalRepository());
-        rows.add(new Row("Lokales Repository", orDefault(left.getLocalRepository()), orDefault(right.getLocalRepository()), repoDiff,
-                repoDiff ? "Getrennte lokale Repositories: ein Artefakt kann in einem vorhanden und im anderen kaputt oder gesperrt (.lastUpdated) sein." : null));
+        rows.add(new Row(Texts.t("setup.local.repo"), orDefault(left.getLocalRepository()), orDefault(right.getLocalRepository()), repoDiff,
+                repoDiff ? Texts.t("setup.hint.repo") : null));
 
         String lp = profiles(left);
         String rp = profiles(right);
         boolean profDiff = !lp.equals(rp);
-        rows.add(new Row("Profile (explizit)", lp, rp, profDiff,
-                profDiff ? "Andere aktive Profile ändern Dependencies, Plugins und Properties." : null));
+        rows.add(new Row(Texts.t("setup.profiles"), lp, rp, profDiff,
+                profDiff ? Texts.t("setup.hint.profiles") : null));
 
         boolean configDiff = !same(norm(left.getMavenConfig()), norm(right.getMavenConfig()));
         rows.add(new Row(".mvn/maven.config", configText(left.getMavenConfig()), configText(right.getMavenConfig()), configDiff,
-                configDiff ? "Die Argumente aus .mvn/maven.config gehen nur in einen der beiden Läufe ein." : null));
+                configDiff ? Texts.t("setup.hint.maven.config") : null));
 
         boolean jvmDiff = !same(norm(left.getJvmConfig()), norm(right.getJvmConfig()));
         rows.add(new Row(".mvn/jvm.config", configText(left.getJvmConfig()), configText(right.getJvmConfig()), jvmDiff,
-                jvmDiff ? "JVM-Optionen (Speicher, --add-opens) unterscheiden sich." : null));
+                jvmDiff ? Texts.t("setup.hint.jvm.config") : null));
 
         boolean optsDiff = !same(norm(left.getMavenOpts()), norm(right.getMavenOpts()));
-        rows.add(new Row("MAVEN_OPTS / VM-Optionen", orNone(left.getMavenOpts()), orNone(right.getMavenOpts()), optsDiff,
-                optsDiff ? "Andere JVM-Optionen für Maven, etwa Speichergrenzen oder System-Properties." : null));
+        rows.add(new Row(Texts.t("setup.maven.opts"), orNone(left.getMavenOpts()), orNone(right.getMavenOpts()), optsDiff,
+                optsDiff ? Texts.t("setup.hint.maven.opts") : null));
 
         return new SetupComparison(left, right, rows);
     }
@@ -111,10 +111,9 @@ public final class SetupComparison {
     public String summary() {
         List<Row> d = getDifferences();
         if (d.isEmpty()) {
-            return left.getLabel() + " und " + right.getLabel() + " bauen mit derselben Umgebung.";
+            return Texts.t("setup.same", left.getLabel(), right.getLabel());
         }
-        StringBuilder sb = new StringBuilder(left.getLabel()).append(" und ").append(right.getLabel())
-                .append(" unterscheiden sich bei: ");
+        StringBuilder sb = new StringBuilder(Texts.t("setup.differ", left.getLabel(), right.getLabel())).append(' ');
         for (int i = 0; i < d.size(); i++) {
             sb.append(i > 0 ? ", " : "").append(d.get(i).getAspect());
         }
@@ -142,24 +141,24 @@ public final class SetupComparison {
 
     private static String javaText(BuildSetup s) {
         if (s.getJavaVersion() == null && s.getJavaHome() == null) {
-            return "unbekannt";
+            return Texts.t("unknown");
         }
         return (s.getJavaVersion() == null ? "?" : s.getJavaVersion()) + (s.getJavaHome() == null ? "" : " (" + s.getJavaHome() + ")");
     }
 
     private static String mavenText(BuildSetup s) {
-        String v = s.getMavenVersion() == null ? "unbekannt" : s.getMavenVersion();
+        String v = s.getMavenVersion() == null ? Texts.t("unknown") : s.getMavenVersion();
         return s.getMavenSource() == null ? v : v + " – " + s.getMavenSource();
     }
 
     private static String profiles(BuildSetup s) {
         List<String> p = new ArrayList<String>(s.getProfiles());
         Collections.sort(p);
-        return p.isEmpty() ? "(keine)" : String.join(", ", p);
+        return p.isEmpty() ? Texts.t("changes.none") : String.join(", ", p);
     }
 
     private static String configText(String c) {
-        return c == null ? "(nicht verwendet)" : c.trim().isEmpty() ? "(leer)" : c.trim().replaceAll("\\s+", " ");
+        return c == null ? Texts.t("setup.unused") : c.trim().isEmpty() ? Texts.t("setup.empty") : c.trim().replaceAll("\\s+", " ");
     }
 
     private static String majorMinor(String v) {
@@ -172,11 +171,11 @@ public final class SetupComparison {
     }
 
     private static String orNone(String s) {
-        return s == null || s.isEmpty() ? "(keine)" : s;
+        return s == null || s.isEmpty() ? Texts.t("changes.none") : s;
     }
 
     private static String orDefault(String s) {
-        return s == null || s.isEmpty() ? "(Standard)" : s;
+        return s == null || s.isEmpty() ? Texts.t("setup.default") : s;
     }
 
     private static boolean known(String s) {

@@ -6,6 +6,8 @@ import io.github.bitshiftdev.mavendetective.core.diagnosis.Confidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -22,6 +24,17 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 class EditorHintsTest {
 
     private static final Path BASE = Paths.get("/home/u/projekt").toAbsolutePath();
+
+    /** Erwartete Texte auf Deutsch (wie die Diagnosen aus dem Kern); beide Sprachen prüft MavenDetectiveBundleTest. */
+    @BeforeEach
+    void deutsch() {
+        MavenDetectiveBundle.useForTests(MavenDetectiveBundle.Language.GERMAN);
+    }
+
+    @AfterEach
+    void zuruecksetzen() {
+        MavenDetectiveBundle.useForTests(null);
+    }
 
     private static Diagnosis diagnosis(String rule, List<Evidence> evidence, List<FixAction> fixes) {
         return new Diagnosis(rule, 3, "Parent-POM nicht auflösbar", "Der Parent fehlt.", Confidence.CERTAIN, evidence, fixes);
@@ -71,6 +84,9 @@ class EditorHintsTest {
     void codeVisionText() {
         assertEquals("3 Module · 2 Versionen", ConflictCodeVisionProvider.label(3, 2));
         assertEquals("1 Modul · 1 Version", ConflictCodeVisionProvider.label(1, 1));
+        MavenDetectiveBundle.useForTests(MavenDetectiveBundle.Language.ENGLISH);
+        assertEquals("3 modules · 2 versions", ConflictCodeVisionProvider.label(3, 2));
+        assertEquals("1 module · 1 version", ConflictCodeVisionProvider.label(1, 1));
     }
 
     @Test

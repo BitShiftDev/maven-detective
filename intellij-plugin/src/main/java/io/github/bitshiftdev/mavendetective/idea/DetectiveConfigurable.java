@@ -6,7 +6,9 @@ import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.options.ex.Settings;
+import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
+import com.intellij.ui.SimpleListCellRenderer;
 import com.intellij.ui.TitledSeparator;
 import com.intellij.ui.components.ActionLink;
 import com.intellij.ui.components.JBCheckBox;
@@ -38,6 +40,7 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
     private static final String INLAY_HINTS_ID = "inlay.hints";
     private static final String INSPECTIONS_ID = "Errors";
 
+    private ComboBox<MavenDetectiveBundle.Language> language;
     private JBCheckBox notifyRedBuild;
     private JBCheckBox rebuildAfterFix;
     private JBCheckBox previewPomFixes;
@@ -59,6 +62,9 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
 
     @Override
     public @Nullable JComponent createComponent() {
+        language = new ComboBox<>(MavenDetectiveBundle.Language.values());
+        language.setRenderer(SimpleListCellRenderer.create("", DetectiveConfigurable::languageName));
+        language.getAccessibleContext().setAccessibleName(MavenDetectiveBundle.message("settings.language"));
         notifyRedBuild = new JBCheckBox(MavenDetectiveBundle.message("settings.notify"));
         rebuildAfterFix = new JBCheckBox(MavenDetectiveBundle.message("settings.rebuild"));
         previewPomFixes = new JBCheckBox(MavenDetectiveBundle.message("settings.preview"));
@@ -85,6 +91,9 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
         });
 
         panel = FormBuilder.createFormBuilder()
+                .addComponent(new TitledSeparator(MavenDetectiveBundle.message("settings.group.ui")))
+                .addLabeledComponent(indent(new JBLabel(MavenDetectiveBundle.message("settings.language"))), indent(language))
+                .addComponent(comment(MavenDetectiveBundle.message("settings.language.comment")))
                 .addComponent(new TitledSeparator(MavenDetectiveBundle.message("settings.group.doctor")))
                 .addComponent(indent(notifyRedBuild))
                 .addComponent(comment(MavenDetectiveBundle.message("settings.notify.comment")))
@@ -115,7 +124,8 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
     @Override
     public boolean isModified() {
         DetectiveSettings s = DetectiveSettings.getInstance();
-        return notifyRedBuild.isSelected() != s.isNotifyRedBuild()
+        return language.getItem() != s.getLanguage()
+                || notifyRedBuild.isSelected() != s.isNotifyRedBuild()
                 || rebuildAfterFix.isSelected() != s.isRebuildAfterFix()
                 || previewPomFixes.isSelected() != s.isPreviewPomFixes()
                 || snapshots.isSelected() != s.isSnapshots()
@@ -130,6 +140,10 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
             throw new ConfigurationException(MavenDetectiveBundle.message("settings.snapshots.dir.invalid", dir));
         }
         DetectiveSettings s = DetectiveSettings.getInstance();
+        if (language.getItem() != null && language.getItem() != s.getLanguage()) {
+            s.setLanguage(language.getItem());
+            MavenDetectiveBundle.reload();
+        }
         s.setNotifyRedBuild(notifyRedBuild.isSelected());
         s.setRebuildAfterFix(rebuildAfterFix.isSelected());
         s.setPreviewPomFixes(previewPomFixes.isSelected());
@@ -141,6 +155,7 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
     @Override
     public void reset() {
         DetectiveSettings s = DetectiveSettings.getInstance();
+        language.setItem(s.getLanguage());
         notifyRedBuild.setSelected(s.isNotifyRedBuild());
         rebuildAfterFix.setSelected(s.isRebuildAfterFix());
         previewPomFixes.setSelected(s.isPreviewPomFixes());
@@ -163,6 +178,15 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
         if (target != null) {
             settings.select(target);
         }
+    }
+
+    /** „English“ und „Deutsch“ stehen in ihrer eigenen Sprache, damit man sie auch in der falschen findet. */
+    private static String languageName(MavenDetectiveBundle.Language l) {
+        return switch (l) {
+            case AUTO -> MavenDetectiveBundle.message("settings.language.auto");
+            case ENGLISH -> "English";
+            case GERMAN -> "Deutsch";
+        };
     }
 
     private static JComponent indent(JComponent c) {

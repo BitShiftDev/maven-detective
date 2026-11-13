@@ -106,7 +106,7 @@ final class DiagnosisCard {
         JComponent cause = text(d.getCause(), JBFont.label().biggerOn(1));
         card.add(cause);
         card.putClientProperty(CAUSE, cause);
-        accessible(card, MavenDetectiveBundle.message("card.accessible.red", headline(d), d.getConfidence().label()), d.getCause());
+        accessible(card, MavenDetectiveBundle.message("card.accessible.red", headline(d), confidence(d.getConfidence())), d.getCause());
         JComponent fixes = fixes(d, result);
         if (fixes != null) {
             card.add(fixes);
@@ -195,8 +195,12 @@ final class DiagnosisCard {
         return (d.getNumber() > 0 ? "#" + d.getNumber() + " " : "") + d.getCategory();
     }
 
+    static @Nls @NotNull String confidence(@NotNull Confidence c) {
+        return MavenDetectiveBundle.message(c == Confidence.CERTAIN ? "confidence.certain" : "confidence.likely");
+    }
+
     private static Badge badge(Confidence c) {
-        return new Badge(c.label(), c == Confidence.CERTAIN ? DetectiveColors.SUCCESS_BACKGROUND : DetectiveColors.WARNING_BACKGROUND);
+        return new Badge(confidence(c), c == Confidence.CERTAIN ? DetectiveColors.SUCCESS_BACKGROUND : DetectiveColors.WARNING_BACKGROUND);
     }
 
     private static @Nls String when(BuildDoctorService.Run run) {
@@ -412,7 +416,7 @@ final class DiagnosisCard {
                 continue;
             }
             int index = i;
-            ActionLink link = new ActionLink(headline(d) + " · " + d.getConfidence().label(), (ActionListener) e -> select.accept(index));
+            ActionLink link = new ActionLink(headline(d) + " · " + confidence(d.getConfidence()), (ActionListener) e -> select.accept(index));
             link.setToolTipText(d.getCause());
             box.add(link);
         }

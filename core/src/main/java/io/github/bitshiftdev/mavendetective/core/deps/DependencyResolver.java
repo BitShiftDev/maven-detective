@@ -1,6 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Interpolated;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Managed;
@@ -131,7 +132,7 @@ public final class DependencyResolver {
             N n = new N(dep.getGroupId(), dep.getArtifactId(), dep.getType(), dep.getClassifier(), version, scope, null, null, root,
                     exclusions);
             if (version == null) {
-                missing.add("Version von " + dep.ga() + " in " + module.getArtifactId() + " nicht bestimmbar");
+                missing.add(Texts.t("resolver.version.undetermined", dep.ga(), module.getArtifactId()));
             }
             offer(root, n, winners, queue);
             count++;
@@ -154,7 +155,7 @@ public final class DependencyResolver {
             EffectiveModel owner = locator.model(pom);
             for (EffectiveModel.ImportStep s : owner.getMissingImports()) {
                 missing.add(s.declaration.ga() + ":" + (s.version.value == null ? "?" : s.version.value)
-                        + " (BOM für " + n.groupId + ":" + n.artifactId + ")");
+                        + " (" + Texts.t("resolver.bom.for", n.groupId + ":" + n.artifactId) + ")");
             }
             List<PomFile> chain = owner.getChain();
             PomFile last = chain.get(chain.size() - 1);
@@ -196,7 +197,7 @@ public final class DependencyResolver {
                 N child = new N(dep.getGroupId(), dep.getArtifactId(), dep.getType(), dep.getClassifier(), version, scope,
                         premanagedVersion, premanagedScope, n, exclusions);
                 if (version == null) {
-                    missing.add(dep.ga() + " (Version in " + n.groupId + ":" + n.artifactId + ":" + n.version + " nicht bestimmbar)");
+                    missing.add(dep.ga() + " (" + Texts.t("excl.missing.undetermined", n.groupId + ":" + n.artifactId + ":" + n.version) + ")");
                 }
                 offer(n, child, winners, queue);
                 count++;

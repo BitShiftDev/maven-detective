@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Interpolated;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Managed;
@@ -99,17 +100,14 @@ public final class ExclusionAudit {
             String e = exclusion.ga();
             switch (status) {
                 case STALE:
-                    return "Exclusion " + e + " schließt nichts aus: " + dependencyLabel() + " bringt " + e
-                            + " nicht (mehr) transitiv mit – kann weg.";
+                    return Texts.t("excl.msg.stale", e, dependencyLabel());
                 case REDUNDANT:
-                    return "Exclusion " + e + " ist doppelt: " + e + " käme nur über " + join(path) + ", und den Pfad kappt schon "
-                            + coveredBy + ".";
+                    return Texts.t("excl.msg.redundant", e, join(path), coveredBy);
                 case USED:
-                    return "Exclusion " + e + " wirkt: " + join(path)
-                            + (alsoIncludedVia == null ? "" : " – " + e + " landet trotzdem im Classpath über " + alsoIncludedVia);
+                    return Texts.t("excl.msg.used", e, join(path))
+                            + (alsoIncludedVia == null ? "" : " – " + Texts.t("excl.msg.also.included", e, alsoIncludedVia));
                 default:
-                    return "Exclusion " + e + " bei " + dependencyLabel() + " nicht prüfbar – lokal fehlt: " + join(missing, ", ")
-                            + " (einmal bauen oder mvn dependency:resolve, dann erneut prüfen)";
+                    return Texts.t("excl.msg.unknown", e, dependencyLabel(), join(missing, ", "));
             }
         }
 
@@ -119,7 +117,7 @@ public final class ExclusionAudit {
                 return null;
             }
             return FixAction.of(FixAction.REMOVE_EXCLUSION,
-                    "Exclusion " + exclusion.ga() + " bei " + dependency.ga() + " entfernen",
+                    Texts.t("excl.fix.remove", exclusion.ga(), dependency.ga()),
                     "file", getFile(), "artifact", dependency.ga(), "exclusion", exclusion.ga(),
                     "section", managed ? "dependencyManagement" : "dependencies");
         }
@@ -197,7 +195,7 @@ public final class ExclusionAudit {
             for (PomFile.Exclusion e : exclusions) {
                 Finding f = new Finding(pom, d, managed, e, null);
                 f.status = Status.UNKNOWN;
-                f.missing = Collections.singletonList("Version von " + d.ga());
+                f.missing = Collections.singletonList(Texts.t("excl.missing.version", d.ga()));
                 out.add(f);
             }
             return;
@@ -311,7 +309,7 @@ public final class ExclusionAudit {
                 List<PomFile> chain = model.getChain();
                 PomFile last = chain.get(chain.size() - 1);
                 if (last.hasParent() && locator.parentOf(last) == null) {
-                    c.missing.add(last.parentGav() + " (Parent von " + n.groupId + ":" + n.artifactId + ")");
+                    c.missing.add(last.parentGav() + " (" + Texts.t("excl.missing.parent", n.groupId + ":" + n.artifactId) + ")");
                 }
                 for (Declared d : model.getDependencies().values()) {
                     String scope = d.dep.getScope();
@@ -329,7 +327,7 @@ public final class ExclusionAudit {
                     c.paths.put(ga, Collections.unmodifiableList(path));
                     c.decls.put(ga, d.dep);
                     if (v == null) {
-                        c.missing.add(ga + " (Version in " + n.groupId + ":" + n.artifactId + " nicht bestimmbar)");
+                        c.missing.add(ga + " (" + Texts.t("excl.missing.undetermined", n.groupId + ":" + n.artifactId) + ")");
                         continue;
                     }
                     List<PomFile.Exclusion> childExclusions = n.exclusions;
@@ -341,7 +339,7 @@ public final class ExclusionAudit {
                 }
             }
             if (queue.size() >= MAX_NODES) {
-                c.missing.add("mehr als " + MAX_NODES + " Knoten – Baum abgeschnitten");
+                c.missing.add(Texts.t("excl.missing.truncated", MAX_NODES));
             }
             return c;
         }
@@ -404,14 +402,14 @@ public final class ExclusionAudit {
         }
         if (!any) {
             out.add("");
-            out.add(findings.isEmpty() ? "Keine Exclusions in den POMs." : "Alle Exclusions schließen noch etwas aus.");
+            out.add(Texts.t(findings.isEmpty() ? "excl.none" : "excl.all.used"));
         }
         return out;
     }
 
     /** Markdown-Tabelle für Ticket oder Review. */
     public String markdown(boolean all) {
-        StringBuilder sb = new StringBuilder("### Exclusion-Hygiene\n\n").append(summary()).append("\n\n");
+        StringBuilder sb = new StringBuilder("### ").append(Texts.t("excl.title")).append("\n\n").append(summary()).append("\n\n");
         List<Finding> shown = new ArrayList<Finding>();
         for (Finding f : findings) {
             if (all || f.status != Status.USED) {
@@ -419,9 +417,9 @@ public final class ExclusionAudit {
             }
         }
         if (shown.isEmpty()) {
-            return sb.append(findings.isEmpty() ? "Keine Exclusions in den POMs.\n" : "Alle Exclusions schließen noch etwas aus.\n").toString();
+            return sb.append(Texts.t(findings.isEmpty() ? "excl.none" : "excl.all.used")).append("\n").toString();
         }
-        sb.append("| Befund | POM | Dependency | Exclusion | Erklärung |\n|---|---|---|---|---|\n");
+        sb.append(Texts.t("excl.md.table")).append("\n|---|---|---|---|---|\n");
         for (Finding f : shown) {
             sb.append("| ").append(label(f.status)).append(" | `").append(f.pom.getArtifactId()).append(':').append(f.getLine())
                     .append("` | `").append(f.dependency.ga()).append("` | `").append(f.exclusion.ga()).append("` | ")
@@ -431,21 +429,19 @@ public final class ExclusionAudit {
     }
 
     private String summary() {
-        return "Exclusion-Hygiene: " + findings.size() + (findings.size() == 1 ? " Exclusion" : " Exclusions") + " in " + pomCount
-                + (pomCount == 1 ? " POM" : " POMs") + " – " + count(Status.STALE) + " veraltet, " + count(Status.REDUNDANT) + " doppelt, "
-                + count(Status.UNKNOWN) + " nicht prüfbar";
+        return Texts.t("excl.summary", findings.size(), pomCount, count(Status.STALE), count(Status.REDUNDANT), count(Status.UNKNOWN));
     }
 
     static String label(Status s) {
         switch (s) {
             case STALE:
-                return "veraltet";
+                return Texts.t("excl.status.stale");
             case REDUNDANT:
-                return "doppelt";
+                return Texts.t("excl.status.redundant");
             case USED:
-                return "wirkt";
+                return Texts.t("excl.status.used");
             default:
-                return "offen";
+                return Texts.t("excl.status.unknown");
         }
     }
 

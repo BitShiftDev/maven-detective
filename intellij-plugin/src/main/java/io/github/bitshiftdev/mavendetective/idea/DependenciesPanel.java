@@ -91,10 +91,10 @@ public final class DependenciesPanel extends DetectivePanel {
                     append("  " + n.getScope(), SimpleTextAttributes.GRAYED_ITALIC_ATTRIBUTES);
                 }
                 if (n.depth() > 1) {
-                    append("  transitiv", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+                    append("  " + MavenDetectiveBundle.message("matrix.source.transitive"), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
                 }
                 if (value.conflicts() > 0) {
-                    append("  " + value.conflicts() + "× verdrängt", SimpleTextAttributes.ERROR_ATTRIBUTES);
+                    append("  " + MavenDetectiveBundle.message("dependencies.displaced", value.conflicts()), SimpleTextAttributes.ERROR_ATTRIBUTES);
                 }
             }
         });

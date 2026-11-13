@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.catalog;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Confidence;
 
 import java.util.ArrayList;
@@ -20,8 +21,15 @@ public final class Rule {
         private final String cause;
         private final FixSpec fix;
         private final Confidence confidence;
+        private final Map<String, String> causeI18n;
 
         public PatternSpec(Pattern regex, String cause, FixSpec fix, Confidence confidence) {
+            this(regex, cause, Collections.<String, String>emptyMap(), fix, confidence);
+        }
+
+        /** {@code causeI18n}: Sprachcode → Ursache aus {@code cause_en}/{@code cause_de}. */
+        public PatternSpec(Pattern regex, String cause, Map<String, String> causeI18n, FixSpec fix, Confidence confidence) {
+            this.causeI18n = causeI18n;
             this.regex = regex;
             this.groupNames = groupNames(regex.pattern());
             this.cause = cause;
@@ -31,7 +39,7 @@ public final class Rule {
 
         public Pattern getRegex() { return regex; }
 
-        public String getCause() { return cause; }
+        public String getCause() { return Texts.pick(cause, causeI18n); }
 
         public FixSpec getFix() { return fix; }
 
@@ -66,8 +74,14 @@ public final class Rule {
         private final String type;
         private final String label;
         private final Map<String, String> params;
+        private final Map<String, String> labelI18n;
 
         public FixSpec(String type, String label, Map<String, String> params) {
+            this(type, label, Collections.<String, String>emptyMap(), params);
+        }
+
+        public FixSpec(String type, String label, Map<String, String> labelI18n, Map<String, String> params) {
+            this.labelI18n = labelI18n;
             this.type = type;
             this.label = label;
             this.params = Collections.unmodifiableMap(new LinkedHashMap<String, String>(params));
@@ -75,7 +89,7 @@ public final class Rule {
 
         public String getType() { return type; }
 
-        public String getLabel() { return label; }
+        public String getLabel() { return Texts.pick(label, labelI18n); }
 
         public Map<String, String> getParams() { return params; }
     }
@@ -91,10 +105,22 @@ public final class Rule {
     private final String cause;
     private final List<String> checks;
     private final FixSpec fix;
+    private final Map<String, String> categoryI18n;
+    private final Map<String, String> causeI18n;
 
     public Rule(String id, int number, String category, int priority, Confidence confidence,
                 List<PatternSpec> patterns, List<PatternSpec> extract, List<Pattern> unless,
                 String cause, List<String> checks, FixSpec fix) {
+        this(id, number, category, Collections.<String, String>emptyMap(), priority, confidence, patterns, extract, unless,
+                cause, Collections.<String, String>emptyMap(), checks, fix);
+    }
+
+    /** Mit Übersetzungen: Sprachcode → Text aus {@code category_en}/{@code cause_de} usw. */
+    public Rule(String id, int number, String category, Map<String, String> categoryI18n, int priority, Confidence confidence,
+                List<PatternSpec> patterns, List<PatternSpec> extract, List<Pattern> unless,
+                String cause, Map<String, String> causeI18n, List<String> checks, FixSpec fix) {
+        this.categoryI18n = categoryI18n;
+        this.causeI18n = causeI18n;
         this.id = id;
         this.number = number;
         this.category = category;
@@ -112,7 +138,7 @@ public final class Rule {
 
     public int getNumber() { return number; }
 
-    public String getCategory() { return category; }
+    public String getCategory() { return Texts.pick(category, categoryI18n); }
 
     /** Höher gewinnt, wenn mehrere Regeln passen (spezifische Ursache vor allgemeiner). */
     public int getPriority() { return priority; }
@@ -126,7 +152,7 @@ public final class Rule {
 
     public List<Pattern> getUnless() { return unless; }
 
-    public String getCause() { return cause; }
+    public String getCause() { return Texts.pick(cause, causeI18n); }
 
     public List<String> getChecks() { return checks; }
 

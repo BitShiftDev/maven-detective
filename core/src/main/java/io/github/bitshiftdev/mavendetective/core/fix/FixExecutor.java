@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.fix;
 
+import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 
@@ -54,10 +55,10 @@ public final class FixExecutor {
                 }
                 Path p = Paths.get(f.trim()).toAbsolutePath().normalize();
                 if (!allowed(p)) {
-                    throw new IOException("Löschen außerhalb des lokalen Repositorys verweigert: " + p);
+                    throw new IOException(Texts.t("exec.delete.refused", p));
                 }
                 if (Files.deleteIfExists(p)) {
-                    o.actions.add("gelöscht: " + p);
+                    o.actions.add(Texts.t("exec.deleted", p));
                 }
             }
             o.rebuildArgs = fix.param("args") == null ? "" : fix.param("args");
@@ -66,10 +67,10 @@ public final class FixExecutor {
             String content = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
             String search = fix.param("search");
             if (!content.contains(search)) {
-                throw new IOException("Text nicht gefunden in " + p + ": " + search);
+                throw new IOException(Texts.t("exec.text.not.found", p, search));
             }
             Files.write(p, content.replace(search, fix.param("replace")).getBytes(StandardCharsets.UTF_8));
-            o.actions.add("ersetzt in " + p + ": " + search + " → " + fix.param("replace"));
+            o.actions.add(Texts.t("exec.replaced", p, search, fix.param("replace")));
             o.rebuildArgs = "";
         } else if (FixAction.SET_JVM_OPTION.equals(type)) {
             Path p = Paths.get(fix.param("file"));
@@ -98,13 +99,13 @@ public final class FixExecutor {
             try {
                 edit = PomEditor.forFix(content, fix);
             } catch (IllegalArgumentException e) {
-                throw new IOException(p + " lässt sich nicht bearbeiten: " + e.getMessage(), e);
+                throw new IOException(Texts.t("exec.not.editable", p, e.getMessage()), e);
             }
             Files.write(p, edit.apply(content).getBytes(StandardCharsets.UTF_8));
             o.actions.add(p + ":" + edit.line + ": " + edit.description);
             o.rebuildArgs = "";
         } else {
-            throw new IllegalArgumentException("Quick-Fix-Typ wird hier nicht ausgeführt: " + type);
+            throw new IllegalArgumentException(Texts.t("exec.unsupported", type));
         }
         return o;
     }
