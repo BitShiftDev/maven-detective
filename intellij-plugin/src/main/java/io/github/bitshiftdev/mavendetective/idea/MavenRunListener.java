@@ -82,6 +82,7 @@ public final class MavenRunListener implements ExecutionListener {
                 + handler.getClass().getSimpleName() + ")");
         Run run = new Run(env);
         runs.put(handler, run);
+        BuildDoctorService.getInstance(project).runStarted();
         handler.addProcessListener(new ProcessListener() {
             @Override
             public void onTextAvailable(@NotNull ProcessEvent event, @NotNull Key outputType) {
@@ -144,10 +145,14 @@ public final class MavenRunListener implements ExecutionListener {
         String text = run.text();
         LOG.info("Maven Detective: Maven-Lauf beendet, Exit-Code " + exitCode + ", abgebrochen " + run.destroyed
                 + ", " + text.length() + " Zeichen Log (gemeldet über " + via + ")");
-        if (project.isDisposed() || userAborted(run.destroyed, exitCode)) {
+        if (project.isDisposed()) {
             return;
         }
         BuildDoctorService service = BuildDoctorService.getInstance(project);
+        if (userAborted(run.destroyed, exitCode)) {
+            service.runAborted();
+            return;
+        }
         if (exitCode == 0) {
             service.recordGreen(run.env);
         } else {

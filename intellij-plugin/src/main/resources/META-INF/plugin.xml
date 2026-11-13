@@ -55,6 +55,8 @@
                     icon="/icons/mavenDetective.svg"
                     factoryClass="io.github.bitshiftdev.mavendetective.idea.BuildDoctorToolWindowFactory"/>
         <notificationGroup id="Maven Detective" displayType="BALLOON"/>
+        <!-- U3: „[INFO] BUILD FAILURE“ in Konsole und Build-Fenster wird zum Link auf die Diagnose -->
+        <consoleFilterProvider implementation="io.github.bitshiftdev.mavendetective.idea.BuildFailureConsoleFilter$Provider"/>
         <!-- Modul A4: Beschreibung in inspectionDescriptions/MavenDetectiveStaleExclusion.html -->
         <localInspection language="XML"
                          shortName="MavenDetectiveStaleExclusion"

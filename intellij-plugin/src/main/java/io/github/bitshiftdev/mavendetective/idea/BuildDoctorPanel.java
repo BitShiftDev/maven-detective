@@ -1,46 +1,78 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.AnimatedIcon;
+import com.intellij.ui.ColoredListCellRenderer;
+import com.intellij.ui.EditorNotificationPanel;
+import com.intellij.ui.JBSplitter;
+import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.components.JBList;
+import com.intellij.ui.components.JBPanelWithEmptyText;
+import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.components.panels.VerticalLayout;
+import com.intellij.util.ui.JBUI;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
-import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.env.SetupComparison;
 import io.github.bitshiftdev.mavendetective.core.report.Reports;
-import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotDiff;
+import io.github.bitshiftdev.mavendetective.idea.BuildDoctorService.FixCheck;
+import io.github.bitshiftdev.mavendetective.idea.BuildDoctorService.Run;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
-import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
-import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
-import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
+import io.github.bitshiftdev.mavendetective.idea.ui.TrackingPanel;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.JButton;
+import javax.swing.DefaultListModel;
+import javax.swing.JComponent;
+import javax.swing.JList;
 import javax.swing.JPanel;
+import javax.swing.ListSelectionModel;
+import javax.swing.ScrollPaneConstants;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
+import java.awt.datatransfer.StringSelection;
 import java.util.List;
-
-import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
+import java.util.Objects;
 
 /**
- * Die Diagnose-Karte: Kategorie und Sicherheit, Ursache in einem Satz, Belege (klickbar, wenn sie
- * auf eine Datei zeigen), was sich seit dem letzten grünen Build geändert hat, Abweichungen zwischen
- * IDE und Kommandozeile und Quick-Fix-Knöpfe (der erste als Hauptaktion).
+ * Tab „Build Doctor“: links der Verlauf der letzten Läufe (rot/grün, Zeit, Kategorie), rechts die
+ * Diagnose-Karte des gewählten Laufs ({@link DiagnosisCard}) oder der Vergleich IDE gegen
+ * Kommandozeile ({@link SetupComparisonView}). Über der Karte: „Maven-Lauf läuft …“ bzw. nach einem
+ * Quick-Fix „Neu bauen läuft …“ und danach „Behoben“ oder was sich geändert hat.
  */
-public final class BuildDoctorPanel extends DetectivePanel implements BuildDoctorService.Listener {
+public final class BuildDoctorPanel extends DetectivePanel implements BuildDoctorService.Listener, DiagnosisCard.Host {
 
-    private static final String LINK_SETUP = "md:setup";
-    private static final String LINK_BACK = "md:back";
-    private static final int MAX_CHANGES = 8;
+    private static final String VIEW_CARD = "card";
+    private static final String VIEW_SETUP = "setup";
 
     private final BuildDoctorService service;
-    private final HtmlView card;
-    private final FixBar fixes = new FixBar();
-    private BuildDoctorService.Result shown;
+    private final DefaultListModel<Run> historyModel = new DefaultListModel<>();
+    private final JBList<Run> history = new JBList<>(historyModel);
+    private final DiagnosisCard cards;
+    private final CardLayout views = new CardLayout();
+    private final JPanel right = new JPanel(views);
+    private final JPanel cardHolder = new TrackingPanel(new BorderLayout());
+    private final JBPanelWithEmptyText empty = new JBPanelWithEmptyText();
+    private final JBScrollPane cardScroll;
+    private final EditorNotificationPanel runningBanner = new EditorNotificationPanel(EditorNotificationPanel.Status.Info);
+    /** Ausgang der Prüfung nach einem Fix; enthält je Lauf ein neues Banner (Status ist fest). */
+    private final JPanel checkSlot = new JPanel(new BorderLayout());
+    private final SetupComparisonView setupView;
+    private final Background setupCheck = background(MavenDetectiveBundle.message("doctor.setup.loading"));
+    private @Nullable Run shown;
+    private int diagnosisIndex;
+    private boolean setupVisible;
 
     public BuildDoctorPanel(@NotNull Project project) {
         super(project);
         this.service = BuildDoctorService.getInstance(project);
+        this.cards = new DiagnosisCard(project, this);
 
         DefaultActionGroup actions = new DefaultActionGroup();
         actions.add(registered("MavenDetective.AnalyzeClipboard"));
@@ -50,95 +82,240 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         actions.add(registered("MavenDetective.ReportMisdiagnosis"));
         installToolbar(null, actions, null);
 
-        card = new HtmlView(project, target -> {
-            if (LINK_SETUP.equals(target)) {
-                showSetupView();
-            } else if (LINK_BACK.equals(target)) {
-                if (shown != null) {
-                    resultChanged(shown);
-                } else {
-                    showEmpty();
+        history.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        history.setCellRenderer(new HistoryRenderer());
+        history.getEmptyText().setText(MavenDetectiveBundle.message("doctor.history.empty"));
+        history.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                Run run = history.getSelectedValue();
+                if (run != null && run != shown) {
+                    show(run, 0);
                 }
-            } else {
-                return false;
             }
-            return true;
         });
-        JPanel body = new JPanel(new BorderLayout());
-        body.add(card.component(), BorderLayout.CENTER);
-        body.add(fixes, BorderLayout.SOUTH);
-        setBody(body);
+
+        empty.getEmptyText().setText(MavenDetectiveBundle.message("doctor.empty"));
+        empty.getEmptyText().appendLine(MavenDetectiveBundle.message("doctor.empty.clipboard"), SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES,
+                e -> ActionManager.getInstance().tryToExecute(registered("MavenDetective.AnalyzeClipboard"), null, this,
+                        ActionPlaces.UNKNOWN, true));
+        empty.getEmptyText().appendLine(MavenDetectiveBundle.message("doctor.empty.reference"));
+
+        runningBanner.icon(AnimatedIcon.Default.INSTANCE);
+        runningBanner.setVisible(false);
+        checkSlot.setVisible(false);
+        JPanel banners = new JPanel(new VerticalLayout(0));
+        banners.add(runningBanner);
+        banners.add(checkSlot);
+
+        cardHolder.setBorder(JBUI.Borders.empty(10, 12));
+        cardScroll = new JBScrollPane(cardHolder, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        cardScroll.setBorder(JBUI.Borders.empty());
+        JPanel cardView = new JPanel(new BorderLayout());
+        cardView.add(banners, BorderLayout.NORTH);
+        cardView.add(cardScroll, BorderLayout.CENTER);
+
+        setupView = new SetupComparisonView(this::showCardView);
+        right.add(cardView, VIEW_CARD);
+        right.add(setupView, VIEW_SETUP);
+
+        JBSplitter split = new JBSplitter(false, "MavenDetective.BuildDoctor.split", 0.22f);
+        split.setFirstComponent(rows(history, () -> null, () -> {
+            Run run = history.getSelectedValue();
+            return run == null ? null : historyText(run);
+        }));
+        split.setSecondComponent(right);
+        setBody(split);
 
         service.addListener(this, this);
-        BuildDoctorService.Result last = service.getLast();
-        if (last != null) {
-            resultChanged(last);
-        } else {
-            showEmpty();
-        }
+        reloadHistory(true);
+        updateRunning();
     }
+
+    // ---- Ereignisse ---------------------------------------------------------------------------
 
     @Override
     public void resultChanged(BuildDoctorService.Result result) {
-        shown = result;
-        fixes.removeAll();
-        if (result.diagnoses().isEmpty()) {
-            card.show(result.environment() == null
-                    ? "<p>In der Zwischenablage steht kein Maven-Log mit Fehlerzeilen (<code>[ERROR]</code>).</p>"
-                    : "<p><b>Der Maven-Lauf ist gescheitert, aber im Log steht keine Fehlerzeile von Maven.</b></p>"
-                    + "<p>Letzte Zeilen der Ausgabe:</p><pre>" + esc(tail(result.rawLog(), 15)) + "</pre>"
-                    + "<p>Bitte mit „Falsch erkannt“ als Testfall speichern.</p>");
-        } else {
-            Diagnosis d = result.diagnoses().get(0);
-            card.show(render(result));
-            boolean first = true;
-            for (FixAction fix : d.getFixes()) {
-                JButton b = new JButton(fix.getLabel());
-                boolean supported = FixRunner.isSupported(fix);
-                b.setEnabled(supported);
-                b.setToolTipText(supported ? null : MavenDetectiveBundle.message("doctor.fix.unsupported"));
-                b.addActionListener(e -> FixRunner.run(project, fix, result));
-                fixes.add(first && supported ? FixBar.primary(b) : b);
-                first = false;
-            }
-        }
-        fixes.setVisible(fixes.getComponentCount() > 0);
-        fixes.revalidate();
-        fixes.repaint();
+        // Zwischenablage ohne Fehlerzeilen landet nicht im Verlauf – nur sagen, warum nichts passiert
+        setStatus(result.environment() == null && result.diagnoses().isEmpty()
+                ? MavenDetectiveBundle.message("doctor.clipboard.no.errors") : null);
     }
 
-    /** Kurze Meldung statt der Karte (z. B. leere Zwischenablage); „Zurück“ führt zur Karte. */
+    @Override
+    public void historyChanged(@NotNull Run added) {
+        reloadHistory(true);
+    }
+
+    @Override
+    public void runningChanged() {
+        updateRunning();
+    }
+
+    // ---- Anzeige ------------------------------------------------------------------------------
+
+    /** Liste neu füllen; {@code newest}: den neuesten Lauf zeigen (sonst die Auswahl behalten). */
+    private void reloadHistory(boolean newest) {
+        Run keep = newest ? null : shown;
+        List<Run> runs = service.getHistory();
+        historyModel.clear();
+        runs.forEach(historyModel::addElement);
+        Run target = keep != null && runs.contains(keep) ? keep : runs.isEmpty() ? null : runs.get(0);
+        if (target == null) {
+            shown = null;
+            showCard(null);
+        } else {
+            history.setSelectedValue(target, true);
+            if (target != shown) {
+                show(target, 0);
+            }
+        }
+    }
+
+    private void show(@NotNull Run run, int index) {
+        shown = run;
+        diagnosisIndex = index;
+        showCardView();
+        if (run.green()) {
+            showCard(cards.green(run));
+        } else {
+            showCard(cards.red(run, index, i -> show(run, i)));
+        }
+        updateCheckBanner(run);
+    }
+
+    private void showCard(@Nullable JComponent card) {
+        cardHolder.removeAll();
+        cardHolder.add(card == null ? empty : card, card == null ? BorderLayout.CENTER : BorderLayout.NORTH);
+        if (card == null) {
+            checkSlot.removeAll();
+            checkSlot.setVisible(false);
+        }
+        cardHolder.revalidate();
+        cardHolder.repaint();
+        cardScroll.getVerticalScrollBar().setValue(0);
+    }
+
+    /** Ausgang der Fix-und-Prüf-Schleife über der Karte. */
+    private void updateCheckBanner(Run run) {
+        checkSlot.removeAll();
+        FixCheck check = run.check();
+        if (check != null) {
+            String key;
+            EditorNotificationPanel.Status status;
+            if (run.green()) {
+                key = "doctor.check.fixed";
+                status = EditorNotificationPanel.Status.Success;
+            } else if (check.previousRule() != null && Objects.equals(check.previousRule(), run.ruleId())) {
+                key = "doctor.check.same";
+                status = EditorNotificationPanel.Status.Warning;
+            } else {
+                key = "doctor.check.other";
+                status = EditorNotificationPanel.Status.Info;
+            }
+            EditorNotificationPanel banner = new EditorNotificationPanel(status);
+            banner.setText(MavenDetectiveBundle.message(key, check.fix()));
+            checkSlot.add(banner, BorderLayout.CENTER);
+        }
+        updateRunning();
+    }
+
+    private void updateRunning() {
+        boolean running = service.isRunning();
+        FixCheck pending = service.getPendingCheck();
+        runningBanner.setText(pending != null
+                ? MavenDetectiveBundle.message("doctor.running.check", pending.fix())
+                : MavenDetectiveBundle.message("doctor.running"));
+        runningBanner.setVisible(running);
+        // Während neu gebaut wird, gehört „Behoben/gleiche Ursache“ des alten Laufs nicht mehr dazu
+        checkSlot.setVisible(!running && checkSlot.getComponentCount() > 0);
+        checkSlot.revalidate();
+    }
+
+    private void showCardView() {
+        setupVisible = false;
+        views.show(right, VIEW_CARD);
+    }
+
+    /** Neuesten Lauf zeigen (Link „Ursache anzeigen“ in der Konsole, Benachrichtigung). */
+    void showLatest() {
+        if (!historyModel.isEmpty()) {
+            Run newest = historyModel.get(0);
+            history.setSelectedValue(newest, true);
+            show(newest, 0);
+        } else {
+            showCardView();
+        }
+    }
+
+    /** Kurze Meldung in der Statuszeile (z. B. leere Zwischenablage); die Karte bleibt. */
     void showMessage(@NotNull String text) {
-        card.show("<p>" + esc(text) + "</p><p><a href=\"" + LINK_BACK + "\">Zurück</a></p>");
+        showCardView();
+        setStatus(text);
     }
 
     /** Vergleich IDE gegen Kommandozeile anzeigen; ohne fertigen Vergleich wird er jetzt ermittelt. */
     void showSetupView() {
-        SetupComparison known = shown == null ? null : shown.setup();
+        setupVisible = true;
+        views.show(right, VIEW_SETUP);
+        BuildDoctorService.Result result = shownResult();
+        SetupComparison known = result == null ? null : result.setup();
         if (known != null) {
-            card.show(renderSetup(known));
+            setupView.show(known);
             return;
         }
-        card.show("<p>" + esc(MavenDetectiveBundle.message("doctor.setup.loading")) + "</p>");
-        service.compareSetupsAsync(shown == null ? null : shown.configuration(), c -> card.show(renderSetup(c)));
+        setupView.loading();
+        BuildDoctorService.Result last = service.getLast();
+        setupCheck.run(c -> service.compareSetups(last == null ? null : last.configuration()), comparison -> {
+            if (comparison != null) {
+                setupView.show(comparison);
+            } else {
+                setStatus(MavenDetectiveBundle.message("doctor.setup.failed"));
+            }
+        });
     }
 
-    private void showEmpty() {
-        card.show("<p>Noch keine Diagnose. Scheitert ein Maven-Lauf in der IDE, erscheint sie hier automatisch.</p>"
-                + "<p>Für Logs aus CI oder Terminal: Log kopieren und „Log aus Zwischenablage analysieren“ (Toolbar oben).</p>"
-                + "<p>Jeder grüne Maven-Lauf aus der IDE wird als Referenz gespeichert. Scheitert ein späterer Lauf, "
-                + "zeigt die Karte, was sich seitdem geändert hat.</p>");
-        fixes.setVisible(false);
+    /** Ergebnis des gezeigten Laufs ({@code null}: keiner oder grün). */
+    @Nullable BuildDoctorService.Result shownResult() {
+        return shown == null ? null : shown.result();
+    }
+
+    // ---- Karte → Panel ------------------------------------------------------------------------
+
+    @Override
+    public void runFix(@NotNull FixAction fix, @NotNull BuildDoctorService.Result result) {
+        FixRunner.run(project, fix, result);
     }
 
     @Override
+    public void showSetup() {
+        showSetupView();
+    }
+
+    @Override
+    public void copyReport() {
+        String md = markdown();
+        if (md != null) {
+            CopyPasteManager.getInstance().setContents(new StringSelection(md));
+            setStatus(MavenDetectiveBundle.message("doctor.report.copied"));
+        }
+    }
+
+    @Override
+    public void reportMisdiagnosis(@NotNull BuildDoctorService.Result result) {
+        new MisdiagnosisDialog(project, result).show();
+    }
+
+    // ---- gemeinsame Aktionen ------------------------------------------------------------------
+
+    @Override
     public boolean canCopyMarkdown() {
-        return shown != null && !shown.diagnoses().isEmpty();
+        BuildDoctorService.Result r = shownResult();
+        return !setupVisible && r != null && !r.diagnoses().isEmpty();
     }
 
     @Override
     public @Nullable String markdown() {
-        return canCopyMarkdown() ? report(shown) : null;
+        return canCopyMarkdown() ? report(Objects.requireNonNull(shownResult())) : null;
     }
 
     @Override
@@ -156,116 +333,38 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         return md;
     }
 
-    private static String render(BuildDoctorService.Result result) {
-        Diagnosis d = result.diagnoses().get(0);
-        StringBuilder sb = new StringBuilder();
-        sb.append("<h3>").append(esc(Reports.headline(d))).append("</h3>");
-        sb.append("<p><b>").append(esc(d.getCause())).append("</b></p>");
-        sb.append("<p>Belege:</p><ul>");
-        for (Evidence e : d.getEvidence()) {
-            sb.append("<li>");
-            if (e.getFile() != null) {
-                String target = Locations.of(e.getFile(), e.getLine());
-                sb.append(esc(e.getText())).append(" – <a href=\"").append(esc(target)).append("\">")
-                        .append(esc(shortPath(target))).append("</a>");
-            } else if (e.getKind() == Evidence.Kind.LOG_LINE) {
-                sb.append("<code>").append(esc(e.getText())).append("</code>");
-            } else {
-                sb.append(esc(e.getText()));
-            }
-            sb.append("</li>");
-        }
-        sb.append("</ul>");
+    // ---- Verlauf ------------------------------------------------------------------------------
 
-        SnapshotDiff changes = result.changes();
-        if (changes != null) {
-            sb.append("<p><b>").append(esc(changes.headline())).append(":</b></p>");
-            if (changes.isEmpty()) {
-                sb.append("<p>Keine Änderung an Maven, JDK, Profilen, Parent, Plugins oder Dependencies. "
-                        + "Die Ursache liegt eher im Code, in Testdaten oder außerhalb des Builds (Netz, Repository).</p>");
-            } else {
-                sb.append("<ul>");
-                for (String line : changes.lines(MAX_CHANGES)) {
-                    sb.append("<li>").append(esc(line)).append("</li>");
-                }
-                sb.append("</ul>");
-            }
-        }
-
-        SetupComparison setup = result.setup();
-        if (setup != null && !setup.getDifferences().isEmpty()) {
-            sb.append("<p>").append(esc(setup.summary())).append(" – <a href=\"").append(LINK_SETUP)
-                    .append("\">Vergleich anzeigen</a></p>");
-        }
-
-        if (result.diagnoses().size() > 1) {
-            sb.append("<p>Weitere Treffer: ");
-            for (int i = 1; i < result.diagnoses().size(); i++) {
-                sb.append(i > 1 ? ", " : "").append(esc(result.diagnoses().get(i).getCategory()));
-            }
-            sb.append("</p>");
+    /** Eine Zeile Verlauf als Text: „14:02 · #4 Kaputtes JAR · sicher“. */
+    static @NotNull String historyText(@NotNull Run run) {
+        StringBuilder sb = new StringBuilder(OverviewPanel.time(run.at())).append(" · ").append(historyLabel(run));
+        if (run.result() != null && !run.result().diagnoses().isEmpty()) {
+            sb.append(" · ").append(run.result().diagnoses().get(0).getConfidence().label());
         }
         return sb.toString();
     }
 
-    private String renderSetup(SetupComparison c) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<h3>IDE gegen Kommandozeile</h3>");
-        sb.append("<p><b>").append(esc(c.summary())).append("</b></p>");
-        sb.append("<table cellpadding=\"3\"><tr><th></th><th align=\"left\">").append(esc(c.getLeft().getLabel()))
-                .append("</th><th align=\"left\">").append(esc(c.getRight().getLabel())).append("</th></tr>");
-        for (SetupComparison.Row r : c.getRows()) {
-            // Abweichung nicht nur fett, sondern auch mit Zeichen – für Screenreader und ohne Farbe lesbar
-            String open = r.isDifferent() ? "<b>≠ " : "";
-            String close = r.isDifferent() ? "</b>" : "";
-            sb.append("<tr><td valign=\"top\">").append(open).append(esc(r.getAspect())).append(close)
-                    .append("</td><td valign=\"top\">").append(esc(r.getLeft()))
-                    .append("</td><td valign=\"top\">").append(esc(r.getRight())).append("</td></tr>");
+    static @Nls @NotNull String historyLabel(@NotNull Run run) {
+        if (run.green()) {
+            return MavenDetectiveBundle.message("doctor.history.green");
         }
-        sb.append("</table>");
-        List<SetupComparison.Row> diffs = c.getDifferences();
-        if (!diffs.isEmpty()) {
-            sb.append("<ul>");
-            for (SetupComparison.Row r : diffs) {
-                sb.append("<li>").append(esc(r.getHint())).append("</li>");
-            }
-            sb.append("</ul>");
-        }
-        List<String> notes = c.getRight().getNotes();
-        if (!notes.isEmpty() || !c.getLeft().getNotes().isEmpty()) {
-            sb.append("<p>Hinweise: ");
-            for (String n : c.getLeft().getNotes()) {
-                sb.append(esc(n)).append(' ');
-            }
-            for (String n : notes) {
-                sb.append(esc(n)).append(' ');
-            }
-            sb.append("</p>");
-        }
-        sb.append("<p><small>Die Kommandozeile wird aus <code>.mvn/</code>, <code>mvnw</code> und den Umgebungsvariablen "
-                + "der IDE abgeleitet. Eine Shell mit anderem JAVA_HOME oder PATH kann abweichen.</small></p>");
-        sb.append("<p><a href=\"").append(LINK_BACK).append("\">Zurück</a></p>");
-        return sb.toString();
+        List<Diagnosis> ds = run.result() == null ? List.of() : run.result().diagnoses();
+        return ds.isEmpty() ? MavenDetectiveBundle.message("doctor.history.unknown") : DiagnosisCard.headline(ds.get(0));
     }
 
-    private static String tail(String log, int lines) {
-        if (log == null || log.isBlank()) {
-            return "(keine Ausgabe empfangen)";
-        }
-        String[] all = log.replaceAll("\u001B\\[[0-9;]*[A-Za-z]", "").split("\\R");
-        StringBuilder sb = new StringBuilder();
-        int count = 0;
-        for (int i = all.length - 1; i >= 0 && count < lines; i--) {
-            if (!all[i].isBlank()) {
-                sb.insert(0, all[i] + "\n");
-                count++;
+    private static final class HistoryRenderer extends ColoredListCellRenderer<Run> {
+        @Override
+        protected void customizeCellRenderer(@NotNull JList<? extends Run> list, Run run, int index, boolean selected, boolean focus) {
+            setIcon(run.green() ? AllIcons.RunConfigurations.TestPassed
+                    : run.fromClipboard() ? AllIcons.Actions.MenuPaste : AllIcons.RunConfigurations.TestError);
+            append(OverviewPanel.time(run.at()), SimpleTextAttributes.GRAYED_ATTRIBUTES);
+            append("  " + historyLabel(run));
+            if (run.check() != null && run.green()) {
+                append("  " + MavenDetectiveBundle.message("doctor.history.fixed"), SimpleTextAttributes.GRAYED_ITALIC_ATTRIBUTES);
             }
+            String origin = run.fromClipboard() ? MavenDetectiveBundle.message("doctor.history.clipboard") : run.name();
+            setToolTipText(origin);
+            getAccessibleContext().setAccessibleName(historyText(run) + (origin == null ? "" : " · " + origin));
         }
-        return sb.toString();
-    }
-
-    private static String shortPath(String path) {
-        int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-        return slash >= 0 ? path.substring(slash + 1) : path;
     }
 }

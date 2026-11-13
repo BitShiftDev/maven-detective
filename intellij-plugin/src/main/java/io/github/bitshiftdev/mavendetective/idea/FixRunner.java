@@ -22,6 +22,7 @@ import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.fix.FixExecutor;
 import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
 import org.jetbrains.idea.maven.execution.MavenRunConfigurationType;
 import org.jetbrains.idea.maven.execution.MavenRunnerParameters;
@@ -60,18 +61,30 @@ final class FixRunner {
             switch (fix.getType()) {
                 case FixAction.OPEN_FILE -> openLocation(project, fix.param("file") + ":" + fix.param("line"));
                 case FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE, FixAction.SET_JVM_OPTION -> runFileFix(project, fix, result);
-                case FixAction.REBUILD -> rebuild(project, result, fix.param("args"));
-                case FixAction.SWITCH_JDK -> switchJdk(project, result, fix.param("required"));
+                case FixAction.REBUILD -> rebuild(project, result, fix.param("args"), fix.getLabel());
+                case FixAction.SWITCH_JDK -> switchJdk(project, result, fix);
                 case FixAction.INSERT_PLUGIN_VERSION -> insertPluginVersion(project, result, fix);
                 case FixAction.PIN_VERSION -> {
                     if (pinVersion(project, fix)) {
-                        rebuild(project, result, null);
+                        rebuild(project, result, null, fix.getLabel());
                     }
                 }
-                case FixAction.ADD_EXCLUSION -> addExclusions(project, List.of(fix));
-                case FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE ->
-                        editPoms(project, List.of(fix), "Dependency ändern (Maven Detective)");
-                case FixAction.SET_VERSION -> editPoms(project, List.of(fix), "Version ändern (Maven Detective)");
+                // Fix-und-Prüf-Schleife: aus der Diagnose-Karte gestartete POM-Fixes bauen danach neu
+                case FixAction.ADD_EXCLUSION -> {
+                    if (addExclusions(project, List.of(fix)) > 0) {
+                        rebuild(project, result, null, fix.getLabel());
+                    }
+                }
+                case FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE -> {
+                    if (editPoms(project, List.of(fix), "Dependency ändern (Maven Detective)") > 0) {
+                        rebuild(project, result, null, fix.getLabel());
+                    }
+                }
+                case FixAction.SET_VERSION -> {
+                    if (editPoms(project, List.of(fix), "Version ändern (Maven Detective)") > 0) {
+                        rebuild(project, result, null, fix.getLabel());
+                    }
+                }
                 default -> notify(project, fix.getLabel(), NotificationType.INFORMATION);
             }
         } catch (RuntimeException e) {
@@ -110,7 +123,7 @@ final class FixRunner {
                 LocalFileSystem.getInstance().refreshNioFiles(dirs, true, true, () ->
                         ApplicationManager.getApplication().invokeLater(() -> {
                             FixRunner.notify(project, String.join("\n", o.actions), NotificationType.INFORMATION);
-                            rebuild(project, result, o.rebuildArgs);
+                            rebuild(project, result, o.rebuildArgs, fix.getLabel());
                         }, project.getDisposed()));
             }
 
@@ -165,15 +178,20 @@ final class FixRunner {
      * temporäre Kopie der Run-Konfiguration mit den Argumenten zusätzlich – die gespeicherte
      * Konfiguration des Nutzers bleibt unverändert. Ohne Lauf (Log aus der Zwischenablage) wird der
      * Befehl in die Zwischenablage gelegt.
+     *
+     * <p>Startet ein Lauf, meldet {@code fixLabel} ihn als Prüfung des Fixes an: Die Karte zeigt
+     * „Neu bauen läuft …“ und danach „Behoben“ oder die neue Diagnose.
      */
-    private static void rebuild(Project project, BuildDoctorService.Result result, String args) {
+    private static void rebuild(Project project, BuildDoctorService.Result result, String args, String fixLabel) {
         boolean hasArgs = args != null && !args.isBlank();
         if (!hasArgs && result.environment() != null) {
+            BuildDoctorService.getInstance(project).expectCheck(fixLabel, result);
             ExecutionUtil.restart(result.environment());
             return;
         }
         MavenRunConfiguration cfg = result.configuration();
         if (hasArgs && cfg != null) {
+            BuildDoctorService.getInstance(project).expectCheck(fixLabel, result);
             MavenRunnerParameters params = cfg.getRunnerParameters().clone();
             String old = params.getCmdOptions();
             params.setCmdOptions(old == null || old.isBlank() ? args.trim() : old.trim() + " " + args.trim());
@@ -191,7 +209,8 @@ final class FixRunner {
      * Öffnet die Stelle, an der das JDK des Maven-Laufs eingestellt wird: die Run-Konfiguration, wenn
      * sie eigene Runner-Einstellungen hat, sonst Einstellungen › Maven › Runner.
      */
-    private static void switchJdk(Project project, BuildDoctorService.Result result, String required) {
+    private static void switchJdk(Project project, BuildDoctorService.Result result, FixAction fix) {
+        String required = fix.param("required");
         String hint = required == null || required.isBlank() ? "Passendes JDK wählen." : "JDK " + required + " oder neuer wählen.";
         MavenRunConfiguration cfg = result.configuration();
         if (cfg != null && cfg.getRunnerSettings() != null && result.environment() != null
@@ -199,7 +218,7 @@ final class FixRunner {
             notify(project, "Diese Run-Konfiguration hat eigene Runner-Einstellungen. " + hint + " (Reiter Runner › JRE)",
                     NotificationType.INFORMATION);
             if (RunDialog.editConfiguration(project, result.environment().getRunnerAndConfigurationSettings(), "JDK des Maven-Laufs")) {
-                ExecutionUtil.restart(result.environment());
+                rebuild(project, result, null, fix.getLabel());
             }
             return;
         }
@@ -260,7 +279,7 @@ final class FixRunner {
         FileDocumentManager.getInstance().saveDocument(doc);
         openLocation(project, file + ":" + (lineNo + 2));
         notify(project, "Version " + version + " für " + plugin + " eingetragen.", NotificationType.INFORMATION);
-        rebuild(project, result, null);
+        rebuild(project, result, null, fix.getLabel());
     }
 
     /**
@@ -401,22 +420,37 @@ final class FixRunner {
     }
 
     /**
-     * „Falsch erkannt“: legt den Log als Testfall ab. Mit dem richtigen Regelnamen umbenannt und
-     * nach core/src/test/resources/logs kopiert, wird er zum dauerhaften Regressionstest.
+     * „Falsch erkannt“: legt den Log als Testfall ab. Ist die richtige Regel bekannt, steht sie vorn im
+     * Dateinamen ({@code <regel-id>__…}) – nach core/src/test/resources/logs kopiert, wird die Datei so
+     * ohne Umbenennen zum Regressionstest. Eine Notiz landet daneben als {@code .txt}.
+     *
+     * @param correctRule richtige Regel ({@code null}: unbekannt)
+     * @param note        Beschreibung der echten Ursache ({@code null}/leer: keine)
      */
-    static void reportMisdiagnosis(Project project, BuildDoctorService.Result result) {
+    static void reportMisdiagnosis(Project project, BuildDoctorService.Result result, @Nullable String correctRule,
+                                   @Nullable String note) {
         try {
             Path dir = Paths.get(System.getProperty("user.home"), ".maven-detective", "testfaelle");
             Files.createDirectories(dir);
-            String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-            String detected = result.diagnoses().isEmpty() ? "none" : result.diagnoses().get(0).getRuleId();
-            Path file = dir.resolve("RICHTIGE-REGEL__erkannt-als-" + detected + "-" + stamp + ".log");
+            Path file = dir.resolve(testCaseName(result, correctRule, LocalDateTime.now()));
             Files.write(file, result.rawLog().getBytes(StandardCharsets.UTF_8));
+            if (note != null && !note.isBlank()) {
+                String base = file.getFileName().toString();
+                Files.write(dir.resolve(base.substring(0, base.length() - 4) + ".txt"), note.trim().concat("\n").getBytes(StandardCharsets.UTF_8));
+            }
             notify(project, "Testfall gespeichert: " + file + "\nBitte prüfen (keine Geheimnisse im Log?) und per Pull Request einreichen.",
                     NotificationType.INFORMATION);
         } catch (IOException e) {
             notify(project, "Testfall konnte nicht gespeichert werden: " + e.getMessage(), NotificationType.ERROR);
         }
+    }
+
+    /** {@code <regel-id oder RICHTIGE-REGEL>__erkannt-als-<regel>-<zeit>.log} */
+    static String testCaseName(BuildDoctorService.Result result, @Nullable String correctRule, LocalDateTime now) {
+        String stamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+        String detected = result.diagnoses().isEmpty() ? "none" : result.diagnoses().get(0).getRuleId();
+        String rule = correctRule == null || correctRule.isBlank() ? "RICHTIGE-REGEL" : correctRule.replaceAll("[^A-Za-z0-9._-]", "_");
+        return rule + "__erkannt-als-" + detected + "-" + stamp + ".log";
     }
 
     private static void notify(Project project, String text, NotificationType type) {

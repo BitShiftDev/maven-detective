@@ -30,12 +30,15 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Consumer;
 
 /**
- * Hält die letzte Diagnose eines Projekts und benachrichtigt das Tool-Window.
+ * Hält die letzte Diagnose eines Projekts, den Verlauf der letzten Läufe und die Prüfung nach einem
+ * Quick-Fix und benachrichtigt das Tool-Window.
  * Die Analyse läuft im Hintergrund, die Anzeige auf dem EDT.
  */
 @Service(Service.Level.PROJECT)
@@ -62,18 +65,47 @@ public final class BuildDoctorService {
         void resultChanged(Result result);
 
         /** Ein Maven-Lauf aus der IDE ist zu Ende (grün oder rot); siehe {@link #getLastRun()}. */
-        default void runFinished(@NotNull LastRun run) {
+        default void runFinished(@NotNull Run run) {
+        }
+
+        /** Neuer Eintrag im Verlauf (Lauf aus der IDE oder Log aus der Zwischenablage), steht vorn. */
+        default void historyChanged(@NotNull Run added) {
+        }
+
+        /** Ein Maven-Lauf aus der IDE hat begonnen oder ist samt Analyse fertig; siehe {@link #isRunning()}. */
+        default void runningChanged() {
         }
     }
 
     /**
-     * Letzter Maven-Lauf aus der IDE in dieser Sitzung (Logs aus der Zwischenablage zählen nicht).
+     * Ein Eintrag im Verlauf: Maven-Lauf aus der IDE (grün oder rot) oder ein Log aus der Zwischenablage.
      *
-     * @param at     Ende des Laufs, Millisekunden seit 1970
-     * @param result Diagnose bei rotem Lauf
+     * @param at     Ende des Laufs bzw. Zeitpunkt der Analyse, Millisekunden seit 1970
+     * @param result Diagnose bei rotem Lauf oder Log aus der Zwischenablage
+     * @param name   Name der Run-Konfiguration ({@code null}: Zwischenablage)
+     * @param check  Lauf nach einem Quick-Fix: welcher Fix, welche Ursache vorher
      */
-    public record LastRun(boolean green, long at, @Nullable Result result) {
+    public record Run(boolean green, long at, @Nullable Result result, @Nullable String name, @Nullable FixCheck check) {
+
+        public boolean fromClipboard() {
+            return result != null && result.environment() == null;
+        }
+
+        /** Regel der ersten Diagnose ({@code null}: grün oder keine erkannt). */
+        public @Nullable String ruleId() {
+            return result == null || result.diagnoses().isEmpty() ? null : result.diagnoses().get(0).getRuleId();
+        }
     }
+
+    /**
+     * Fix-und-Prüf-Schleife: Nach einem Quick-Fix startet derselbe Lauf neu; der nächste Lauf trägt,
+     * welcher Fix davor lief und welche Regel ihn ausgelöst hatte.
+     */
+    public record FixCheck(@NotNull String fix, @Nullable String previousRule) {
+    }
+
+    /** So viele Einträge hält der Verlauf (nur im Speicher). */
+    static final int HISTORY_SIZE = 20;
 
     private static final BadgeIconSupplier BADGE = new BadgeIconSupplier(DetectiveIcons.TOOL_WINDOW);
 
@@ -84,7 +116,13 @@ public final class BuildDoctorService {
     private final SnapshotStore store = SnapshotStore.defaultStore();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private volatile Result last;
-    private volatile LastRun lastRun;
+    private volatile Run lastRun;
+    /** Neueste zuerst; nur EDT. */
+    private final Deque<Run> history = new ArrayDeque<>();
+    /** Laufende Maven-Läufe samt anschließender Analyse; nur EDT. */
+    private int running;
+    /** Fix, nach dem der nächste Lauf startet; nur EDT. */
+    private @Nullable FixCheck pendingCheck;
 
     public BuildDoctorService(Project project) {
         this.project = project;
@@ -98,8 +136,54 @@ public final class BuildDoctorService {
         return last;
     }
 
-    public @Nullable LastRun getLastRun() {
+    public @Nullable Run getLastRun() {
         return lastRun;
+    }
+
+    /** Verlauf, neueste zuerst (EDT). */
+    public @NotNull List<Run> getHistory() {
+        return new ArrayList<>(history);
+    }
+
+    /** Läuft gerade ein Maven-Lauf aus der IDE oder seine Analyse? (EDT) */
+    public boolean isRunning() {
+        return running > 0;
+    }
+
+    /** Fix, nach dem gerade neu gebaut wird ({@code null}: keiner). (EDT) */
+    public @Nullable FixCheck getPendingCheck() {
+        return pendingCheck;
+    }
+
+    /** {@link MavenRunListener}: ein Maven-Lauf beginnt. */
+    void runStarted() {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            running++;
+            listeners.forEach(Listener::runningChanged);
+        }, project.getDisposed());
+    }
+
+    /** {@link MavenRunListener}: vom Nutzer gestoppt – zählt nicht als Prüfung eines Fixes. */
+    void runAborted() {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            pendingCheck = null;
+            runEnded();
+        }, project.getDisposed());
+    }
+
+    private void runEnded() {
+        running = Math.max(0, running - 1);
+        listeners.forEach(Listener::runningChanged);
+    }
+
+    /**
+     * {@link FixRunner}: Nach dem Fix startet der Lauf neu; dessen Ergebnis wird als Prüfung des Fixes
+     * gezeigt („Behoben“ oder die neue Diagnose). EDT.
+     */
+    void expectCheck(@NotNull String fix, @Nullable Result before) {
+        String rule = before == null || before.diagnoses().isEmpty() ? null : before.diagnoses().get(0).getRuleId();
+        pendingCheck = new FixCheck(fix, rule);
+        listeners.forEach(Listener::runningChanged);
     }
 
     /** Meldet sich ab, sobald {@code parent} entsorgt wird – kein Panel bleibt am Service hängen. */
@@ -128,10 +212,15 @@ public final class BuildDoctorService {
             } catch (RuntimeException e) {
                 // Ohne diese Meldung täte der Knopf „Log aus Zwischenablage analysieren“ scheinbar nichts
                 LOG.warn("Maven Detective: Analyse fehlgeschlagen", e);
-                ApplicationManager.getApplication().invokeLater(() -> NotificationGroupManager.getInstance()
-                        .getNotificationGroup(TOOL_WINDOW_ID)
-                        .createNotification("Maven Detective: Analyse fehlgeschlagen", String.valueOf(e.getMessage()), NotificationType.ERROR)
-                        .notify(project), project.getDisposed());
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (env != null) {
+                        pendingCheck = null;
+                        runEnded();
+                    }
+                    NotificationGroupManager.getInstance().getNotificationGroup(TOOL_WINDOW_ID)
+                            .createNotification("Maven Detective: Analyse fehlgeschlagen", String.valueOf(e.getMessage()), NotificationType.ERROR)
+                            .notify(project);
+                }, project.getDisposed());
                 return;
             }
             ApplicationManager.getApplication().invokeLater(() -> publish(result, notify), project.getDisposed());
@@ -141,7 +230,8 @@ public final class BuildDoctorService {
     /** Ein Lauf aus der IDE war grün: Schnappschuss wird die neue Referenz für „Was hat sich geändert?“. */
     public void recordGreen(@Nullable ExecutionEnvironment env) {
         long at = System.currentTimeMillis();
-        ApplicationManager.getApplication().invokeLater(() -> finished(new LastRun(true, at, null)), project.getDisposed());
+        String name = env == null ? null : env.getRunProfile().getName();
+        ApplicationManager.getApplication().invokeLater(() -> finished(new Run(true, at, null, name, takeCheck())), project.getDisposed());
         Path dir = projectDir();
         if (dir == null) {
             return;
@@ -168,16 +258,6 @@ public final class BuildDoctorService {
             LOG.warn("Maven Detective: grüner Schnappschuss nicht lesbar", e);
             return null;
         }
-    }
-
-    /** IDE gegen Kommandozeile, im Hintergrund ermittelt; {@code callback} läuft auf dem EDT. */
-    public void compareSetupsAsync(@Nullable MavenRunConfiguration cfg, Consumer<SetupComparison> callback) {
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            SetupComparison c = compareSetups(cfg);
-            if (c != null) {
-                ApplicationManager.getApplication().invokeLater(() -> callback.accept(c), project.getDisposed());
-            }
-        });
     }
 
     private @Nullable SnapshotDiff changesSinceGreen(@Nullable MavenRunConfiguration cfg) {
@@ -213,7 +293,9 @@ public final class BuildDoctorService {
             l.resultChanged(result);
         }
         if (result.environment() != null) {
-            finished(new LastRun(false, System.currentTimeMillis(), result));
+            finished(new Run(false, System.currentTimeMillis(), result, result.environment().getRunProfile().getName(), takeCheck()));
+        } else if (!result.diagnoses().isEmpty()) {
+            remember(new Run(false, System.currentTimeMillis(), result, null, null));
         }
         // Sprechblase nur, wenn das Tool-Window nicht ohnehin zu sehen ist – sonst genügt das Badge
         ToolWindow window = Navigator.window(project);
@@ -223,21 +305,43 @@ public final class BuildDoctorService {
                     .createNotification(MavenDetectiveBundle.message("notification.build.failed", d.getCategory()), d.getCause(),
                             NotificationType.WARNING)
                     .addAction(NotificationAction.createSimple(MavenDetectiveBundle.message("notification.show.diagnosis"),
-                            () -> Navigator.buildDoctor(project, null)))
+                            () -> Navigator.buildDoctor(project, BuildDoctorPanel::showLatest)))
                     .notify(project);
         }
     }
 
-    /** Letzten Lauf merken, Badge an der Tool-Window-Leiste setzen (rot) oder entfernen (grün), melden (EDT). */
-    private void finished(LastRun run) {
+    /**
+     * Lauf aus der IDE ist samt Analyse fertig: merken, Badge an der Tool-Window-Leiste setzen (rot)
+     * oder entfernen (grün), melden (EDT).
+     */
+    private void finished(Run run) {
         lastRun = run;
         ToolWindow window = Navigator.window(project);
         if (window != null) {
             window.setIcon(run.green() ? DetectiveIcons.TOOL_WINDOW : BADGE.getErrorIcon(true));
         }
+        remember(run);
         for (Listener l : listeners) {
             l.runFinished(run);
         }
+        runEnded();
+    }
+
+    private void remember(Run run) {
+        history.addFirst(run);
+        while (history.size() > HISTORY_SIZE) {
+            history.removeLast();
+        }
+        for (Listener l : listeners) {
+            l.historyChanged(run);
+        }
+    }
+
+    /** Wartende Prüfung eines Fixes dem gerade beendeten Lauf zuordnen (EDT). */
+    private @Nullable FixCheck takeCheck() {
+        FixCheck c = pendingCheck;
+        pendingCheck = null;
+        return c;
     }
 
     public @Nullable Path projectDir() {

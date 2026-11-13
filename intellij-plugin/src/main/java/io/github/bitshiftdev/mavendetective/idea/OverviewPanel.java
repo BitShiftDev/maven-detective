@@ -187,7 +187,7 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
     }
 
     @Override
-    public void runFinished(@NotNull BuildDoctorService.LastRun run) {
+    public void runFinished(@NotNull BuildDoctorService.Run run) {
         showBuild();
         showChanges();
         if (run.green()) {
@@ -218,7 +218,7 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
     // ---- Kacheln ------------------------------------------------------------------------------
 
     private void showBuild() {
-        BuildDoctorService.LastRun run = service.getLastRun();
+        BuildDoctorService.Run run = service.getLastRun();
         if (run == null) {
             build.update(AllIcons.RunConfigurations.TestNotRan, MavenDetectiveBundle.message("tile.build.none"),
                     MavenDetectiveBundle.message("tile.build.none.detail"), null, null);
@@ -231,12 +231,12 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
                     : MavenDetectiveBundle.message("tile.build.red.detail", ds.get(0).getNumber(), ds.get(0).getCategory(),
                     ds.get(0).getConfidence().label());
             build.update(AllIcons.General.Error, MavenDetectiveBundle.message("tile.build.red", time(run.at())), detail,
-                    MavenDetectiveBundle.message("tile.build.show"), () -> Navigator.buildDoctor(project, null));
+                    MavenDetectiveBundle.message("tile.build.show"), () -> Navigator.buildDoctor(project, BuildDoctorPanel::showLatest));
         }
     }
 
     private void showChanges() {
-        BuildDoctorService.LastRun run = service.getLastRun();
+        BuildDoctorService.Run run = service.getLastRun();
         SnapshotDiff diff = run == null || run.green() || run.result() == null ? null : run.result().changes();
         if (diff != null && diff.isEmpty()) {
             changes.update(AllIcons.General.InspectionsOK, MavenDetectiveBundle.message("tile.changes.nothing"),
@@ -351,7 +351,8 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         }
     }
 
-    private static @Nls String time(long millis) {
+    /** Uhrzeit, bei älteren Tagen mit Datum davor. */
+    static @Nls String time(long millis) {
         LocalDateTime t = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault());
         return (t.toLocalDate().equals(LocalDate.now()) ? TIME : DATE_TIME).format(t);
     }

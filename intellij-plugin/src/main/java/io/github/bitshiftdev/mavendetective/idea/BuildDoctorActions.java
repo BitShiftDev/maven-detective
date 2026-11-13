@@ -67,22 +67,31 @@ public final class BuildDoctorActions {
         }
     }
 
-    /** Letzten Log als Testfall ablegen, wenn die Diagnose daneben lag. */
+    /**
+     * Log als Testfall ablegen, wenn die Diagnose daneben lag – mit kurzem Dialog (richtige Kategorie,
+     * Notiz). Im Tool-Window gilt der gezeigte Lauf, sonst der letzte.
+     */
     public static final class ReportMisdiagnosis extends ProjectAction {
         @Override
         public void update(@NotNull AnActionEvent e) {
-            Project project = e.getProject();
-            BuildDoctorService.Result last = project == null ? null : BuildDoctorService.getInstance(project).getLast();
-            e.getPresentation().setEnabled(last != null && (!last.diagnoses().isEmpty() || last.environment() != null));
+            BuildDoctorService.Result r = target(e);
+            e.getPresentation().setEnabled(r != null && (!r.diagnoses().isEmpty() || r.environment() != null));
         }
 
         @Override
         public void actionPerformed(@NotNull AnActionEvent e) {
-            Project project = e.getProject();
-            BuildDoctorService.Result last = project == null ? null : BuildDoctorService.getInstance(project).getLast();
-            if (last != null) {
-                FixRunner.reportMisdiagnosis(project, last);
+            BuildDoctorService.Result r = target(e);
+            if (r != null && e.getProject() != null) {
+                new MisdiagnosisDialog(e.getProject(), r).show();
             }
+        }
+
+        private static BuildDoctorService.Result target(AnActionEvent e) {
+            if (e.getData(DetectivePanel.KEY) instanceof BuildDoctorPanel panel) {
+                return panel.shownResult();
+            }
+            Project project = e.getProject();
+            return project == null ? null : BuildDoctorService.getInstance(project).getLast();
         }
     }
 }

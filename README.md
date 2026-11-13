@@ -21,8 +21,8 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
 | „Was hat sich geändert?“ (Schnappschuss-Diff) | fertig in Kern, Extension, CLI (`changes`) und IDE |
-| IDE gegen Kommandozeile | fertig: Vergleich im Tool-Window, Hinweis auf der Karte |
-| IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Tool-Window mit drei Tabs (Übersicht mit Kacheln, Build Doctor, Dependencies mit Navigation), Badge an der Leiste bei rotem Build, Ergebnisse veralten sichtbar nach jedem Maven-Import; Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option. **In `runIde` noch nicht durchgeklickt** |
+| IDE gegen Kommandozeile | fertig: Vergleich als Tabelle im Tool-Window, Hinweis auf der Karte |
+| IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Tool-Window mit drei Tabs (Übersicht mit Kacheln, Build Doctor, Dependencies mit Navigation), Badge an der Leiste bei rotem Build, Ergebnisse veralten sichtbar nach jedem Maven-Import; Diagnose-Karte aus Komponenten mit Verlauf der letzten 20 Läufe, Link „Ursache anzeigen“ hinter `BUILD FAILURE` in der Konsole und Fix-und-Prüf-Schleife (nach dem Fix neu bauen, „Behoben ✓“ oder neue Diagnose); Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option. **In `runIde` noch nicht durchgeklickt** |
 | Gate 1 (30 eigene Logs) | **offen** – braucht deine Logs, siehe unten |
 | A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Tab „Dependencies“ → „Warum diese Version?“, Rechtsklick in der `pom.xml`). **In `runIde` noch nicht durchgeklickt** |
 | A2 Konflikt-Matrix | fertig in Kern, CLI (`matrix`, `--pin`) und IDE (Tab „Dependencies“ → „Konflikte“ mit Quick-Fix „im Parent festlegen“). **In `runIde` noch nicht durchgeklickt** |
@@ -130,7 +130,7 @@ Hinweise:
 
 ## IDE gegen Kommandozeile
 
-„Im Terminal geht es, in der IDE nicht“: Der Knopf **IDE gegen Kommandozeile** im Tool-Window stellt gegenüber, womit IntelliJ baut (Maven-Installation, Runner-JDK, settings.xml, explizite Profile, VM-Optionen) und was `./mvnw` bzw. `mvn` im Terminal nehmen würde (`.mvn/wrapper`, `JAVA_HOME`/`PATH`, `.mvn/maven.config`, `.mvn/jvm.config`, `MAVEN_OPTS`). Jede Abweichung bekommt einen Satz, warum sie zählt. Gibt es Abweichungen, nennt die Diagnose-Karte sie direkt.
+„Im Terminal geht es, in der IDE nicht“: Die Aktion **IDE gegen Kommandozeile** im Tab „Build Doctor“ stellt als Tabelle gegenüber, womit IntelliJ baut (Maven-Installation, Runner-JDK, settings.xml, explizite Profile, VM-Optionen) und was `./mvnw` bzw. `mvn` im Terminal nehmen würde (`.mvn/wrapper`, `JAVA_HOME`/`PATH`, `.mvn/maven.config`, `.mvn/jvm.config`, `MAVEN_OPTS`). Jede Abweichung ist mit Warn-Icon und „≠“ markiert und bekommt einen Satz, warum sie zählt. Gibt es Abweichungen, nennt die Diagnose-Karte sie im Abschnitt „IDE und Terminal unterscheiden sich“.
 
 Die Terminal-Seite wird aus den Umgebungsvariablen der IDE abgeleitet. Eine Shell mit anderem `JAVA_HOME` kann abweichen; das steht auch so im Fenster.
 
@@ -311,12 +311,16 @@ core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, 
 maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
 intellij-plugin/   Tool-Window „Maven Detective“ mit drei Tabs: Übersicht (Kacheln, „Alles prüfen“), Build Doctor,
                    Dependencies (Navigation: Warum diese Version?, Konflikte, Doppelte Klassen, Nutzung,
-                   Upgrade-Simulator; AnalysisResults hält den Stand, Navigator springt), Listener auf Maven-Läufe, Quick-Fixes, Editor-Aktionen „Warum diese Version?“ und
+                   Upgrade-Simulator; AnalysisResults hält den Stand, Navigator springt), Listener auf Maven-Läufe,
+                   Diagnose-Karte (DiagnosisCard) mit Verlauf, Fix-und-Prüf-Schleife und SetupComparisonView,
+                   Konsolen-Link hinter BUILD FAILURE (BuildFailureConsoleFilter), „Falsch erkannt?“-Dialog,
+                   Quick-Fixes, Editor-Aktionen „Warum diese Version?“ und
                    „Upgrade simulieren…“, Inspections „Veraltete Exclusion“
                    und „Import aus nicht deklarierter Dependency“ (IdeUsages löst Referenzen über den Code-Index auf);
                    IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht);
                    ui/: DetectivePanel (Basis aller Seiten: Toolbar aus Aktionen, Ladeanzeige, Statuszeile,
-                   Hintergrund mit Abbruch, F4/Strg+C/Kontextmenü auf Zeilen), DetectiveActions, HtmlView, FixBar;
+                   Hintergrund mit Abbruch, F4/Strg+C/Kontextmenü auf Zeilen), DetectiveActions, HtmlView, FixBar,
+                   Tile, Badge, Section (aufklappbar), TrackingPanel;
                    Texte in messages/MavenDetectiveBundle.properties
 fixtures/          Je Fehlerkategorie ein Projekt, das den Fehler absichtlich auslöst (fixtures.txt),
                    dazu 09-changed-since-green für den Schnappschuss-Diff
@@ -327,7 +331,7 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 ## Nächste Schritte
 
 - **Gate 1:** die eigenen 30 Logs mit `evaluate` messen; daraus fehlende Regeln ableiten. Laut Roadmap hätte Gate 1 vor Phase 2 liegen sollen – die Messung steht noch aus.
-- Plugin in `runIde` durchklicken: grüner Lauf → POM ändern → roter Lauf, Quick-Fixes `-U`, Runner-JDK, Plugin-Version.
+- Plugin in `runIde` durchklicken: grüner Lauf → POM ändern → roter Lauf, Quick-Fixes `-U`, Runner-JDK, Plugin-Version. Dabei U3 abnehmen: Karte #4 Kaputtes JAR in Light/Dark, Link „Ursache anzeigen“ in der Konsole von Maven-Läufen (Build-Fenster nutzt `ConsoleViewImpl` – prüfen, ob der Filter dort greift), nach dem Fix „Neu bauen läuft …“ und danach „Behoben ✓“.
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
 - Preflight-Check und Log-Navigator aus dem Konzept.
 - Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.
