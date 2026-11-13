@@ -17,8 +17,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Rechtsklick in einer {@code pom.xml} auf eine {@code <dependency>}: „Warum diese Version?“ öffnet
- * die Seite „Warum diese Version?“ (Tab „Dependencies“) mit der Entscheidungskette.
+ * „Warum diese Version?“: in einer {@code pom.xml} auf einer {@code <dependency>} (Rechtsklick, Alt+Enter
+ * über {@link WhyThisVersionIntention}) als Popup am Cursor; im Maven-Tool-Window und unter <i>External
+ * Libraries</i> auf einer Dependency als Seite „Warum diese Version?“ im Tool-Window (dort gibt es keinen Cursor).
  */
 public final class WhyThisVersionAction extends AnAction implements DumbAware {
 
@@ -33,8 +34,10 @@ public final class WhyThisVersionAction extends AnAction implements DumbAware {
 
     @Override
     public void update(@NotNull AnActionEvent e) {
-        e.getPresentation().setEnabledAndVisible(e.getProject() != null && e.getData(CommonDataKeys.EDITOR) != null
-                && isProjectPom(e.getData(CommonDataKeys.VIRTUAL_FILE)));
+        Project project = e.getProject();
+        boolean inPom = e.getData(CommonDataKeys.EDITOR) != null && isProjectPom(e.getData(CommonDataKeys.VIRTUAL_FILE));
+        e.getPresentation().setEnabledAndVisible(project != null
+                && (inPom || IdeMaven.selectedDependency(project, e.getDataContext()) != null));
     }
 
     /**
@@ -50,26 +53,40 @@ public final class WhyThisVersionAction extends AnAction implements DumbAware {
         Project project = e.getProject();
         Editor editor = e.getData(CommonDataKeys.EDITOR);
         VirtualFile file = e.getData(CommonDataKeys.VIRTUAL_FILE);
-        if (project == null || editor == null || !isProjectPom(file)) {
+        if (project == null) {
             return;
         }
+        if (editor == null || !isProjectPom(file)) {
+            IdeMaven.SelectedDependency d = IdeMaven.selectedDependency(project, e.getDataContext());
+            if (d != null) {
+                Navigator.open(project, DependenciesPanel.class, panel -> panel.show(d.pom(), d.groupId(), d.artifactId()));
+            }
+            return;
+        }
+        showAtCaret(project, editor, file);
+    }
+
+    /** Popup für die {@code <dependency>} am Cursor; steht er auf keiner, ein kurzer Hinweis. EDT. */
+    static void showAtCaret(@NotNull Project project, @NotNull Editor editor, @NotNull VirtualFile file) {
         String[] ga = dependencyAt(editor.getDocument().getText(), editor.getCaretModel().getOffset());
         if (ga == null) {
-            HintManager.getInstance().showInformationHint(editor, "Cursor auf eine <dependency> setzen, dann „Warum diese Version?“");
+            HintManager.getInstance().showInformationHint(editor, MavenDetectiveBundle.message("hint.caret.dependency"));
             return;
         }
         Path pom = file.toNioPath();
+        resolveGroupId(project, pom, ga);
+        WhyThisVersionPopup.show(project, editor, pom, ga[0], ga[1]);
+    }
+
+    /** {@code ${project.groupId}} u. Ä. bei Geschwister-Modulen: groupId des Moduls nehmen. */
+    static void resolveGroupId(@NotNull Project project, @NotNull Path pom, String @NotNull [] ga) {
         if (ga[0].contains("${")) {
-            // ${project.groupId} u. Ä. bei Geschwister-Modulen: groupId des Moduls nehmen
             for (IdeMaven.ModuleRef m : IdeMaven.modules(project)) {
                 if (m.pom().equals(pom)) {
                     ga[0] = m.groupId();
                 }
             }
         }
-        String groupId = ga[0];
-        String artifactId = ga[1];
-        Navigator.open(project, DependenciesPanel.class, panel -> panel.show(pom, groupId, artifactId));
     }
 
     /**

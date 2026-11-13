@@ -58,6 +58,8 @@ public final class ConflictMatrixPanel extends DetectivePanel {
     private final JButton pin = FixBar.primary(new JButton(MavenDetectiveBundle.message("matrix.pin")));
     private final Background loader = background(MavenDetectiveBundle.message("loading.modules"));
     private ConflictMatrix matrix;
+    /** Zeile, die nach dem (nächsten) Laden gewählt werden soll – Sprung aus dem Editor. */
+    private @Nullable String pendingSelect;
 
     public ConflictMatrixPanel(@NotNull Project project) {
         super(project);
@@ -151,6 +153,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             matrix = m;
             applyFilter();
             results.set(AnalysisResults.Analysis.CONFLICTS, summary(m));
+            PomInsights.getInstance(project).setConflicts(m);
         });
     }
 
@@ -195,8 +198,26 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         return ConflictMatrix.build(locator, root, poms, trees);
     }
 
+    /** Sprung aus dem Editor (Code Vision): Zeile {@code g:a} wählen, notfalls nach dem Laden. */
+    void select(@NotNull String ga) {
+        pendingSelect = ga;
+        if (!search.getText().isEmpty()) {
+            search.setText("");
+        }
+        applyFilter();
+    }
+
     private void applyFilter() {
         ConflictMatrix.Row before = selectedRow();
+        if (pendingSelect != null && matrix != null) {
+            for (ConflictMatrix.Row r : matrix.getRows()) {
+                if (r.ga().equals(pendingSelect)) {
+                    before = r;
+                    onlyDivergent &= r.isDivergent();
+                }
+            }
+            pendingSelect = null;
+        }
         List<ConflictMatrix.Row> rows = new ArrayList<>();
         if (matrix == null) {
             model.set(List.of(), rows);

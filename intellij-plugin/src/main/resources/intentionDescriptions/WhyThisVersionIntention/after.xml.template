@@ -1,0 +1,4 @@
+<dependency>
+  <groupId>com.fasterxml.jackson.core</groupId>
+  <spot><artifactId>jackson-databind</artifactId></spot>
+</dependency>

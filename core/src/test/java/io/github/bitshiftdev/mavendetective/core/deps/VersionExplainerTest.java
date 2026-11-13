@@ -340,4 +340,36 @@ class VersionExplainerTest {
         assertEquals("runtime", roots.get(0).getChildren().get(1).getScope());
         assertEquals(1, roots.get(1).getChildren().size());
     }
+
+    @Test
+    void inlayZeigtVerwalteteVersionUndQuelle() {
+        List<PomHints.ManagedVersion> hints = PomHints.managedVersions(locator, app);
+        assertEquals(2, hints.size());   // lib-direct, lib-x, lib-y haben eine eigene Version
+        PomHints.ManagedVersion a = hints.get(0);
+        assertEquals("lib-a", a.getDependency().getArtifactId());
+        assertEquals("2.0 · platform-bom", a.label());   // ${lib.version} im Kontext des BOMs
+        assertTrue(a.getDescription().contains("org.example:platform-bom:1.0"), a.getDescription());
+        assertTrue(a.getDescription().contains("Import geerbt von parent"), a.getDescription());
+        assertTrue(a.getFile().endsWith("platform-bom-1.0.pom"), a.getFile());
+        PomHints.ManagedVersion b = hints.get(1);
+        assertEquals("1.5 · parent", b.label());
+        assertEquals(project.resolve("pom.xml").toString(), b.getFile());
+        assertTrue(b.getLine() > 0);
+    }
+
+    @Test
+    void verdraengteHoehereVersionGehoertZurDirektenDependency() {
+        DepNode root = new DepNode("com.acme", "app", "jar", null, "1.0", null);
+        DepNode web = root.add(new DepNode("org.lib", "web", "jar", null, "1.0", "compile"));
+        root.add(new DepNode("org.lib", "json", "jar", null, "2.0", "compile"));
+        web.add(new DepNode("org.lib", "json", "jar", null, "2.5", "compile"))
+                .setState(DepNode.State.CONFLICT).setRelatedVersion("2.0");
+        web.add(new DepNode("org.lib", "old", "jar", null, "0.9", "compile"))
+                .setState(DepNode.State.CONFLICT).setRelatedVersion("1.0");
+        List<UpgradeSimulator.Risk> risks = UpgradeSimulator.risks(root);
+        assertEquals(1, risks.size());   // 0.9 gegen 1.0 ist kein Risiko
+        assertEquals("org.lib:web", risks.get(0).getDirect());
+        assertEquals("2.5", risks.get(0).getWanted());
+        assertEquals("2.0", risks.get(0).getChosen());
+    }
 }

@@ -1,7 +1,9 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.execution.ExecutionException;
+import com.intellij.ide.projectView.impl.nodes.NamedLibraryElement;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
@@ -30,7 +32,9 @@ import org.jetbrains.idea.maven.project.MavenProject;
 import org.jetbrains.idea.maven.project.MavenProjectsManager;
 import org.jetbrains.idea.maven.project.MavenWrapper;
 import org.jetbrains.idea.maven.project.StaticResolvedMavenHomeType;
+import org.jetbrains.idea.maven.utils.MavenDataKeys;
 import org.jetbrains.idea.maven.utils.MavenUtil;
+import org.jetbrains.idea.maven.utils.actions.MavenActionUtil;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -378,6 +382,76 @@ final class IdeMaven {
         } catch (RuntimeException | LinkageError e) {
             LOG.warn("Maven Detective: Maven-Import nicht beobachtbar – Ergebnisse veralten still", e);
         }
+    }
+
+    /** Eine Dependency, die im Maven-Tool-Window oder unter <i>External Libraries</i> gewählt ist. */
+    record SelectedDependency(@NotNull Path pom, @NotNull String groupId, @NotNull String artifactId, @Nullable String version) {
+    }
+
+    /**
+     * Gewählte Dependency im Kontext einer Aktion: im Maven-Tool-Window ({@code MAVEN_DEPENDENCIES} +
+     * Modul des Knotens) oder unter <i>External Libraries</i> (Bibliothek „Maven: g:a:v“ eines Moduls;
+     * ohne Modul das erste, in dessen Baum sie liegt). {@code null}, wenn keine gewählt ist.
+     */
+    static @Nullable SelectedDependency selectedDependency(@NotNull Project project, @NotNull DataContext context) {
+        try {
+            Collection<MavenArtifact> artifacts = context.getData(MavenDataKeys.MAVEN_DEPENDENCIES);
+            if (artifacts != null && !artifacts.isEmpty()) {
+                MavenArtifact a = artifacts.iterator().next();
+                MavenProject p = MavenActionUtil.getMavenProject(context);
+                if (p != null) {
+                    return new SelectedDependency(Paths.get(p.getPath()), a.getGroupId(), a.getArtifactId(), a.getVersion());
+                }
+            }
+            NamedLibraryElement[] libraries = context.getData(NamedLibraryElement.ARRAY_DATA_KEY);
+            if (libraries != null && libraries.length == 1) {
+                String[] gav = libraryCoordinates(libraries[0].getName());
+                if (gav == null) {
+                    return null;
+                }
+                Module module = libraries[0].getModule();
+                Path pom = module == null ? null : read(() -> pom(module));
+                if (pom == null) {
+                    pom = moduleWith(project, gav[0], gav[1]);
+                }
+                return pom == null ? null : new SelectedDependency(pom, gav[0], gav[1], gav[2]);
+            }
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("Maven Detective: gewählte Dependency nicht ermittelbar", e);
+        }
+        return null;
+    }
+
+    /**
+     * {@code groupId}, {@code artifactId}, {@code version} aus dem Namen einer Maven-Bibliothek
+     * („Maven: g:a:v“, „Maven: g:a:type:classifier:v“); {@code null} bei anderen Bibliotheken.
+     */
+    static String @Nullable [] libraryCoordinates(@Nullable String name) {
+        String prefix = "Maven: ";
+        if (name == null || !name.startsWith(prefix)) {
+            return null;
+        }
+        String[] parts = name.substring(prefix.length()).trim().split(":");
+        if (parts.length < 3 || parts[0].isEmpty() || parts[1].isEmpty()) {
+            return null;
+        }
+        return new String[] {parts[0], parts[1], parts[parts.length - 1]};
+    }
+
+    /** POM des ersten Moduls, in dessen Baum {@code g:a} im Classpath liegt. */
+    private static @Nullable Path moduleWith(@NotNull Project project, @NotNull String groupId, @NotNull String artifactId) {
+        return read(() -> {
+            for (MavenProject p : MavenProjectsManager.getInstance(project).getProjects()) {
+                for (MavenArtifact a : p.getDependencies()) {
+                    if (groupId.equals(a.getGroupId()) && artifactId.equals(a.getArtifactId())) {
+                        return Paths.get(p.getPath());
+                    }
+                }
+            }
+            return null;
+        });
     }
 
     /** Maven-Projekte neu importieren, z. B. nach einer Änderung an der POM durch einen Quick-Fix. */

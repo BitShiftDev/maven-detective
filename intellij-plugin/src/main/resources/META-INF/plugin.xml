@@ -16,7 +16,12 @@
           the changes since then – JDK, Maven, profiles, parent, plugins, dependencies.</li>
       <li><b>IDE vs. command line:</b> compares Maven, JDK, settings.xml, profiles and .mvn/ configuration
           between IntelliJ and ./mvnw.</li>
-      <li><b>Why this version?</b> Right-click a dependency in pom.xml to see the decision chain:
+      <li><b>Answers in pom.xml:</b> the managed version and its source next to every dependency without a version
+          ("2.18.2 · jackson-bom"), "3 modules · 2 versions" above dependencies whose version differs across modules,
+          a gutter icon where a dependency brings duplicate classes or loses a higher requested version, and a banner on
+          the file the last build failed on.</li>
+      <li><b>Why this version?</b> Alt+Enter or right-click a dependency in pom.xml (also in the Maven tool window and under
+          External Libraries) to see the decision chain:
           direct declaration, dependencyManagement in the module or parent, imported BOM, the property that sets it,
           path in the tree (nearest wins) and overridden versions – every step jumps to the right POM line.</li>
       <li><b>Conflict matrix:</b> one table for the whole reactor – artifact by module, resolved version in each cell,
@@ -73,17 +78,51 @@
                          enabledByDefault="true"
                          level="WEAK WARNING"
                          implementationClass="io.github.bitshiftdev.mavendetective.idea.UndeclaredDependencyInspection"/>
+
+        <!-- U4: Antworten im Editor der pom.xml (Grundlage: PomInsights, gespeicherter Stand + letzter Import) -->
+        <codeInsight.declarativeInlayProvider language="XML"
+                                              implementationClass="io.github.bitshiftdev.mavendetective.idea.ManagedVersionInlayProvider"
+                                              isEnabledByDefault="true"
+                                              group="OTHER_GROUP"
+                                              providerId="maven.detective.managed.version"
+                                              bundle="messages.MavenDetectiveBundle"
+                                              nameKey="inlay.managed.name"
+                                              descriptionKey="inlay.managed.description"/>
+        <codeInsight.inlayActionHandler handlerId="maven.detective.open.location"
+                                        implementationClass="io.github.bitshiftdev.mavendetective.idea.ManagedVersionInlayProvider$OpenLocation"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="io.github.bitshiftdev.mavendetective.idea.ConflictCodeVisionProvider"/>
+        <config.codeVisionGroupSettingProvider implementation="io.github.bitshiftdev.mavendetective.idea.ConflictCodeVisionProvider$Settings"/>
+        <codeInsight.lineMarkerProvider language="XML"
+                                        implementationClass="io.github.bitshiftdev.mavendetective.idea.PomFindingsLineMarkerProvider"/>
+        <editorNotificationProvider implementation="io.github.bitshiftdev.mavendetective.idea.LastBuildNotificationProvider"/>
+        <intentionAction>
+            <language>XML</language>
+            <className>io.github.bitshiftdev.mavendetective.idea.WhyThisVersionIntention</className>
+            <bundleName>messages.MavenDetectiveBundle</bundleName>
+            <categoryKey>intention.category</categoryKey>
+        </intentionAction>
+        <intentionAction>
+            <language>XML</language>
+            <className>io.github.bitshiftdev.mavendetective.idea.SimulateUpgradeIntention</className>
+            <bundleName>messages.MavenDetectiveBundle</bundleName>
+            <categoryKey>intention.category</categoryKey>
+        </intentionAction>
     </extensions>
 
     <actions>
         <!-- Texte im Bundle messages/MavenDetectiveBundle.properties -->
+        <!-- Editor: Popup am Cursor bzw. Upgrade-Simulator; Maven-Tool-Window und External Libraries: Seite im Tool-Window -->
         <action id="MavenDetective.WhyThisVersion"
                 class="io.github.bitshiftdev.mavendetective.idea.WhyThisVersionAction">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="Maven.DependencyMenu" anchor="last"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
         <action id="MavenDetective.SimulateUpgrade"
                 class="io.github.bitshiftdev.mavendetective.idea.SimulateUpgradeAction">
             <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="MavenDetective.WhyThisVersion"/>
+            <add-to-group group-id="Maven.DependencyMenu" anchor="after" relative-to-action="MavenDetective.WhyThisVersion"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="after" relative-to-action="MavenDetective.WhyThisVersion"/>
         </action>
 
         <!-- Toolbar-Aktionen des Tool-Windows; wirken auf die Seite im Kontext (DetectivePanel.KEY) -->

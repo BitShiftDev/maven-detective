@@ -161,7 +161,27 @@ public final class DuplicateClassesPanel extends DetectivePanel {
             setStale(false);
             applyFilter();
             results.set(AnalysisResults.Analysis.DUPLICATES, summary(r));
+            PomInsights.getInstance(project).setDuplicates(r);
         });
+    }
+
+    /** Sprung aus dem Editor (Gutter-Icon): diesen Fund wählen; ist er ausgefiltert, die Filter lockern. */
+    void select(@NotNull DuplicateClasses.Clash clash) {
+        if (result == null || !result.clashes().contains(clash)) {
+            return;
+        }
+        withTests |= !clash.isMain();
+        withIdentical |= clash.isIdentical();
+        if (!search.getText().isEmpty()) {
+            search.setText("");
+        }
+        applyFilter();
+        int idx = model.rows.indexOf(clash);
+        if (idx >= 0) {
+            int view = table.convertRowIndexToView(idx);
+            table.getSelectionModel().setSelectionInterval(view, view);
+            table.scrollRectToVisible(table.getCellRect(view, 0, true));
+        }
     }
 
     @Override

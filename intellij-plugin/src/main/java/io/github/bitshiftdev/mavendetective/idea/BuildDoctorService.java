@@ -11,6 +11,7 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.ui.EditorNotifications;
 import com.intellij.ui.BadgeIconSupplier;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveIcons;
 import io.github.bitshiftdev.mavendetective.core.BuildDoctor;
@@ -123,6 +124,8 @@ public final class BuildDoctorService {
     private int running;
     /** Fix, nach dem der nächste Lauf startet; nur EDT. */
     private @Nullable FixCheck pendingCheck;
+    /** {@link Run#at()} des Laufs, dessen Editor-Banner der Nutzer weggeklickt hat (gelesen im Hintergrund). */
+    private volatile long bannerDismissed = -1;
 
     public BuildDoctorService(Project project) {
         this.project = project;
@@ -335,6 +338,18 @@ public final class BuildDoctorService {
         for (Listener l : listeners) {
             l.historyChanged(run);
         }
+        // Banner „Der letzte Build scheiterte an dieser Datei“ in offenen Editoren nachziehen
+        EditorNotifications.getInstance(project).updateAllNotifications();
+    }
+
+    /** Banner zum Lauf mit diesem Zeitpunkt ausgeblendet. */
+    long getBannerDismissed() {
+        return bannerDismissed;
+    }
+
+    void dismissBanner(long runAt) {
+        bannerDismissed = runAt;
+        EditorNotifications.getInstance(project).updateAllNotifications();
     }
 
     /** Wartende Prüfung eines Fixes dem gerade beendeten Lauf zuordnen (EDT). */

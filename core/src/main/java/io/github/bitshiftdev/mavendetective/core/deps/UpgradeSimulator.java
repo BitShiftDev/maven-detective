@@ -222,6 +222,11 @@ public final class UpgradeSimulator {
         /** Wer die höhere Version verlangt ({@code g:a:v}). */
         public String getRequester() { return loser.getParent() == null ? "?" : loser.getParent().gav(); }
         public String getPath() { return loser.pathText(); }
+        /** Direkte Dependency des Moduls, über die der Verlierer kommt ({@code g:a}). */
+        public String getDirect() {
+            List<DepNode> path = loser.path();
+            return path.isEmpty() ? ga() : path.get(0).ga();
+        }
 
         public String message() {
             return ga() + ": " + getRequester() + " verlangt " + getWanted() + ", im Classpath landet " + getChosen()
@@ -633,8 +638,11 @@ public final class UpgradeSimulator {
         return out;
     }
 
-    /** Verdrängte Knoten, die eine höhere Version wollten als die, die gewonnen hat. */
-    private static List<Risk> risks(DepNode root) {
+    /**
+     * Verdrängte Knoten, die eine höhere Version wollten als die, die gewonnen hat – im heutigen Baum
+     * eines Moduls die Kandidaten für {@code NoSuchMethodError} (Gutter-Icon in der IDE).
+     */
+    public static List<Risk> risks(DepNode root) {
         List<Risk> out = new ArrayList<Risk>();
         List<DepNode> level = new ArrayList<DepNode>(root.getChildren());
         for (int guard = 0; !level.isEmpty() && guard < 100; guard++) {
