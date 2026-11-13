@@ -32,6 +32,11 @@
           no source names, and compile dependencies only tests use – with one-click declare, remove or change scope.
           Known runtime-only libraries (JDBC drivers, logging backends, test engines) and JARs that register services are not
           reported as unused for sure.</li>
+      <li><b>Upgrade simulator:</b> "what happens if I raise X to version Y?" – before the POM changes. Finds the place that sets
+          the version today (property, BOM import, parent, direct declaration, dependencyManagement), applies the change in memory,
+          rebuilds every module's dependency tree from the POMs and shows what goes up, down, appears, disappears or changes scope,
+          plus new conflicts where a higher requested version loses. Missing POMs of the new version are fetched only on click;
+          one more click applies exactly the simulated change.</li>
       <li>Complements Maven Helper and the Dependency Analyzer: they show facts, Maven Detective shows cause and fix.</li>
     </ul>
     ]]></description>
@@ -71,6 +76,12 @@
                 text="Warum diese Version?"
                 description="Zeigt, woher die Version dieser Dependency kommt (Maven Detective)">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+        <action id="MavenDetective.SimulateUpgrade"
+                class="io.github.bitshiftdev.mavendetective.idea.SimulateUpgradeAction"
+                text="Upgrade simulieren…"
+                description="Zeigt, was sich im Dependency-Baum ändert, wenn diese Dependency oder dieser Parent gehoben wird (Maven Detective)">
+            <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="MavenDetective.WhyThisVersion"/>
         </action>
     </actions>
 

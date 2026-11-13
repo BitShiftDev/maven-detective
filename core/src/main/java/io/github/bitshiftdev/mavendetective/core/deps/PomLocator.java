@@ -26,6 +26,8 @@ public final class PomLocator {
     private final Map<Path, PomFile> cache = new HashMap<Path, PomFile>();
     private final Map<Path, EffectiveModel> models = new HashMap<Path, EffectiveModel>();
     private final Set<String> missing = new LinkedHashSet<String>();
+    /** POMs, deren Inhalt nur im Speicher geändert ist (Upgrade-Simulation); gehen vor die Platte. */
+    private final Map<Path, PomFile> overrides;
 
     /**
      * @param projectRoot     Wurzel des Reactors (darf {@code null} sein)
@@ -49,6 +51,35 @@ public final class PomLocator {
         this.reactor = new ProjectPoms(projectRoot, this.cancellation);
         this.localRepository = localRepository;
         this.shared = shared;
+        this.overrides = Collections.emptyMap();
+    }
+
+    private PomLocator(PomLocator base, Map<Path, PomFile> overrides) {
+        this.cancellation = base.cancellation;
+        this.reactor = base.reactor;
+        this.localRepository = base.localRepository;
+        this.shared = base.shared;
+        this.overrides = overrides;
+    }
+
+    /**
+     * Ein Locator, der dieselben POMs findet, für die angegebenen Dateien aber den übergebenen Text
+     * liest statt der Platte – „was wäre, wenn die POM so aussähe?“ (Modul A6). Der eigene Cache
+     * startet leer, damit kein effektives Modell der alten Fassung übrig bleibt.
+     *
+     * @throws IllegalArgumentException wenn ein Text kein gültiges XML ist
+     */
+    public PomLocator withOverrides(Map<Path, String> contents) {
+        Map<Path, PomFile> parsed = new HashMap<Path, PomFile>(overrides);
+        for (Map.Entry<Path, String> e : contents.entrySet()) {
+            Path key = e.getKey().toAbsolutePath().normalize();
+            try {
+                parsed.put(key, PomFile.parse(key, e.getValue()));
+            } catch (Exception ex) {
+                throw new IllegalArgumentException(key + " wäre nach der Änderung kein gültiges XML: " + ex.getMessage(), ex);
+            }
+        }
+        return new PomLocator(this, Collections.unmodifiableMap(parsed));
     }
 
     public Path getLocalRepository() { return localRepository; }
@@ -66,6 +97,10 @@ public final class PomLocator {
         }
         if (cache.containsKey(key)) {
             return cache.get(key);
+        }
+        if (overrides.containsKey(key)) {
+            cache.put(key, overrides.get(key));
+            return overrides.get(key);
         }
         // vor dem try/catch(Exception) unten, sonst würde ein Abbruch geschluckt
         cancellation.check();

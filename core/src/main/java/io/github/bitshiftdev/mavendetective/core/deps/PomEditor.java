@@ -338,13 +338,100 @@ public final class PomEditor {
     }
 
     /**
+     * Setzt eine Version an genau der Stelle, die sie heute festlegt (Modul A6):
+     * {@code section} = {@code parent} ändert {@code <parent><version>} (groupId/artifactId müssen
+     * passen), {@code dependencies} die Version der Dependency unter {@code project/dependencies},
+     * {@code dependencyManagement} die des verwalteten Eintrags (auch BOM-Import mit
+     * {@code type=pom}). Ersetzt wird der Text wörtlich – steht dort {@code ${prop}}, ist das
+     * {@link #setProperty} zu nehmen.
+     *
+     * @throws IllegalArgumentException wenn die Stelle fehlt oder keine {@code <version>} hat
+     */
+    public static Edit setVersion(String xml, String section, String groupId, String artifactId, String version) {
+        Scan s = Scan.of(xml);
+        if (s.projectEnd < 0) {
+            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+        }
+        Range v;
+        String what;
+        if ("parent".equals(section)) {
+            if (!groupId.equals(s.parentFields.get("groupId")) || !artifactId.equals(s.parentFields.get("artifactId"))) {
+                throw new IllegalArgumentException("Parent ist nicht " + groupId + ":" + artifactId);
+            }
+            v = s.parentRanges.get("version");
+            what = "Parent " + artifactId;
+        } else {
+            boolean managed = "dependencyManagement".equals(section);
+            DepEntry found = null;
+            for (DepEntry d : managed ? s.managed : s.deps) {
+                if (d.managed == managed && groupId.equals(d.fields.get("groupId")) && artifactId.equals(d.fields.get("artifactId"))
+                        && d.ranges.get("version") != null
+                        && (found == null || found.fields.get("classifier") != null && d.fields.get("classifier") == null)) {
+                    found = d;
+                }
+            }
+            if (found == null) {
+                throw new IllegalArgumentException(groupId + ":" + artifactId + " mit <version> unter " + section + " nicht gefunden");
+            }
+            v = found.ranges.get("version");
+            what = (managed ? "dependencyManagement-Eintrag " : "Dependency ") + artifactId;
+        }
+        if (v == null) {
+            throw new IllegalArgumentException(groupId + ":" + artifactId + " hat dort keine <version>");
+        }
+        String current = xml.substring(v.contentStart, v.contentEnd).trim();
+        return new Edit(v.contentStart, v.contentEnd - v.contentStart, version, lineOf(xml, v.contentStart),
+                what + ": Version von " + current + " auf " + version + " geändert");
+    }
+
+    /**
+     * Setzt die Property {@code name} unter {@code project/properties} auf {@code value}; fehlt sie,
+     * kommt sie dazu (bei Bedarf samt {@code <properties>}). So überschreibt ein Projekt z. B. eine
+     * Version, die ein Parent wie {@code spring-boot-starter-parent} über eine Property verwaltet.
+     */
+    public static Edit setProperty(String xml, String name, String value) {
+        Scan s = Scan.of(xml);
+        if (s.projectEnd < 0) {
+            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+        }
+        Range p = s.properties.get(name);
+        if (p != null) {
+            String current = xml.substring(p.contentStart, p.contentEnd).trim();
+            return new Edit(p.contentStart, p.contentEnd - p.contentStart, value, lineOf(xml, p.contentStart),
+                    "Property ${" + name + "} von " + current + " auf " + value + " gesetzt (wirkt auf alle Stellen, die sie nutzen)");
+        }
+        String nl = xml.contains("\r\n") ? "\r\n" : "\n";
+        String unit = s.indentUnit(xml);
+        String element = "<" + name + ">" + value + "</" + name + ">";
+        if (s.propertiesRange != null) {
+            int at = s.propertiesRange.contentEnd;
+            String closingIndent = lineIndent(xml, s.propertiesRange.tagStart);
+            return insertBefore(xml, at, closingIndent + unit + element + nl, closingIndent, nl,
+                    "Property ${" + name + "} = " + value + " eingetragen (überschreibt den Wert aus dem Parent)", "<" + name + ">");
+        }
+        int at = s.dmStart >= 0 ? s.dmStart : s.dependenciesStart >= 0 ? s.dependenciesStart : s.buildStart >= 0 ? s.buildStart : s.projectEnd;
+        String indent = at == s.projectEnd ? lineIndent(xml, at) + unit : lineIndent(xml, at);
+        String block = indent + "<properties>" + nl + indent + unit + element + nl + indent + "</properties>" + nl;
+        if (at != s.projectEnd) {
+            block += nl;
+        }
+        String followIndent = at == s.projectEnd ? lineIndent(xml, at) : indent;
+        return insertBefore(xml, at, block, followIndent, nl,
+                "<properties> mit ${" + name + "} = " + value + " angelegt (überschreibt den Wert aus dem Parent)", "<" + name + ">");
+    }
+
+    /**
      * Die Textänderung zu einem POM-Quick-Fix ({@code pin-version}, {@code remove-exclusion},
-     * {@code add-exclusion}, {@code add-dependency}, {@code remove-dependency}, {@code set-scope}).
+     * {@code add-exclusion}, {@code add-dependency}, {@code remove-dependency}, {@code set-scope},
+     * {@code set-version}).
      *
      * @throws IllegalArgumentException bei anderem Typ, fehlenden Parametern oder wenn die Stelle fehlt
      */
     public static Edit forFix(String xml, FixAction fix) {
         String type = fix.getType();
+        if (FixAction.SET_VERSION.equals(type) && fix.param("property") != null) {
+            return setProperty(xml, fix.param("property"), required(fix, "version"));
+        }
         String artifact = fix.param("artifact");
         int colon = artifact == null ? -1 : artifact.indexOf(':');
         if (colon < 0) {
@@ -370,13 +457,17 @@ public final class PomEditor {
         if (FixAction.SET_SCOPE.equals(type)) {
             return setScope(xml, g, a, required(fix, "scope"), fix.param("classifier"));
         }
+        if (FixAction.SET_VERSION.equals(type)) {
+            return setVersion(xml, required(fix, "section"), g, a, required(fix, "version"));
+        }
         throw new IllegalArgumentException("Kein POM-Quick-Fix: " + type);
     }
 
     /** Ändert dieser Quick-Fix-Typ eine POM über {@link #forFix}? */
     public static boolean isPomFix(String type) {
         return FixAction.PIN_VERSION.equals(type) || FixAction.REMOVE_EXCLUSION.equals(type) || FixAction.ADD_EXCLUSION.equals(type)
-                || FixAction.ADD_DEPENDENCY.equals(type) || FixAction.REMOVE_DEPENDENCY.equals(type) || FixAction.SET_SCOPE.equals(type);
+                || FixAction.ADD_DEPENDENCY.equals(type) || FixAction.REMOVE_DEPENDENCY.equals(type) || FixAction.SET_SCOPE.equals(type)
+                || FixAction.SET_VERSION.equals(type);
     }
 
     private static String required(FixAction fix, String key) {
@@ -558,6 +649,12 @@ public final class PomEditor {
         final List<DepEntry> managed = new ArrayList<DepEntry>();
         final List<DepEntry> deps = new ArrayList<DepEntry>();
         final Map<String, Range> properties = new HashMap<String, Range>();
+        /** Kinder von {@code project/parent}: Text bzw. Bereich. */
+        final Map<String, String> parentFields = new HashMap<String, String>();
+        final Map<String, Range> parentRanges = new HashMap<String, Range>();
+        /** {@code project/properties} komplett; {@code null}, wenn es fehlt. */
+        Range propertiesRange;
+        int dmStart = -1;
         int dmEnd = -1;
         int dmDependenciesEnd = -1;
         int dependenciesStart = -1;
@@ -642,6 +739,8 @@ public final class PomEditor {
                         s.dependenciesStart = lt;
                     } else if ("project/build".equals(path) && s.buildStart < 0) {
                         s.buildStart = lt;
+                    } else if ("project/dependencyManagement".equals(path) && s.dmStart < 0) {
+                        s.dmStart = lt;
                     } else if (DEPENDENCY.equals(path) || MANAGED_DEPENDENCY.equals(path)) {
                         entry = new DepEntry(MANAGED_DEPENDENCY.equals(path));
                     } else if (entry != null && ((DEPENDENCY + "/exclusions/exclusion").equals(path)
@@ -663,6 +762,11 @@ public final class PomEditor {
         private void onClose(String path, String name, Range r, String xml, DepEntry entry, ExclusionEntry exclusion) {
             if ("project".equals(path)) {
                 projectEnd = r.contentEnd;
+            } else if (isChild(path, "project/parent")) {
+                parentFields.put(name, xml.substring(r.contentStart, r.contentEnd).trim());
+                parentRanges.put(name, r);
+            } else if ("project/properties".equals(path) && propertiesRange == null) {
+                propertiesRange = r;
             } else if ("project/dependencyManagement".equals(path)) {
                 dmEnd = r.contentEnd;
             } else if ("project/dependencyManagement/dependencies".equals(path)) {

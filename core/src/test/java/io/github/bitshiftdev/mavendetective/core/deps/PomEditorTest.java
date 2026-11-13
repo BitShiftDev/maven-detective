@@ -405,4 +405,83 @@ class PomEditorTest {
         assertThrows(IllegalArgumentException.class, () -> PomEditor.forFix(xml,
                 io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction.of("manual", "x", "artifact", "g:a")));
     }
+    @Test
+    void setsVersionWhereItStands() {
+        String xml = """
+                <project>
+                  <parent>
+                    <groupId>org.p</groupId>
+                    <artifactId>parent</artifactId>
+                    <version>1.0</version>
+                  </parent>
+                  <dependencyManagement>
+                    <dependencies>
+                      <dependency><groupId>org.bom</groupId><artifactId>bom</artifactId><version>1.0</version><type>pom</type><scope>import</scope></dependency>
+                    </dependencies>
+                  </dependencyManagement>
+                  <dependencies>
+                    <dependency><groupId>g</groupId><artifactId>a</artifactId><version>1.0</version><classifier>x</classifier></dependency>
+                    <dependency><groupId>g</groupId><artifactId>a</artifactId><version>1.0</version></dependency>
+                  </dependencies>
+                </project>
+                """;
+        PomEditor.Edit parent = PomEditor.setVersion(xml, "parent", "org.p", "parent", "2.0");
+        assertEquals(5, parent.line);
+        assertTrue(parent.apply(xml).contains("<artifactId>parent</artifactId>\n    <version>2.0</version>"));
+        assertEquals("Parent parent: Version von 1.0 auf 2.0 geändert", parent.description);
+        assertTrue(PomEditor.setVersion(xml, "dependencyManagement", "org.bom", "bom", "2.0").apply(xml)
+                .contains("<artifactId>bom</artifactId><version>2.0</version>"));
+        String dep = PomEditor.setVersion(xml, "dependencies", "g", "a", "2.0").apply(xml);
+        assertTrue(dep.contains("<version>1.0</version><classifier>x</classifier>"), "ohne Classifier bevorzugt: " + dep);
+        assertTrue(dep.contains("<artifactId>a</artifactId><version>2.0</version></dependency>"), dep);
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.setVersion(xml, "parent", "org.x", "parent", "2.0"));
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.setVersion(xml, "dependencies", "g", "b", "2.0"));
+    }
+
+    @Test
+    void setsOrAddsProperties() {
+        String withProps = """
+                <project>
+                    <properties>
+                        <a.version>1.0</a.version>
+                    </properties>
+                </project>
+                """;
+        assertTrue(PomEditor.setProperty(withProps, "a.version", "2.0").apply(withProps).contains("<a.version>2.0</a.version>"));
+        PomEditor.Edit added = PomEditor.setProperty(withProps, "b.version", "3.0");
+        assertEquals("""
+                <project>
+                    <properties>
+                        <a.version>1.0</a.version>
+                        <b.version>3.0</b.version>
+                    </properties>
+                </project>
+                """, added.apply(withProps));
+        assertEquals(4, added.line);
+
+        String without = """
+                <project>
+                    <artifactId>x</artifactId>
+                    <dependencies>
+                    </dependencies>
+                </project>
+                """;
+        PomEditor.Edit created = PomEditor.setProperty(without, "b.version", "3.0");
+        assertEquals("""
+                <project>
+                    <artifactId>x</artifactId>
+                    <properties>
+                        <b.version>3.0</b.version>
+                    </properties>
+
+                    <dependencies>
+                    </dependencies>
+                </project>
+                """, created.apply(without));
+        assertEquals(4, created.line);
+        String forFix = PomEditor.forFix(without, io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction.of(
+                io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction.SET_VERSION, "x", "property", "b.version", "version", "3.0"))
+                .apply(without);
+        assertEquals(created.apply(without), forFix);
+    }
 }

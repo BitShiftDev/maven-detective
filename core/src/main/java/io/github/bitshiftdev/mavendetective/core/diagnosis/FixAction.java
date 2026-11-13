@@ -32,6 +32,10 @@ import java.util.Map;
  *     entfernt eine ungenutzte Dependency aus {@code dependencies} (Modul A5)</td></tr>
  * <tr><td>{@code set-scope}</td><td>{@code file} (POM), {@code artifact} (groupId:artifactId), {@code scope},
  *     {@code classifier} – z. B. auf {@code test}, wenn nur Tests sie nennen (Modul A5)</td></tr>
+ * <tr><td>{@code set-version}</td><td>{@code file} (POM), {@code version} und entweder {@code property} (Name; fehlt sie,
+ *     wird sie unter {@code properties} angelegt) oder {@code artifact} (groupId:artifactId) mit {@code section}
+ *     ({@code parent}, {@code dependencies} oder {@code dependencyManagement}) – hebt eine Version genau dort, wo sie
+ *     heute steht (Upgrade-Simulator, Modul A6)</td></tr>
  * <tr><td>{@code manual}</td><td>nur Beschreibung im Label</td></tr>
  * </table>
  */
@@ -51,6 +55,7 @@ public final class FixAction {
     public static final String ADD_DEPENDENCY = "add-dependency";
     public static final String REMOVE_DEPENDENCY = "remove-dependency";
     public static final String SET_SCOPE = "set-scope";
+    public static final String SET_VERSION = "set-version";
     public static final String MANUAL = "manual";
 
     private final String type;

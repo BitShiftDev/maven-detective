@@ -11,8 +11,10 @@ import io.github.bitshiftdev.mavendetective.core.deps.DependencyUsage;
 import io.github.bitshiftdev.mavendetective.core.deps.DuplicateClasses;
 import io.github.bitshiftdev.mavendetective.core.deps.ExclusionAudit;
 import io.github.bitshiftdev.mavendetective.core.deps.JarIndex;
+import io.github.bitshiftdev.mavendetective.core.deps.PomFetcher;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
+import io.github.bitshiftdev.mavendetective.core.deps.UpgradeSimulator;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplanation;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
@@ -60,6 +62,8 @@ import java.util.TreeMap;
  * java -jar maven-detective-core.jar exclusions [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--remove]
  * java -jar maven-detective-core.jar duplicates [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--exclude]
  * java -jar maven-detective-core.jar analyze [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--declare] [--remove]
+ * java -jar maven-detective-core.jar upgrade groupId:artifactId:version | property=wert [--project DIR] [--tree tree.txt | -]
+ *     [--all] [--markdown] [--manage] [--fetch] [--apply] [--local-repo DIR]
  * </pre>
  *
  * {@code evaluate} ist das Werkzeug für Gate 1: alle Logs eines Ordners einordnen und, falls
@@ -105,6 +109,9 @@ public final class Main {
             }
             if ("analyze".equals(command)) {
                 return analyze(o, out, err, stdin);
+            }
+            if ("upgrade".equals(command) && o.target != null) {
+                return upgrade(o, out, err, stdin);
             }
             if ("evaluate".equals(command) && o.target != null) {
                 return evaluate(o, out);
@@ -481,6 +488,98 @@ public final class Main {
         return 0;
     }
 
+    /**
+     * Modul A6: Upgrade-Simulator. Zeigt je Modul, was sich im Baum ändert, wenn {@code g:a} auf
+     * {@code version} (bzw. eine Property auf einen Wert) gehoben wird – ohne die POMs anzufassen.
+     * {@code --manage} legt die Version im dependencyManagement der obersten Projekt-POM fest statt
+     * an der heutigen Stelle; {@code --fetch} lädt fehlende POMs mit Maven nach (einziger Netzzugriff
+     * in Modul A, nur auf Wunsch); {@code --apply} schreibt die Änderung danach in die POMs.
+     * Exit-Code 3, wenn Versionen sinken oder neue Konflikte entstehen (für CI).
+     */
+    private static int upgrade(Options o, PrintStream out, PrintStream err, InputStream stdin) throws IOException {
+        UpgradeSimulator.Request request;
+        try {
+            request = UpgradeSimulator.Request.parse(o.target);
+        } catch (IllegalArgumentException e) {
+            err.println(e.getMessage());
+            return 2;
+        }
+        if (o.manage) {
+            request = request.pinned();
+        }
+        Path root = projectRoot(o);
+        Map<String, DepNode> trees = trees(o, err, stdin);
+        Path repo = localRepository(o, root);
+        PomLocator locator = new PomLocator(root, repo);
+        List<PomFile> poms = projectPoms(locator, root);
+        if (poms.isEmpty()) {
+            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            return 1;
+        }
+        UpgradeSimulator.Result result = UpgradeSimulator.simulate(locator, poms, request, trees, null);
+        if (o.fetch) {
+            List<Path> files = new ArrayList<Path>();
+            for (PomFile p : poms) {
+                files.add(p.getFile());
+            }
+            String mvn = PomFetcher.executable(root, null);
+            for (int round = 1; round <= 4 && !result.isComplete(); round++) {
+                List<String> gavs = PomFetcher.coordinates(result.getMissing());
+                if (gavs.isEmpty()) {
+                    break;
+                }
+                err.println("Lade " + gavs.size() + (gavs.size() == 1 ? " fehlende POM" : " fehlende POMs") + " mit " + mvn + " …");
+                PomFetcher.Outcome outcome;
+                try {
+                    outcome = PomFetcher.fetch(mvn, root, repo, gavs, files, null, null, 900);
+                } catch (IOException e) {
+                    err.println("Maven ließ sich nicht starten (" + mvn + "): " + e.getMessage());
+                    break;
+                }
+                if (!outcome.isOk()) {
+                    err.println("Maven konnte nicht alles laden (Exit " + outcome.getExitCode() + "):");
+                    for (String l : outcome.errors()) {
+                        err.println("  " + l);
+                    }
+                    break;
+                }
+                locator = new PomLocator(root, repo);
+                poms = projectPoms(locator, root);
+                UpgradeSimulator.Result next = UpgradeSimulator.simulate(locator, poms, request, trees, null);
+                boolean progress = !next.getMissing().equals(result.getMissing());
+                result = next;
+                if (!progress) {
+                    break;
+                }
+            }
+        }
+        if (o.markdown) {
+            out.print(result.markdown(o.all));
+        } else {
+            for (String line : result.lines(o.all)) {
+                out.println(line);
+            }
+        }
+        if (result.getSteps().isEmpty()) {
+            return 1;
+        }
+        if (o.apply) {
+            out.println();
+            FixExecutor executor = new FixExecutor(Collections.<Path>emptyList());
+            for (FixAction fix : result.fixes()) {
+                try {
+                    for (String a : executor.execute(fix).actions) {
+                        out.println(a);
+                    }
+                } catch (IOException e) {
+                    err.println("Übersprungen: " + e.getMessage());
+                }
+            }
+            return 0;
+        }
+        return result.hasRisks() ? 3 : 0;
+    }
+
     private static int pin(ConflictMatrix matrix, String spec, PrintStream out, PrintStream err) throws IOException {
         String[] parts = spec.split(":");
         if (parts.length < 2) {
@@ -618,6 +717,11 @@ public final class Main {
         err.println("  analyze [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--declare] [--remove]");
         err.println("      (Modul A5: genannt, aber nur transitiv da / deklariert, aber nicht genannt; --declare deklariert,");
         err.println("       --remove entfernt sicher ungenutzte, Exit 3 = es gibt Befunde)");
+        err.println("  upgrade <groupId:artifactId:version | property=wert> [--project DIR] [--tree tree.txt | -] [--all] [--markdown]");
+        err.println("          [--manage] [--fetch] [--apply] [--local-repo DIR]");
+        err.println("      (Modul A6: was ändert sich im Baum, bevor die POM geändert wird? --manage legt die Version im");
+        err.println("       dependencyManagement fest, --fetch lädt fehlende POMs mit Maven, --apply schreibt die Änderung,");
+        err.println("       Exit 3 = Versionen sinken oder neue Konflikte)");
     }
 
     private static final class Options {
@@ -633,6 +737,9 @@ public final class Main {
         boolean remove;
         boolean exclude;
         boolean declare;
+        boolean manage;
+        boolean fetch;
+        boolean apply;
         boolean idOnly;
 
         static Options parse(String[] args) {
@@ -659,6 +766,12 @@ public final class Main {
                     o.exclude = true;
                 } else if ("--declare".equals(a)) {
                     o.declare = true;
+                } else if ("--manage".equals(a)) {
+                    o.manage = true;
+                } else if ("--fetch".equals(a)) {
+                    o.fetch = true;
+                } else if ("--apply".equals(a)) {
+                    o.apply = true;
                 } else if ("--markdown".equals(a)) {
                     o.markdown = true;
                 } else if ("--id".equals(a)) {

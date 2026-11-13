@@ -12,11 +12,11 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 [ERROR] +--------------------------------------------------------------
 ```
 
-## Stand: Phase 3 – Modul A (A1 bis A5 fertig)
+## Stand: Phase 3 – Modul A (A1 bis A6 fertig)
 
 | Baustein | Status |
 | --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 120 Unit-Tests |
+| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 149 Unit-Tests |
 | Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ + „EAR/WAR/EJB-Packaging“ |
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
@@ -29,7 +29,7 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | A4 Exclusion-Hygiene | fertig in Kern, CLI (`exclusions`, `--remove`) und IDE (Inspection „Veraltete Exclusion“ in der `pom.xml` mit Quick-Fix). **In `runIde` noch nicht durchgeklickt** |
 | A3 Doppelte Klassen | fertig in Kern, CLI (`duplicates`, `--exclude`) und IDE (Tab „Doppelte Klassen“ mit Quick-Fix „Exclusion einfügen“). **In `runIde` noch nicht durchgeklickt** |
 | A5 Ungenutzte/undeklarierte Dependencies | fertig in Kern, CLI (`analyze`, `--declare`, `--remove`) und IDE (Tab „Ungenutzt/undeklariert“, Inspection „Import aus nicht deklarierter Dependency“ live im Editor). **In `runIde` noch nicht durchgeklickt** |
-| A6 Upgrade-Simulator | offen |
+| A6 Upgrade-Simulator | fertig in Kern, CLI (`upgrade`, `--manage`, `--fetch`, `--apply`) und IDE (Tab „Upgrade-Simulator“, Rechtsklick in der `pom.xml` „Upgrade simulieren…“). **In `runIde` noch nicht durchgeklickt** |
 
 ## Schnellstart
 
@@ -73,6 +73,11 @@ java -jar core/build/libs/maven-detective-core-*.jar duplicates --project . --ex
 java -jar core/build/libs/maven-detective-core-*.jar analyze --project . --tree tree.txt
 # … undeklarierte deklarieren und sicher ungenutzte entfernen
 java -jar core/build/libs/maven-detective-core-*.jar analyze --project . --declare --remove
+# Was ändert sich im Baum, wenn ich jackson-databind auf 2.18.2 hebe? (Modul A6; Exit-Code 3 = Versionen sinken oder neue Konflikte)
+java -jar core/build/libs/maven-detective-core-*.jar upgrade com.fasterxml.jackson.core:jackson-databind:2.18.2 --project .
+# … genauso für BOM, Parent oder Property; fehlende POMs mit Maven nachladen, danach übernehmen
+java -jar core/build/libs/maven-detective-core-*.jar upgrade org.springframework.boot:spring-boot-starter-parent:3.5.0 --fetch
+java -jar core/build/libs/maven-detective-core-*.jar upgrade jackson-bom.version=2.18.2 --apply
 ```
 
 ### Extension in Maven-Läufen
@@ -264,6 +269,36 @@ Modul app (42 Quell-, 17 Testdateien)
 - **Kommandozeile:** Text-Scanner über `src/{main,test}/{java,kotlin,groovy}` und `target/generated(-test)-sources` – ohne Compiler. `--declare` deklariert die undeklarierten (ohne Starter-Fälle), `--remove` entfernt sicher ungenutzte aus dem eigenen POM; ein Durchgang, danach neu prüfen.
 - **In der IDE:** Tab „Ungenutzt/undeklariert“ – prüft auf Klick, löst die Referenzen über den Code-Index auf (Java über die PSI, Kotlin/Groovy über den Text-Scanner), Belege mit Sprung zur Zeile, Mehrfachauswahl, „Beheben“ als ein Undo-Schritt mit anschließendem Maven-Import. Live im Editor markiert die Inspection „Import aus nicht deklarierter Dependency“ (Gruppe Maven Detective) solche Imports, Alt+Enter deklariert die Dependency; Starter-Fälle per Option.
 
+## Upgrade-Simulator
+
+Modul A6 beantwortet „Was passiert, wenn ich X auf Version Y hebe?“ – **bevor** die POM geändert wird:
+
+```
+Upgrade-Simulation: org.apache.maven:maven-model 3.1.1 → 3.2.5 (POMs unverändert)
+
+Änderung an den POMs:
+  1. Property ${maven.version} von 3.1.1 auf 3.2.5 gesetzt (wirkt auf alle Stellen, die sie nutzen)  → /…/pom.xml:7
+     Direkt angegeben in demo über die Property ${maven.version}, definiert in demo – alles, was sie nutzt, ändert sich mit
+
+Modul demo: 5 gehoben
+  ↑ org.apache.maven:maven-model 3.1.1 → 3.2.5 (direkt)
+  ↑ org.apache.maven:maven-plugin-api 3.1.1 → 3.2.5 (direkt)
+  ↑ org.codehaus.plexus:plexus-utils 3.0.15 → 3.0.20 über org.apache.maven:maven-model:3.2.5 → org.codehaus.plexus:plexus-utils:3.0.20
+  ↑ org.apache.maven:maven-artifact 3.1.1 → 3.2.5 über org.apache.maven:maven-plugin-api:3.2.5 → org.apache.maven:maven-artifact:3.2.5
+  ↑ org.eclipse.sisu:org.eclipse.sisu.plexus 0.0.0.M5 → 0.3.0.M1 über …
+
+Unvollständig – lokal fehlen 2 POMs: org.codehaus.plexus:plexus-utils:3.0.20, org.eclipse.sisu:org.eclipse.sisu.plexus:0.3.0.M1
+  Was darunter hängt, fehlt in der Simulation. Laden mit --fetch (mvn dependency:collect) und erneut simulieren.
+```
+
+- **Die richtige Stelle:** Zuerst sucht der Simulator, was die Version heute festlegt, und ändert genau das – wie man es von Hand täte: die Property (auch eine aus einem Parent außerhalb des Projekts, etwa `spring-boot-starter-parent` – dann wird sie im Projekt überschrieben), die direkte `<version>`, den Eintrag im `dependencyManagement`, den BOM-Import (kommt das Artifact aus einem BOM mit derselben Versionsnummer, wird das BOM gehoben, z. B. `jackson-bom`) oder den `<parent>`. Kommt das Artifact nur transitiv, wird es im `dependencyManagement` der obersten Projekt-POM festgelegt; `--manage` bzw. „Im dependencyManagement festlegen“ erzwingt das. Ziel kann auch direkt ein BOM, ein Parent oder eine Property (`name=wert`) sein.
+- **Vorher und nachher gleich gerechnet:** Die Änderung wird nur im Speicher auf den POM-Text angewendet (derselbe `PomEditor` wie beim Übernehmen). Dann baut der Kern den kompletten Baum jedes Moduls zweimal aus POMs nach – mit den Regeln von Mavens Collector: nearest wins, bei gleicher Tiefe die erste Deklaration, `dependencyManagement` für Version, Scope und Exclusions transitiver Dependencies, Scope-Ableitung, `optional`/`test`/`provided` nicht transitiv. Weil beide Bäume mit demselben Verfahren entstehen, kommen Unterschiede nur von der Änderung.
+- **Was gezeigt wird:** je Modul gehobene (`↑`), gesenkte (`↓`), neue (`+`), wegfallende (`−`) Artifacts und geänderte Scopes, jeweils mit Pfad; dazu **neue Konflikte**, bei denen eine verlangte höhere Version verliert (Gefahr von `NoSuchMethodError`). Bleibt das Artifact in einem Modul trotzdem alt (etwa weil dort eine direkte `<version>` steht), sagt ein Hinweis warum. Liegt der echte Baum vor (IDE-Modell oder `--tree`), meldet der Simulator, wo er schon heute davon abweicht (Profile, Versionsbereiche).
+- **Fehlende POMs:** Die neue Version liegt oft noch nicht im lokalen Repository. Dann ist das Ergebnis als unvollständig markiert und nennt die Koordinaten. `--fetch` bzw. „Fehlende POMs laden“ ruft Maven (`./mvnw` oder die Maven-Installation der IDE) mit `dependency:collect` auf einer temporären POM auf – lädt nur POMs, übernimmt die `<repositories>` des Projekts – und simuliert erneut, bis nichts mehr fehlt (höchstens vier Runden). Das ist der einzige Netzzugriff in Modul A und passiert nur auf ausdrücklichen Wunsch.
+- **Übernehmen:** `--apply` bzw. „Übernehmen“ schreibt genau die simulierte Änderung (Quick-Fix `set-version` bzw. `pin-version`); in der IDE als ein Undo-Schritt mit anschließendem Maven-Import.
+- **In der IDE:** Tab „Upgrade-Simulator“ – Artifact aus dem Projekt wählen (Vorschläge aus den Bäumen, Parents und BOM-Importen), Zielversion aus den lokal vorhandenen oder eintippen. Rechtsklick in der `pom.xml` auf eine `<dependency>` oder den `<parent>` → „Upgrade simulieren…“ belegt beides vor und simuliert gleich, wenn lokal eine neuere Version liegt.
+- **Grenzen:** Profile, Versionsbereiche und Relocations werden nicht ausgewertet; `${revision}` als Parent-Version und zusammengesetzte Versionen (`${a}.${b}`) ändert der Simulator nicht selbst, er meldet die Stelle.
+
 ## Aufbau
 
 ```
@@ -271,11 +306,12 @@ core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, 
                    Schnappschüsse + Diff (snapshot/), IDE-gegen-Kommandozeile (env/BuildSetup, SetupComparison),
                    Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser,
                    ConflictMatrix, ExclusionAudit, ModuleClasspath, JarIndex, DuplicateClasses,
-                   ClassUsages, SourceScanner, DependencyUsage,
+                   ClassUsages, SourceScanner, DependencyUsage, DependencyResolver, UpgradeSimulator, PomFetcher,
                    PomEditor für textgenaue POM-Änderungen, MavenVersion, PomCache)
 maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
-intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies, Konflikt-Matrix, Doppelte Klassen, Ungenutzt/undeklariert),
-                   Listener auf Maven-Läufe, Quick-Fixes, Editor-Aktion „Warum diese Version?“, Inspections „Veraltete Exclusion“
+intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies, Konflikt-Matrix, Doppelte Klassen, Ungenutzt/undeklariert,
+                   Upgrade-Simulator), Listener auf Maven-Läufe, Quick-Fixes, Editor-Aktionen „Warum diese Version?“ und
+                   „Upgrade simulieren…“, Inspections „Veraltete Exclusion“
                    und „Import aus nicht deklarierter Dependency“ (IdeUsages löst Referenzen über den Code-Index auf);
                    IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht)
 fixtures/          Je Fehlerkategorie ein Projekt, das den Fehler absichtlich auslöst (fixtures.txt),
@@ -291,7 +327,9 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
 - Preflight-Check und Log-Navigator aus dem Konzept.
 - Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.
-- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A6 Upgrade-Simulator.
+- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries.
+- A6 in `runIde` an einem Spring-Boot-Projekt durchklicken: Parent 3.4 → 3.5 simulieren, fehlende POMs laden, Unterschied prüfen, übernehmen, nach dem Import erneut simulieren (kein Unterschied mehr).
+- A6 schärfen: Simulation gegen `mvn dependency:tree -Dverbose` an echten Projekten vergleichen (Abweichungen zeigt der Simulator schon an); Upgrade-Kandidaten aus den Repository-Metadaten vorschlagen (nur auf Klick, Netz); Simulator als Beleg auf der Build-Doctor-Karte („nach dem Upgrade von X kam Y 2.0 → 1.4“).
 - A1 in `runIde` an einem Spring-Boot-Projekt durchklicken (Abnahme laut Konzept: Herkunft jeder Dependency korrekt).
 - A2 in `runIde` an einem Multi-Modul-Projekt durchklicken: Abweichung pinnen, Re-Import, Matrix aktualisieren.
 - A4 in `runIde` an einem Spring-Boot-Projekt durchklicken: eine bekannte veraltete Exclusion (z. B. `commons-logging` bei `spring-core` 6) wird ausgegraut, Quick-Fix entfernt sie.

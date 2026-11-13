@@ -8,7 +8,7 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import org.jetbrains.annotations.NotNull;
 
-/** Tool-Window „Maven Detective“: Tab „Build Doctor“ (Modul B), Tabs „Dependencies“, „Konflikt-Matrix“, „Doppelte Klassen“ und „Ungenutzt/undeklariert“ (Modul A). */
+/** Tool-Window „Maven Detective“: Tab „Build Doctor“ (Modul B), Tabs „Dependencies“, „Konflikt-Matrix“, „Doppelte Klassen“, „Ungenutzt/undeklariert“ und „Upgrade-Simulator“ (Modul A). */
 public final class BuildDoctorToolWindowFactory implements ToolWindowFactory, DumbAware {
 
     @Override
@@ -37,5 +37,10 @@ public final class BuildDoctorToolWindowFactory implements ToolWindowFactory, Du
         Content usageContent = ContentFactory.getInstance().createContent(usage, DependencyUsagePanel.TAB_NAME, false);
         usageContent.setDisposer(usage);
         toolWindow.getContentManager().addContent(usageContent);
+
+        UpgradeSimulatorPanel upgrade = new UpgradeSimulatorPanel(project);
+        Content upgradeContent = ContentFactory.getInstance().createContent(upgrade, UpgradeSimulatorPanel.TAB_NAME, false);
+        upgradeContent.setDisposer(upgrade);
+        toolWindow.getContentManager().addContent(upgradeContent);
     }
 }

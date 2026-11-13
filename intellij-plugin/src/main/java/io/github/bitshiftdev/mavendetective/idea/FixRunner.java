@@ -48,7 +48,7 @@ final class FixRunner {
             case FixAction.OPEN_FILE, FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE,
                  FixAction.SET_JVM_OPTION, FixAction.REBUILD, FixAction.SWITCH_JDK,
                  FixAction.INSERT_PLUGIN_VERSION, FixAction.PIN_VERSION, FixAction.ADD_EXCLUSION,
-                 FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE -> true;
+                 FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE, FixAction.SET_VERSION -> true;
             // show-dependency: Modul A
             default -> false;
         };
@@ -70,6 +70,7 @@ final class FixRunner {
                 case FixAction.ADD_EXCLUSION -> addExclusions(project, List.of(fix));
                 case FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE ->
                         editPoms(project, List.of(fix), "Dependency ändern (Maven Detective)");
+                case FixAction.SET_VERSION -> editPoms(project, List.of(fix), "Version ändern (Maven Detective)");
                 default -> notify(project, fix.getLabel(), NotificationType.INFORMATION);
             }
         } catch (RuntimeException e) {

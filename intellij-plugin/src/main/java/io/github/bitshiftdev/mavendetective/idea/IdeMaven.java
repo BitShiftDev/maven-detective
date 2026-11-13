@@ -171,6 +171,24 @@ final class IdeMaven {
         return s;
     }
 
+    /**
+     * Maven-Installation, mit der die IDE baut; {@code null} beim Wrapper (dann nimmt der Aufrufer
+     * {@code ./mvnw}) oder wenn sie nicht ermittelbar ist.
+     */
+    static @Nullable Path mavenHome(@NotNull Project project) {
+        try {
+            MavenHomeType home = MavenProjectsManager.getInstance(project).getGeneralSettings().getMavenHomeType();
+            if (home instanceof StaticResolvedMavenHomeType resolved) {
+                return MavenUtil.getMavenHomePath(resolved);
+            }
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("Maven Detective: Maven-Installation der IDE nicht ermittelbar", e);
+        }
+        return null;
+    }
+
     /** Was {@code ./mvnw} bzw. {@code mvn} im Terminal nähme (Umgebung der IDE als Näherung für die Shell). */
     static BuildSetup cliSetup(@NotNull Project project) {
         String base = project.getBasePath();

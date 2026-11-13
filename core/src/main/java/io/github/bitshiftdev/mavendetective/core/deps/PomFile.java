@@ -144,6 +144,21 @@ public final class PomFile {
         return pom;
     }
 
+    /**
+     * Liest eine POM aus Text, als stünde er in {@code file} – für Simulationen, bei denen die
+     * geänderte Fassung nur im Speicher existiert (Modul A6). Wirft bei ungültigem XML.
+     */
+    public static PomFile parse(Path file, String xml) throws Exception {
+        PomFile pom = new PomFile(file.toAbsolutePath().normalize());
+        SAXParserFactory f = SAXParserFactory.newInstance();
+        f.setNamespaceAware(false);
+        f.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        SAXParser parser = f.newSAXParser();
+        parser.parse(new org.xml.sax.InputSource(new java.io.StringReader(xml)), new Handler(pom));
+        return pom;
+    }
+
     public Path getFile() { return file; }
     public String getGroupId() { return groupId != null ? groupId : parentGroupId; }
     public String getArtifactId() { return artifactId; }

@@ -33,7 +33,7 @@ public final class RuleCatalog {
             FixAction.REBUILD, FixAction.DELETE_FILES, FixAction.OPEN_FILE, FixAction.REPLACE_IN_FILE,
             FixAction.SWITCH_JDK, FixAction.SET_JVM_OPTION, FixAction.INSERT_PLUGIN_VERSION,
             FixAction.SHOW_DEPENDENCY, FixAction.PIN_VERSION, FixAction.REMOVE_EXCLUSION, FixAction.ADD_EXCLUSION,
-            FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE, FixAction.MANUAL));
+            FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE, FixAction.SET_VERSION, FixAction.MANUAL));
 
     private static final Set<String> RULE_KEYS = new HashSet<String>(Arrays.asList(
             "id", "number", "category", "priority", "confidence", "patterns", "extract", "unless",
