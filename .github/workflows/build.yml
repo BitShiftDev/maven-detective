@@ -65,8 +65,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-disabled: true
-      - name: Plugin bauen
-        run: ./gradlew :intellij-plugin:buildPlugin
+      - name: Plugin testen und bauen
+        run: ./gradlew :intellij-plugin:test :intellij-plugin:buildPlugin :intellij-plugin:releaseNotes
 
   # Gate 2 – Plugin Verifier, eine IntelliJ-Release-Linie je Job: Alle Linien auf einem Runner
   # (IDEs plus nachgeladene Plugins wie Android/Rust) füllen die Platte (No space left on device).

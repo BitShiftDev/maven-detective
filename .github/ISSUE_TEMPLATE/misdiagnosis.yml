@@ -1,0 +1,45 @@
+name: Falsche Diagnose / Wrong diagnosis
+description: Build Doctor hat einen gescheiterten Build falsch oder gar nicht erkannt. / Build Doctor misdiagnosed a failed build.
+labels: [diagnosis]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Jeder falsch erkannte Build wird zu einem Testlog im Fehlerkatalog. Deutsch oder Englisch.
+        Every misdiagnosed build becomes a test log in the error catalog. English or German.
+
+        **Bitte vorher anonymisieren / Please anonymise first:** Firmennamen, Hosts, Pfade, Benutzernamen, Tokens.
+  - type: input
+    id: detected
+    attributes:
+      label: Erkannt als / Detected as
+      description: Regel oder Titel auf der Karte, oder „nichts“. / Rule or card title, or "nothing".
+      placeholder: "#4 Corrupt JAR in the local repository"
+  - type: textarea
+    id: actual
+    attributes:
+      label: Tatsächliche Ursache / Actual cause
+      description: Was war es wirklich, und was hat geholfen? / What was it really, and what fixed it?
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log-Ausschnitt / Log excerpt
+      description: Die Zeilen rund um die ersten `[ERROR]` bis `BUILD FAILURE`. Im Plugin legt „Falsch erkannt?“ das ganze Log unter `~/.maven-detective/testfaelle/` ab.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Wo / Where
+      options:
+        - IntelliJ-Plugin
+        - Maven-Extension
+        - CLI
+  - type: input
+    id: versions
+    attributes:
+      label: Versionen / Versions
+      placeholder: "Maven Detective 0.1.0, Maven 3.9.11, JDK 21, IntelliJ IDEA 2025.3"

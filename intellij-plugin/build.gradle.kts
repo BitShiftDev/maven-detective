@@ -15,6 +15,53 @@ repositories {
 
 val platformVersion: String by project
 val pluginSinceBuild: String by project
+val pluginVersion = project.version.toString()
+val changelogFile = rootProject.layout.projectDirectory.file("CHANGELOG.md")
+
+/**
+ * Liest den Abschnitt einer Version aus CHANGELOG.md (Keep-a-Changelog-Format) und macht daraus
+ * die Change-Notes für den Marketplace. Bewusst ohne Changelog-Plugin: Das Format ist schmal
+ * (Überschriften "### ", Listenpunkte "- ", **fett**, `Code`, *kursiv*, [Text](URL)).
+ */
+object Changelog {
+    private val linkDefinition = Regex("""^\[[^\]]+]: """)
+
+    /** Text unter "## [version]" bis zur nächsten Versionsüberschrift, leer wenn es die Version nicht gibt. */
+    fun section(markdown: String, version: String): String {
+        val lines = markdown.lines()
+        val start = lines.indexOfFirst { it.startsWith("## [$version]") }
+        if (start < 0) return ""
+        val end = (start + 1 until lines.size)
+            .firstOrNull { lines[it].startsWith("## ") || linkDefinition.containsMatchIn(lines[it]) } ?: lines.size
+        return lines.subList(start + 1, end).joinToString("\n").trim()
+    }
+
+    fun toHtml(markdown: String): String {
+        val html = StringBuilder()
+        var inList = false
+        for (line in markdown.lines()) {
+            if (line.startsWith("- ")) {
+                if (!inList) html.append("<ul>\n").also { inList = true }
+                html.append("<li>").append(inline(line.substring(2))).append("</li>\n")
+                continue
+            }
+            if (inList) html.append("</ul>\n").also { inList = false }
+            when {
+                line.startsWith("### ") -> html.append("<h3>").append(inline(line.substring(4))).append("</h3>\n")
+                line.isNotBlank() -> html.append("<p>").append(inline(line)).append("</p>\n")
+            }
+        }
+        if (inList) html.append("</ul>\n")
+        return html.toString()
+    }
+
+    private fun inline(text: String): String = text
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace(Regex("""`([^`]+)`"""), "<code>$1</code>")
+        .replace(Regex("""\*\*(.+?)\*\*"""), "<b>$1</b>")
+        .replace(Regex("""\*([^*]+)\*"""), "<i>$1</i>")
+        .replace(Regex("""\[([^\]]+)]\(([^)]+)\)"""), "<a href=\"$2\">$1</a>")
+}
 
 dependencies {
     implementation(project(":core"))
@@ -48,15 +95,35 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// maven-detective-<version>.zip statt intellij-plugin-<version>.zip (Anhang im GitHub-Release)
+tasks.buildPlugin {
+    archiveBaseName.set("maven-detective")
+}
+
 intellijPlatform {
     pluginConfiguration {
         id = "io.github.bitshiftdev.mavendetective"
         name = "Maven Detective"
-        version = project.version.toString()
+        version = pluginVersion
+        // Abschnitt der aktuellen Version aus CHANGELOG.md; fehlt er (Entwicklungsstand), bleiben die Change-Notes leer
+        changeNotes = providers.fileContents(changelogFile).asText
+            .map { Changelog.toHtml(Changelog.section(it, pluginVersion)) }
         ideaVersion {
             sinceBuild = pluginSinceBuild
             untilBuild = provider { null }
         }
+    }
+    // Marketplace: Schlüssel und Token nur aus Umgebungsvariablen (GitHub-Secrets im Workflow publish.yml).
+    // Zertifikat erzeugen: https://plugins.jetbrains.com/docs/intellij/plugin-signing.html
+    signing {
+        certificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PRIVATE_KEY")
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
+    }
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN")
+        // Standard-Kanal; -PpublishChannel=eap o. Ä. für Vorabversionen
+        channels = providers.gradleProperty("publishChannel").map { listOf(it) }.orElse(listOf("default"))
     }
     // Gate 2: Plugin Verifier gegen alle IntelliJ-IDEA-Releases ab sinceBuild (je Linie die neueste).
     // Alle auf einmal sprengen die Platte eines CI-Runners (IDEs plus nachgeladene Plugins wie
@@ -73,5 +140,22 @@ intellijPlatform {
                 untilBuild = verifyUntil
             }
         }
+    }
+}
+
+// Text für das GitHub-Release (release.yml): Abschnitt der aktuellen Version aus CHANGELOG.md als Markdown.
+// Schlägt fehl, wenn es den Abschnitt nicht gibt – so geht kein Release ohne Changelog-Eintrag raus.
+val releaseNotes by tasks.registering {
+    group = "publishing"
+    description = "Schreibt den CHANGELOG-Abschnitt der aktuellen Version nach build/release-notes.md."
+    val changelog = changelogFile.asFile
+    val output = layout.buildDirectory.file("release-notes.md")
+    val version = pluginVersion
+    inputs.file(changelog)
+    outputs.file(output)
+    doLast {
+        val section = Changelog.section(changelog.readText(), version)
+        check(section.isNotEmpty()) { "CHANGELOG.md hat keinen Abschnitt \"## [$version]\"" }
+        output.get().asFile.writeText(section + "\n")
     }
 }

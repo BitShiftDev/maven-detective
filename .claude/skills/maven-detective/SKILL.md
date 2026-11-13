@@ -152,6 +152,10 @@ Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFi
 
 Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1, Preflight, Log-Navigator) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1–A6 fertig, UI-Plan U1–U5 umgesetzt, U6 ohne Screenshots (Oberfläche und Kern Englisch/Deutsch umschaltbar, Englisch nicht muttersprachlich gegengelesen; alles nicht in `runIde` geklickt); Plugin Verifier braucht Netz (in der Sandbox nicht lauffähig). Vor größeren Features README „Nächste Schritte“ prüfen.
 
+## Release
+
+Ablauf und Secrets in `RELEASING.md`. `CHANGELOG.md` ist **Englisch** (Keep a Changelog): Abschnitt `## [x.y.z]` wird per `Changelog`-Objekt in `intellij-plugin/build.gradle.kts` zu den Marketplace-Change-Notes (HTML) und per `:intellij-plugin:releaseNotes` zum GitHub-Release-Text – nur `### `, `- `, `**…**`, `` `…` ``, `*…*`, `[t](u)`. Neue Funktion ⇒ Zeile unter `## [Unreleased]`. Tag `v<version>` → `release.yml` (Entwurf mit `maven-detective-<v>.zip`, `maven-detective-cli-<v>.jar`, Extension-JAR, `SHA256SUMS`); Entwurf veröffentlichen → `publish.yml` (Marketplace, Umgebung `marketplace`). Repo ist noch privat; Checkliste fürs Umschalten in `RELEASING.md`.
+
 ## Git
 
 Konto BitShiftDev. **Keine Claude-Attribution** in Commits oder PRs (kein `Co-Authored-By`, kein „Generated with Claude“). Commit-Nachrichten auf Deutsch, Stil wie `git log`.

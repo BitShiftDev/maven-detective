@@ -1,0 +1,15 @@
+name: Idee / Feature request
+description: Neue Regel, Prüfung oder Funktion vorschlagen. / Suggest a new rule, check or feature.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem? / Which problem?
+      description: Welcher Build-Fehler oder welche Dependency-Frage soll beantwortet werden? / Which build failure or dependency question should be answered?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Vorschlag / Proposal

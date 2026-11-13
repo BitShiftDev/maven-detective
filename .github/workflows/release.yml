@@ -1,0 +1,75 @@
+name: release
+
+# Tag "v<version>" pushen → testen, bauen und einen Release-ENTWURF mit allen Artefakten anlegen.
+# Erst wer den Entwurf auf GitHub veröffentlicht, löst publish.yml (Upload auf den Marketplace) aus.
+# Ablauf und Secrets: RELEASING.md
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      # Kein Gradle-Cache: Er hielte die heruntergeladene IDE (mehrere GB), siehe build.yml
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
+
+      - name: Tag passt zur Version in gradle.properties
+        run: |
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME passt nicht zu version=$version in gradle.properties"
+            exit 1
+          fi
+          case "$version" in *-SNAPSHOT) echo "::error::SNAPSHOT-Versionen werden nicht veröffentlicht"; exit 1;; esac
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Changelog-Abschnitt lesen
+        run: ./gradlew :intellij-plugin:releaseNotes
+
+      - name: Tests (Kern, Plugin, Fixtures mit echtem Maven)
+        run: ./gradlew :core:test :intellij-plugin:test :maven-extension:fixtureTest
+
+      - name: Bauen
+        run: ./gradlew :core:jar :maven-extension:jar :intellij-plugin:buildPlugin
+
+      - name: Plugin signieren
+        if: env.CERTIFICATE_CHAIN != ''
+        run: ./gradlew :intellij-plugin:signPlugin
+
+      - name: Release-Entwurf anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir release
+          cp core/build/libs/maven-detective-core-$VERSION.jar release/maven-detective-cli-$VERSION.jar
+          cp maven-extension/build/libs/maven-detective-extension-$VERSION.jar release/
+          signed=intellij-plugin/build/distributions/maven-detective-$VERSION-signed.zip
+          if [ -f "$signed" ]; then
+            cp "$signed" release/maven-detective-$VERSION.zip
+          else
+            echo "::warning::Kein Signierzertifikat hinterlegt – das Plugin-ZIP im Release ist unsigniert"
+            cp intellij-plugin/build/distributions/maven-detective-$VERSION.zip release/
+          fi
+          (cd release && sha256sum * > SHA256SUMS)
+
+          prerelease=()
+          case "$VERSION" in *-*) prerelease=(--prerelease);; esac
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --draft --verify-tag "${prerelease[@]}" \
+            --title "Maven Detective $VERSION" \
+            --notes-file intellij-plugin/build/release-notes.md

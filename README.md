@@ -1,5 +1,15 @@
 # Maven Detective
 
+[![build](https://github.com/BitShiftDev/maven-detective/actions/workflows/build.yml/badge.svg)](https://github.com/BitShiftDev/maven-detective/actions/workflows/build.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
+> **English:** Maven Detective explains why a Maven build fails – in plain language, with evidence, confidence and a quick fix.
+> It ships as an IntelliJ IDEA plugin (2025.3+), a Maven core extension that prints the diagnosis into the Maven log,
+> and a command line tool; on top it answers dependency questions (why this version, conflicts across modules,
+> duplicate classes, stale exclusions, unused/undeclared dependencies, upgrade simulation). User interface and
+> diagnoses are available in English and German; this README and the code comments are in German.
+> See [Installation](#installation) and the [changelog](CHANGELOG.md). Issues and pull requests in English are welcome.
+
 IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, mit Belegen, Sicherheit und Quick-Fix. Dazu eine Maven-Core-Extension, die dieselbe Diagnose auf der Kommandozeile und in CI liefert.
 
 ```
@@ -26,7 +36,7 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | Klassen-Herkunft (Regeln 9 und 10) | fertig im Kern, wirkt damit in CLI, Extension und IDE: Bei `NoSuchMethodError`, `NoClassDefFoundError` & Co. und bei `package … does not exist` sucht Build Doctor die Klasse im Classpath des gescheiterten Moduls und liest die Klassendateien. Die Karte sagt, welches JAR die JVM lädt, ob es die Methode hat, welche Version verdrängt wurde oder welche Exclusion die Klasse entfernt; Quick-Fixes über Modul A (Exclusion, Version heben über den Upgrade-Simulator, Scope, Dependency deklarieren). Unit-Tests mit echt kompilierten Klassen, **kein Fixture mit echtem `mvn`** (bräuchte Netz für Surefire) |
 | Log-Navigator | fertig in Kern, CLI (`outline`, `--strip`) und IDE (Ansicht „Log-Navigator“ im Build Doctor: Gliederung nach Modulen und Plugin-Schritten, Sprung zum ersten Fehler und zum gescheiterten Modul, Downloads eingeklappt; Downloads auch in Konsole und Build-Fenster eingeklappt). **In `runIde` noch nicht durchgeklickt** |
 | IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Tool-Window mit drei Tabs (Übersicht mit Kacheln, Build Doctor, Dependencies mit Navigation), Badge an der Leiste bei rotem Build, Ergebnisse veralten sichtbar nach jedem Maven-Import; Diagnose-Karte aus Komponenten mit Verlauf der letzten 20 Läufe, Link „Ursache anzeigen“ hinter `BUILD FAILURE` in der Konsole und Fix-und-Prüf-Schleife (nach dem Fix neu bauen, „Behoben ✓“ oder neue Diagnose); Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option; jede Änderung an einer `pom.xml` zeigt vorher einen Diff (abschaltbar); Oberfläche und Diagnose-Texte auf Englisch (Standard) oder Deutsch (Einstellung *Sprache*); Einstellungen unter *Settings | Tools | Maven Detective* (Sprache, Sprechblase bei rotem Build, Neubau nach Fix, Diff-Vorschau, Schnappschüsse an/aus und Ordner, Starter-Funde), „Got it“-Hinweise beim ersten roten Build und beim ersten Öffnen einer `pom.xml`, leere Seiten erklären in zwei Sätzen, was sie tun. **In `runIde` noch nicht durchgeklickt** |
-| Gate 1 (30 eigene Logs) | **offen** – braucht deine Logs, siehe unten |
+| Gate 1 (30 echte Logs) | **offen** – braucht Logs echter gescheiterter Builds, siehe unten |
 | A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Popup am Cursor per Alt+Enter oder Rechtsklick in der `pom.xml`, Rechtsklick im Maven-Tool-Window und unter External Libraries, Tab „Dependencies“ → „Warum diese Version?“). **In `runIde` noch nicht durchgeklickt** |
 | Antworten in der `pom.xml` (UI-Plan U4) | Inlay „2.18.2 · jackson-bom“ hinter Dependencies ohne Version, Code Vision „3 Module · 2 Versionen“ bei Abweichungen, Gutter-Icon bei verdrängter höherer Version oder doppelten Klassen, Banner an der Datei, an der der letzte Build scheiterte. **In `runIde` noch nicht durchgeklickt** |
 | A2 Konflikt-Matrix | fertig in Kern, CLI (`matrix`, `--pin`) und IDE (Tab „Dependencies“ → „Konflikte“ mit Quick-Fix „im Parent festlegen“). **In `runIde` noch nicht durchgeklickt** |
@@ -35,12 +45,19 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | A5 Ungenutzte/undeklarierte Dependencies | fertig in Kern, CLI (`analyze`, `--declare`, `--remove`) und IDE (Tab „Dependencies“ → „Nutzung“, Inspection „Import aus nicht deklarierter Dependency“ live im Editor). **In `runIde` noch nicht durchgeklickt** |
 | A6 Upgrade-Simulator | fertig in Kern, CLI (`upgrade`, `--manage`, `--fetch`, `--apply`) und IDE (Tab „Dependencies“ → „Upgrade-Simulator“, Ergebnis als Editor-Tab mit Diff, Rechtsklick in der `pom.xml` „Upgrade simulieren…“). **In `runIde` noch nicht durchgeklickt** |
 
+## Installation
+
+- **IntelliJ-Plugin:** *Settings | Plugins | Marketplace* → „Maven Detective“ (IntelliJ IDEA 2025.3 oder neuer). Ohne Marketplace: `maven-detective-<version>.zip` aus den [Releases](https://github.com/BitShiftDev/maven-detective/releases) laden und über *Install Plugin from Disk…* einspielen.
+- **Kommandozeile:** `maven-detective-cli-<version>.jar` aus den Releases, läuft ab Java 8: `java -jar maven-detective-cli-<version>.jar diagnose build.log`.
+- **Maven-Extension:** `maven-detective-extension-<version>.jar` aus den Releases, dann `mvn -Dmaven.ext.class.path=/pfad/maven-detective-extension-<version>.jar verify` (Maven 3.9, Java 8 oder neuer). Dauerhaft für alle Läufe: JAR nach `$MAVEN_HOME/lib/ext/` legen. Über `.mvn/extensions.xml` geht es erst, wenn die Extension in Maven Central liegt (noch offen).
+
+Prüfsummen stehen in `SHA256SUMS` am Release. Was sich je Version geändert hat: [CHANGELOG.md](CHANGELOG.md).
+
 ## Schnellstart
 
 Voraussetzung: JDK 21 für den Build (erzeugt wird Java-8-Bytecode für Kern und Extension).
 
 ```bash
-gradle wrapper --gradle-version 9.8.2   # einmalig, danach ./gradlew
 ./gradlew :core:test                    # Unit-Tests
 ./gradlew :maven-extension:jar          # build/libs/maven-detective-extension-<version>.jar
 ./gradlew :maven-extension:fixtureTest  # löst jeden Fehler mit echtem Maven aus (mvn im PATH nötig),
@@ -98,7 +115,7 @@ mvn -Dmaven.ext.class.path=/pfad/maven-detective-extension.jar verify
 mvn -Dmaven.ext.class.path=… -DmavenDetective.eventsFile=target/md-events.jsonl verify
 ```
 
-Für CI über `.mvn/extensions.xml` muss die Extension erst in ein Repository veröffentlicht werden (noch offen). `-DmavenDetective.report=false` schaltet die Karte ab.
+Für CI über `.mvn/extensions.xml` muss die Extension erst in ein Repository veröffentlicht werden (noch offen); bis dahin das JAR aus dem Release per `-Dmaven.ext.class.path` oder `$MAVEN_HOME/lib/ext/` einbinden. `-DmavenDetective.report=false` schaltet die Karte ab.
 
 **Sprache:** Karte, Kommandozeile und Berichte gibt es auf Englisch und Deutsch. Gewählt wird `-DmavenDetective.language=en|de` (in der Kommandozeile auch `--lang en|de`), sonst die Umgebungsvariable `MAVEN_DETECTIVE_LANGUAGE`, sonst die Sprache des Systems (Deutsch nur bei `de`, sonst Englisch). Im Plugin gilt die Einstellung *Sprache*. Texte stehen in `core/…/texts.properties` (Englisch) und `texts_de.properties`. Die Extension ändert nie etwas am Build; jeder interne Fehler wird geschluckt.
 
@@ -423,6 +440,10 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - Konflikt-Matrix mit Deployment-Sicht für EARs: `lib/` gegen `WEB-INF/lib`, `skinnyWars`, `provided` vom Server; `ejb-client` als eigene Zeile.
 - Klassen-Herkunft (Phase 5) schärfen: in der IDE den echten Baum des Maven-Imports statt des nachgebauten übergeben (`Environment` um Bäume erweitern); A2-Pin über alle Module, wenn das Artifact auch in anderen Modulen abweicht (heute nur Hebel für das gescheiterte Modul); „seit dem letzten grünen Build kam util 2.0 → 1.0“ aus dem Schnappschuss-Diff als Beleg; Fixture mit echtem `mvn` für Regel 10 (Surefire aus einem vorbereiteten Repository); an echten `NoSuchMethodError`-Logs messen (Gate 1).
 - Klassen-Herkunft in `runIde` abnehmen: Karte nach einem roten Testlauf mit `NoSuchMethodError` (Fix „unter dependencyManagement festlegen“ mit Diff-Vorschau, danach neu bauen → „Behoben ✓“) und nach `package … does not exist` mit Scope `test`.
+
+## Mitmachen
+
+Fehlerberichte, falsch erkannte Builds und neue Regeln sind willkommen – siehe [CONTRIBUTING.md](CONTRIBUTING.md). Sicherheitslücken bitte nicht öffentlich melden, sondern wie in [SECURITY.md](SECURITY.md) beschrieben. Wie ein Release entsteht: [RELEASING.md](RELEASING.md).
 
 ## Lizenz
 

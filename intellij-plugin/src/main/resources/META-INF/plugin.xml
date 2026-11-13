@@ -43,8 +43,8 @@
           rebuilds every module's dependency tree from the POMs and shows what goes up, down, appears, disappears or changes scope,
           plus new conflicts where a higher requested version loses. Missing POMs of the new version are fetched only on click;
           one more click applies exactly the simulated change.</li>
-      <li><b>Settings</b> under <i>Tools | Maven Detective</i>: balloon on red builds, rebuild after a fix, diff preview,
-          snapshots on/off and their folder.</li>
+      <li><b>Settings</b> under <i>Tools | Maven Detective</i>: language (English or German), balloon on red builds,
+          rebuild after a fix, diff preview, snapshots on/off and their folder.</li>
       <li><b>See before you change:</b> every quick fix that edits a pom.xml shows the change in the IDE's diff viewer first
           (can be switched off); the upgrade simulation opens as an editor tab with the POM diff and the tree difference.</li>
       <li>Complements Maven Helper and the Dependency Analyzer: they show facts, Maven Detective shows cause and fix.</li>

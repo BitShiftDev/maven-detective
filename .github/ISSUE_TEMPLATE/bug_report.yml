@@ -1,0 +1,34 @@
+name: Fehler / Bug
+description: Etwas im Plugin, in der CLI oder der Extension funktioniert nicht. / Something in the plugin, CLI or extension does not work.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Was ist passiert? / What happened?
+      description: Schritte zum Nachstellen und was du stattdessen erwartet hast. / Steps to reproduce and what you expected instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Komponente / Component
+      options:
+        - IntelliJ-Plugin
+        - Maven-Extension
+        - CLI
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versionen / Versions
+      placeholder: "Maven Detective 0.1.0, Maven 3.9.11, JDK 21, IntelliJ IDEA 2025.3, OS"
+    validations:
+      required: true
+  - type: textarea
+    id: trace
+    attributes:
+      label: Stacktrace oder Log / Stack trace or log
+      description: Im Plugin unter *Help | Show Log in …* (idea.log). Bitte anonymisieren. / Please anonymise.
+      render: text
