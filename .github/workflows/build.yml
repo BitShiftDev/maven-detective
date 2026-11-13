@@ -14,7 +14,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      # Nur den eigenen Cache-Eintrag wiederherstellen: Fehlt er (verdrängt), nähme setup-gradle sonst
+      # den neuesten Eintrag irgendeines Jobs – auch einen mit mehreren GB IDEs – und füllte die Platte.
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-strict-match: true
       - name: Unit-Tests (Kern, Katalog, Prüfungen)
         run: ./gradlew :core:test
       - name: Extension bauen und Fixtures mit echtem Maven auslösen
@@ -34,7 +38,11 @@ jobs:
           java-version: |
             8
             21
+      # Nur den eigenen Cache-Eintrag wiederherstellen: Fehlt er (verdrängt), nähme setup-gradle sonst
+      # den neuesten Eintrag irgendeines Jobs – auch einen mit mehreren GB IDEs – und füllte die Platte.
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-strict-match: true
       - run: ./gradlew :maven-extension:jar
       - name: Fixtures unter Java 8
         env:
