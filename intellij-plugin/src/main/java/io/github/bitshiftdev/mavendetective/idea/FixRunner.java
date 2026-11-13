@@ -47,7 +47,8 @@ final class FixRunner {
         return switch (fix.getType()) {
             case FixAction.OPEN_FILE, FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE,
                  FixAction.SET_JVM_OPTION, FixAction.REBUILD, FixAction.SWITCH_JDK,
-                 FixAction.INSERT_PLUGIN_VERSION, FixAction.PIN_VERSION, FixAction.ADD_EXCLUSION -> true;
+                 FixAction.INSERT_PLUGIN_VERSION, FixAction.PIN_VERSION, FixAction.ADD_EXCLUSION,
+                 FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE -> true;
             // show-dependency: Modul A
             default -> false;
         };
@@ -67,6 +68,8 @@ final class FixRunner {
                     }
                 }
                 case FixAction.ADD_EXCLUSION -> addExclusions(project, List.of(fix));
+                case FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE ->
+                        editPoms(project, List.of(fix), "Dependency ändern (Maven Detective)");
                 default -> notify(project, fix.getLabel(), NotificationType.INFORMATION);
             }
         } catch (RuntimeException e) {
@@ -321,16 +324,23 @@ final class FixRunner {
      * @return wie viele eingefügt wurden
      */
     static int addExclusions(Project project, List<FixAction> fixes) {
+        return editPoms(project, fixes, "Exclusion einfügen (Maven Detective)");
+    }
+
+    /**
+     * POM-Quick-Fixes ({@link PomEditor#isPomFix}) über die Dokumente anwenden – alle in einem
+     * Undo-Schritt, offene Editoren sehen die Änderung sofort. Danach Maven-Import.
+     *
+     * @return wie viele Fixes angewendet werden sollten
+     */
+    static int editPoms(Project project, List<FixAction> fixes, String command) {
         List<Runnable> edits = new ArrayList<>();
         List<Document> docs = new ArrayList<>();
         List<String> done = new ArrayList<>();
-        String jump = null;
+        String[] jump = {null};
         for (FixAction fix : fixes) {
             String file = fix.param("file");
-            String artifact = fix.param("artifact");
-            String exclusion = fix.param("exclusion");
-            int colon = artifact == null ? -1 : artifact.indexOf(':');
-            if (file == null || colon < 0 || exclusion == null) {
+            if (file == null || !PomEditor.isPomFix(fix.getType())) {
                 continue;
             }
             VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Paths.get(file));
@@ -339,14 +349,15 @@ final class FixRunner {
                 notify(project, "Datei nicht gefunden: " + file, NotificationType.WARNING);
                 continue;
             }
-            String g = artifact.substring(0, colon);
-            String a = artifact.substring(colon + 1);
             edits.add(() -> {
                 // erst hier zerlegen: mehrere Fixes können dieselbe Datei nacheinander ändern
                 try {
-                    PomEditor.Edit edit = PomEditor.addExclusion(doc.getText(), g, a, exclusion);
+                    PomEditor.Edit edit = PomEditor.forFix(doc.getText(), fix);
                     doc.replaceString(edit.offset, edit.offset + edit.length, edit.text);
                     done.add(edit.description + " (" + vf.getName() + ")");
+                    if (jump[0] == null) {
+                        jump[0] = file + ":" + edit.line;
+                    }
                 } catch (IllegalArgumentException e) {
                     done.add(vf.getName() + ": " + e.getMessage());
                 }
@@ -354,21 +365,22 @@ final class FixRunner {
             if (!docs.contains(doc)) {
                 docs.add(doc);
             }
-            if (jump == null) {
-                jump = file;
-            }
         }
         if (edits.isEmpty()) {
             return 0;
         }
-        WriteCommandAction.runWriteCommandAction(project, "Exclusion einfügen (Maven Detective)", null, () -> edits.forEach(Runnable::run));
+        WriteCommandAction.runWriteCommandAction(project, command, null, () -> edits.forEach(Runnable::run));
         for (Document d : docs) {
             FileDocumentManager.getInstance().saveDocument(d);
         }
-        if (jump != null) {
-            openLocation(project, jump);
+        if (jump[0] != null) {
+            openLocation(project, jump[0]);
         }
-        notify(project, String.join("<br>", done).replace("<exclusion>", "&lt;exclusion&gt;") + "<br>Maven-Projekt wird neu geladen.", NotificationType.INFORMATION);
+        List<String> escaped = new ArrayList<>();
+        for (String d : done) {
+            escaped.add(d.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"));
+        }
+        notify(project, String.join("<br>", escaped) + "<br>Maven-Projekt wird neu geladen.", NotificationType.INFORMATION);
         IdeMaven.reimport(project);
         return edits.size();
     }

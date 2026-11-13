@@ -41,8 +41,7 @@ public final class FixExecutor {
     public static boolean canExecute(FixAction fix) {
         String t = fix.getType();
         return FixAction.DELETE_FILES.equals(t) || FixAction.REPLACE_IN_FILE.equals(t) || FixAction.SET_JVM_OPTION.equals(t)
-                || FixAction.PIN_VERSION.equals(t) || FixAction.REMOVE_EXCLUSION.equals(t)
-                || FixAction.ADD_EXCLUSION.equals(t);
+                || PomEditor.isPomFix(t);
     }
 
     public Outcome execute(FixAction fix) throws IOException {
@@ -92,52 +91,12 @@ public final class FixExecutor {
             Files.write(p, (String.join(" ", kept) + "\n").getBytes(StandardCharsets.UTF_8));
             o.actions.add(p + ": " + option);
             o.rebuildArgs = "";
-        } else if (FixAction.PIN_VERSION.equals(type)) {
+        } else if (PomEditor.isPomFix(type)) {
             Path p = Paths.get(fix.param("file"));
-            String artifact = fix.param("artifact");
-            int colon = artifact == null ? -1 : artifact.indexOf(':');
-            if (colon < 0 || fix.param("version") == null) {
-                throw new IOException("pin-version braucht artifact (groupId:artifactId) und version");
-            }
             String content = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
             PomEditor.Edit edit;
             try {
-                edit = PomEditor.pinManagedVersion(content, artifact.substring(0, colon), artifact.substring(colon + 1), fix.param("version"));
-            } catch (IllegalArgumentException e) {
-                throw new IOException(p + " lässt sich nicht bearbeiten: " + e.getMessage(), e);
-            }
-            Files.write(p, edit.apply(content).getBytes(StandardCharsets.UTF_8));
-            o.actions.add(p + ":" + edit.line + ": " + edit.description);
-            o.rebuildArgs = "";
-        } else if (FixAction.REMOVE_EXCLUSION.equals(type)) {
-            Path p = Paths.get(fix.param("file"));
-            String artifact = fix.param("artifact");
-            int colon = artifact == null ? -1 : artifact.indexOf(':');
-            if (colon < 0 || fix.param("exclusion") == null) {
-                throw new IOException("remove-exclusion braucht artifact (groupId:artifactId) und exclusion");
-            }
-            String content = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
-            PomEditor.Edit edit;
-            try {
-                edit = PomEditor.removeExclusion(content, artifact.substring(0, colon), artifact.substring(colon + 1),
-                        fix.param("exclusion"), "dependencyManagement".equals(fix.param("section")));
-            } catch (IllegalArgumentException e) {
-                throw new IOException(p + " lässt sich nicht bearbeiten: " + e.getMessage(), e);
-            }
-            Files.write(p, edit.apply(content).getBytes(StandardCharsets.UTF_8));
-            o.actions.add(p + ":" + edit.line + ": " + edit.description);
-            o.rebuildArgs = "";
-        } else if (FixAction.ADD_EXCLUSION.equals(type)) {
-            Path p = Paths.get(fix.param("file"));
-            String artifact = fix.param("artifact");
-            int colon = artifact == null ? -1 : artifact.indexOf(':');
-            if (colon < 0 || fix.param("exclusion") == null) {
-                throw new IOException("add-exclusion braucht artifact (groupId:artifactId) und exclusion");
-            }
-            String content = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
-            PomEditor.Edit edit;
-            try {
-                edit = PomEditor.addExclusion(content, artifact.substring(0, colon), artifact.substring(colon + 1), fix.param("exclusion"));
+                edit = PomEditor.forFix(content, fix);
             } catch (IllegalArgumentException e) {
                 throw new IOException(p + " lässt sich nicht bearbeiten: " + e.getMessage(), e);
             }

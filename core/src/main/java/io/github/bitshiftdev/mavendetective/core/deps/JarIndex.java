@@ -37,11 +37,20 @@ public final class JarIndex {
     public static final class Contents {
         private final String[] names;
         private final long[] crcs;
+        private final List<String> services;
 
-        private Contents(String[] names, long[] crcs) {
+        private Contents(String[] names, long[] crcs, List<String> services) {
             this.names = names;
             this.crcs = crcs;
+            this.services = services;
         }
+
+        /**
+         * Registrierungen, über die der Eintrag ohne Nennung im Code wirkt (Modul A5):
+         * {@code META-INF/services/*}, {@code META-INF/spring.factories},
+         * {@code META-INF/spring/*.imports}, Web-Fragmente u. Ä. – als Pfad im Archiv.
+         */
+        public List<String> getServices() { return services; }
 
         /** Anzahl der (äußeren) Klassen. */
         public int size() { return names.length; }
@@ -62,6 +71,10 @@ public final class JarIndex {
         }
 
         static Contents of(List<String> names, List<Long> crcs) {
+            return of(names, crcs, Collections.<String>emptyList());
+        }
+
+        static Contents of(List<String> names, List<Long> crcs, List<String> services) {
             Integer[] order = new Integer[names.size()];
             for (int i = 0; i < order.length; i++) {
                 order[i] = i;
@@ -88,7 +101,7 @@ public final class JarIndex {
             for (int i = 0; i < c.length; i++) {
                 c[i] = outCrcs.get(i);
             }
-            return new Contents(a, c);
+            return new Contents(a, c, Collections.unmodifiableList(new ArrayList<String>(services)));
         }
     }
 
@@ -133,26 +146,33 @@ public final class JarIndex {
     private static Contents readJar(Path jar) throws IOException {
         List<String> names = new ArrayList<String>();
         List<Long> crcs = new ArrayList<Long>();
+        List<String> services = new ArrayList<String>();
         ZipFile zip = new ZipFile(jar.toFile());
         try {
             Enumeration<? extends ZipEntry> en = zip.entries();
             while (en.hasMoreElements()) {
                 ZipEntry z = en.nextElement();
+                if (z.isDirectory()) {
+                    continue;
+                }
                 String className = className(z.getName());
-                if (className != null && !z.isDirectory()) {
+                if (className != null) {
                     names.add(className);
                     crcs.add(z.getCrc());
+                } else if (isService(z.getName())) {
+                    services.add(z.getName());
                 }
             }
         } finally {
             zip.close();
         }
-        return Contents.of(names, crcs);
+        return Contents.of(names, crcs, services);
     }
 
     private static Contents readDirectory(final Path dir) throws IOException {
         final List<String> names = new ArrayList<String>();
         final List<Long> crcs = new ArrayList<Long>();
+        final List<String> services = new ArrayList<String>();
         Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
@@ -161,11 +181,23 @@ public final class JarIndex {
                 if (className != null) {
                     names.add(className);
                     crcs.add(crc(file));
+                } else if (isService(rel)) {
+                    services.add(rel);
                 }
                 return names.size() >= MAX_DIR_CLASSES ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
             }
         });
-        return Contents.of(names, crcs);
+        return Contents.of(names, crcs, services);
+    }
+
+    /** Dateien, über die Frameworks Klassen ohne Nennung im Code laden. */
+    static boolean isService(String entry) {
+        return entry.startsWith("META-INF/services/") && entry.length() > "META-INF/services/".length()
+                || "META-INF/spring.factories".equals(entry)
+                || entry.startsWith("META-INF/spring/") && entry.endsWith(".imports")
+                || "META-INF/web-fragment.xml".equals(entry)
+                || "META-INF/beans.xml".equals(entry)
+                || "META-INF/spring.handlers".equals(entry);
     }
 
     private static long crc(Path file) throws IOException {

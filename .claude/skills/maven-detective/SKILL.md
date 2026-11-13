@@ -1,6 +1,6 @@
 ---
 name: maven-detective
-description: Projektwissen zu Maven Detective (IntelliJ-Plugin + Maven-Core-Extension + Java-8-Kern, der gescheiterte Maven-Builds diagnostiziert). Nutze diesen Skill bei jeder Arbeit in diesem Repo – neue Regel im Fehlerkatalog, neue Prüfung (Check), neuer Quick-Fix-Typ, Log-Parser, Schnappschuss-Diff, IDE-gegen-Kommandozeile, Fixtures, CLI (diagnose/evaluate/changes/validate-catalog/why/matrix/exclusions/duplicates), IntelliJ-Plugin oder CI – und wenn von Build Doctor, Diagnose-Karte, Gate 1/2 oder Modul A (Warum diese Version?, Konflikt-Matrix, doppelte Klassen, Exclusions) die Rede ist.
+description: Projektwissen zu Maven Detective (IntelliJ-Plugin + Maven-Core-Extension + Java-8-Kern, der gescheiterte Maven-Builds diagnostiziert). Nutze diesen Skill bei jeder Arbeit in diesem Repo – neue Regel im Fehlerkatalog, neue Prüfung (Check), neuer Quick-Fix-Typ, Log-Parser, Schnappschuss-Diff, IDE-gegen-Kommandozeile, Fixtures, CLI (diagnose/evaluate/changes/validate-catalog/why/matrix/exclusions/duplicates/analyze), IntelliJ-Plugin oder CI – und wenn von Build Doctor, Diagnose-Karte, Gate 1/2 oder Modul A (Warum diese Version?, Konflikt-Matrix, doppelte Klassen, Exclusions, ungenutzte/undeklarierte Dependencies) die Rede ist.
 ---
 
 # Maven Detective
@@ -13,7 +13,7 @@ Erklärt, warum ein Maven-Build scheitert: Diagnose-Karte mit Ursache, Belegen, 
 | --- | --- | --- |
 | `core` | Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, Prüfungen, Fix-Ausführung, CLI, Schnappschüsse (`snapshot/`), IDE-vs-CLI (`env/`), Modul A (`deps/`) | **Bytecode Java 8** (`release 8`), Tests Java 17 |
 | `maven-extension` | `DetectiveEventSpy`: Events als JSONL + Karte im Maven-Log; bettet `core` ins JAR ein | Java 8 |
-| `intellij-plugin` | Tool-Window „Maven Detective“, `MavenRunListener`, Quick-Fixes (`FixRunner`) | Toolchain 21, gegen IntelliJ 2025.3 (`sinceBuild 253`) |
+| `intellij-plugin` | Tool-Window „Maven Detective“, `MavenRunListener`, Quick-Fixes (`FixRunner`), Inspections | Toolchain 21, gegen IntelliJ 2025.3 (`sinceBuild 253`); braucht Maven- und Java-Plugin |
 | `fixtures/` | Ein Projekt je Fehlerkategorie, das den Fehler absichtlich auslöst | – |
 
 Konzept/Roadmap: `Maven Detective – Plugin-Konzept.md` (Modul A Dependency-Analyse, Modul B Build Doctor, Gates). Stand und Nutzung: `README.md`.
@@ -65,7 +65,7 @@ Datei: `core/src/main/resources/io/github/bitshiftdev/mavendetective/core/catalo
 
 ## Quick-Fix-Typen
 
-Konstanten in `core/diagnosis/FixAction` (Javadoc-Tabelle listet Parameter): `rebuild`, `delete-files`, `open-file`, `replace-in-file`, `switch-jdk`, `set-jvm-option`, `insert-plugin-version`, `show-dependency`, `pin-version` (Modul A; `file`, `artifact`, `version`), `remove-exclusion` (A4; `file`, `artifact`, `exclusion`, `section`), `add-exclusion` (A3; `file`, `artifact` = direkte Dep unter `dependencies`, `exclusion`), `manual`. `core/fix/FixExecutor` führt nur dateibasierte aus (`delete-files`, `replace-in-file`, `set-jvm-option`, `pin-version`, `remove-exclusion`, `add-exclusion`); der Rest läuft im Plugin (`FixRunner`). Neuer Typ ⇒ FixAction-Konstante + Javadoc + Katalog-Kopfkommentar + `RuleCatalog.FIX_TYPES` + Ausführung in Executor/Plugin.
+Konstanten in `core/diagnosis/FixAction` (Javadoc-Tabelle listet Parameter): `rebuild`, `delete-files`, `open-file`, `replace-in-file`, `switch-jdk`, `set-jvm-option`, `insert-plugin-version`, `show-dependency`, `pin-version` (Modul A; `file`, `artifact`, `version`), `remove-exclusion` (A4; `file`, `artifact`, `exclusion`, `section`), `add-exclusion` (A3; `file`, `artifact` = direkte Dep unter `dependencies`, `exclusion`), `add-dependency` (A5; `file`, `artifact`, `version`/`scope`/`type`/`classifier` nur wenn nötig), `remove-dependency` (A5; `file`, `artifact`, `classifier`), `set-scope` (A5; `file`, `artifact`, `scope`, `classifier`), `manual`. POM-Typen laufen zentral über `PomEditor.forFix`/`isPomFix` (Kern: `FixExecutor`, Plugin: `FixRunner.editPoms` = ein Undo-Schritt + Reimport). `core/fix/FixExecutor` führt nur dateibasierte aus (`delete-files`, `replace-in-file`, `set-jvm-option` + POM-Typen); der Rest läuft im Plugin (`FixRunner`). Neuer Typ ⇒ FixAction-Konstante + Javadoc + Katalog-Kopfkommentar + `RuleCatalog.FIX_TYPES` + Ausführung (POM-Typ: `PomEditor.forFix`/`isPomFix` + `FixRunner.isSupported`/`run`).
 
 ## Schnappschüsse („Was hat sich geändert?“)
 
@@ -82,6 +82,7 @@ java -jar core/build/libs/maven-detective-core-*.jar why g:a [--project DIR] [--
 java -jar core/build/libs/maven-detective-core-*.jar matrix [--project DIR] [--tree tree.txt|-] [--all] [--markdown] [--pin g:a[:version]]
 java -jar core/build/libs/maven-detective-core-*.jar exclusions [--project DIR] [--tree tree.txt|-] [--all] [--markdown] [--remove]  # Exit 3 = veraltete vorhanden
 java -jar core/build/libs/maven-detective-core-*.jar duplicates [--project DIR] [--tree tree.txt|-] [--all] [--markdown] [--exclude]  # Exit 3 = verschiedene Fassungen zur Laufzeit
+java -jar core/build/libs/maven-detective-core-*.jar analyze [--project DIR] [--tree tree.txt|-] [--all] [--markdown] [--declare] [--remove]  # A5, Exit 3 = sichere Befunde
 ```
 
 Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFile=…`, `-DmavenDetective.report=false`.
@@ -104,10 +105,13 @@ Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFi
 - `JarIndex` (thread-sicher, Cache mtime+Größe; Plugin hält eine statische Instanz): Klassenname + CRC32 aus dem Zentralverzeichnis; ohne innere Klassen, `module-info`, `package-info`, `META-INF/`.
 - `DuplicateClasses.build(locator, poms, trees, index, cancellation)` → `ModuleResult` (Clashes, `unreadable`) → `Clash` je JAR-Gruppe (`differing`, `isMain` = ≥2 nicht-Test-JARs). Empfehlung: Tabelle `KNOWN` (drop/keep-GAs) vor „komplett enthalten“ (bei mehreren: transitiv vor direkt, sonst der heutige Verlierer); sonst `drop == null`. `fixesFor(entry)`: `add-exclusion` je direkter Dep (im POM, wo sie deklariert ist), direkt deklariert → `open-file`.
 - `PomEditor.addExclusion(xml, g, a, "eg:ea")`: nur `project/dependencies`, bevorzugt ohne Classifier, Duplikat → `IllegalArgumentException`. Plugin: Tab `DuplicateClassesPanel` (prüft erst auf Klick), `FixRunner.addExclusions` = ein Undo-Schritt + Reimport.
+- **A5** Grundlage = Klassen, die die Quellen **beim Namen nennen** (`ClassUsages`: main/test, erste Fundstelle, Wildcards mit einfachen Namen der Datei). CLI: `SourceScanner` (Text ohne Kommentare/Strings, `src/{main,test}/{java,kotlin,groovy}` + `target/generated(-test)-sources`). IDE: `IdeUsages.collect` (PSI-Visitor löst Referenzen auf, je Datei `ReadAction.nonBlocking().inSmartMode().executeSynchronously()` + `ClassUsages.addAll`, Kotlin/Groovy über Scanner); Plugin hängt an `com.intellij.java`.
+- `DependencyUsage.build(locator, poms, trees, index, UsageSource, cancel)`: Name → Eintrag (innere Klassen/Member abschneiden; main: erster compile/provided/system, sonst runtime; test: erster). `UNDECLARED` (nicht direkt, nicht deklariert; `isViaBundle` = über Starter ohne Klassen → CLI nur mit `--all`, IDE per Option), `UNUSED` (kein Name; Starter genutzt, wenn Mitgebrachtes genannt; runtime + Tabelle `RUNTIME_ONLY` nie; `JarIndex.Contents.getServices()` ⇒ `isCertain=false`), `TEST_ONLY` (compile/provided, nur Tests). Geerbte Deklaration → nur `open-file`. Reactor-Module ohne `target/classes` aus Quelldateinamen. Ohne Quellen kein UNUSED.
+- `DependencyUsage.undeclared(cp, entry, class, test, file, line, index)` für die Live-Inspection `UndeclaredDependencyInspection` (Java-Imports; Classpath gecacht an `ProjectRootManager` + POM; `ModuleClasspath.find(Path | g, a)`). Tab `DependencyUsagePanel` („Ungenutzt/undeklariert“, Mehrfachauswahl, `FixRunner.editPoms`). `IdeUsages.JARS` = gemeinsamer `JarIndex` (auch A3).
 
 ## Offene Punkte (Stand README)
 
-Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1, A2, A3, A4 fertig (alle nicht in `runIde` geklickt), A5, A6 offen. Vor größeren Features README „Nächste Schritte“ prüfen.
+Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1–A5 fertig (alle nicht in `runIde` geklickt), A6 (Upgrade-Simulator) offen; Plugin Verifier braucht Netz (in der Sandbox nicht lauffähig). Vor größeren Features README „Nächste Schritte“ prüfen.
 
 ## Git
 

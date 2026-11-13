@@ -12,11 +12,11 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 [ERROR] +--------------------------------------------------------------
 ```
 
-## Stand: Phase 3 – Modul A (A1, A2, A3, A4 fertig)
+## Stand: Phase 3 – Modul A (A1 bis A5 fertig)
 
 | Baustein | Status |
 | --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 105 Unit-Tests |
+| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 120 Unit-Tests |
 | Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ + „EAR/WAR/EJB-Packaging“ |
 | Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
@@ -28,7 +28,8 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | A2 Konflikt-Matrix | fertig in Kern, CLI (`matrix`, `--pin`) und IDE (Tab „Konflikt-Matrix“ mit Quick-Fix „im Parent festlegen“). **In `runIde` noch nicht durchgeklickt** |
 | A4 Exclusion-Hygiene | fertig in Kern, CLI (`exclusions`, `--remove`) und IDE (Inspection „Veraltete Exclusion“ in der `pom.xml` mit Quick-Fix). **In `runIde` noch nicht durchgeklickt** |
 | A3 Doppelte Klassen | fertig in Kern, CLI (`duplicates`, `--exclude`) und IDE (Tab „Doppelte Klassen“ mit Quick-Fix „Exclusion einfügen“). **In `runIde` noch nicht durchgeklickt** |
-| A5, A6 (unused/undeclared, Upgrade-Simulator) | offen |
+| A5 Ungenutzte/undeklarierte Dependencies | fertig in Kern, CLI (`analyze`, `--declare`, `--remove`) und IDE (Tab „Ungenutzt/undeklariert“, Inspection „Import aus nicht deklarierter Dependency“ live im Editor). **In `runIde` noch nicht durchgeklickt** |
+| A6 Upgrade-Simulator | offen |
 
 ## Schnellstart
 
@@ -68,6 +69,10 @@ java -jar core/build/libs/maven-detective-core-*.jar exclusions --project . --re
 java -jar core/build/libs/maven-detective-core-*.jar duplicates --project . --tree tree.txt
 # … und die empfohlenen Exclusions einfügen
 java -jar core/build/libs/maven-detective-core-*.jar duplicates --project . --exclude
+# Was nutzt der Code, ohne es zu deklarieren – und was ist deklariert, ohne genutzt zu werden? (Modul A5; Exit-Code 3 = Befunde)
+java -jar core/build/libs/maven-detective-core-*.jar analyze --project . --tree tree.txt
+# … undeklarierte deklarieren und sicher ungenutzte entfernen
+java -jar core/build/libs/maven-detective-core-*.jar analyze --project . --declare --remove
 ```
 
 ### Extension in Maven-Läufen
@@ -232,6 +237,33 @@ Modul app (84 Einträge)
 - **Quick-Fix `add-exclusion`** fügt die Exclusion bei jeder direkten Dependency ein, über die das JAR kommt (auch über verdrängte Pfade, sonst käme es dort wieder hoch) – in vorhandene `<exclusions>` oder neu vor `</dependency>`, Einrückung wie in der Datei. Steht die Dependency im Parent, kommt die Exclusion dorthin (gilt dann für alle erbenden Module). Ist das JAR direkt deklariert, springt der Fix zur Deklaration.
 - **In der IDE:** Tab „Doppelte Klassen“ – prüft erst auf Klick „Prüfen“ (öffnet alle JARs). Filter für nur-Test und inhaltsgleiche Funde, Suche auch nach Klassennamen; unten Reihenfolge, Pfade, Klassen und „Aus dem Classpath nehmen“ mit freier Wahl des JARs (vorbelegt mit der Empfehlung). Alle Exclusions eines Klicks sind ein Undo-Schritt, danach Maven-Import.
 
+## Ungenutzte und undeklarierte Dependencies
+
+Modul A5 vergleicht, welche Klassen der Quelltext eines Moduls **beim Namen nennt**, mit dem, was die `pom.xml` deklariert. Jede genannte Klasse wird dem Classpath-Eintrag zugeordnet, aus dem der Compiler sie nimmt (Classpath wie bei A3):
+
+```
+Dependency-Nutzung: 1 undeklariert, 1 ungenutzt, 1 nur in Tests – 2 Module
+Grundlage: Klassen, die der Quelltext beim Namen nennt (Imports, voll qualifizierte Namen).
+
+Modul app (42 Quell-, 17 Testdateien)
+  undeklariert  slf4j-api:2.0.16 ist nicht deklariert, wird aber genannt: org.slf4j.Logger und 1 weitere Klasse – kommt nur transitiv über web:1.0.
+      Pfad: org.web:web:1.0 → org.slf4j:slf4j-api:2.0.16
+      genannt: org.slf4j.Logger (App.java:5)
+      genannt: org.slf4j.LoggerFactory (App.java:5)
+        → org.slf4j:slf4j-api in app deklarieren
+  nur in Tests  assertj-core:3.26.3 (Scope compile) wird nur in Tests genannt, z. B. org.assertj.core.api.Assertions – Scope test genügt.
+        → Scope von org.assertj:assertj-core auf test setzen
+  ungenutzt     commons-lang3:3.17.0 ist deklariert, aber keine seiner Klassen wird im Code genannt.
+        → org.apache.commons:commons-lang3 aus app entfernen
+```
+
+- **undeklariert:** genannt, aber nur transitiv da – fällt die vermittelnde Dependency weg oder ändert sie ihre Abhängigkeiten, bricht der Build, ohne dass sich die eigene POM geändert hat. Quick-Fix `add-dependency` deklariert sie im Modul: ohne Version, wenn sie verwaltet ist (Parent, BOM), mit Scope `test`, wenn nur Tests sie nennen. Kommt die Klasse über einen **Starter ohne eigene Klassen** (`spring-boot-starter-web` → `spring-web`), wird das nur mit `--all` bzw. „Auch über Starter“ gezeigt – dort ist Deklarieren üblich nicht nötig.
+- **ungenutzt:** deklariert, aber keine Klasse daraus genannt. Starter zählen als genutzt, wenn etwas genannt wird, das sie mitbringen. Nie gemeldet werden Scope `runtime` und bekannte Laufzeit-Bibliotheken (JDBC-Treiber, Logging-Backends und -Brücken, Test-Engines, Annotation-Prozessoren, `spring-boot-devtools` …). Bringt das JAR Registrierungen mit (`META-INF/services`, `spring.factories`, `META-INF/spring/*.imports`, `web-fragment.xml`, `beans.xml`), wirkt es womöglich ohne Nennung – dann *unsicher* (`?`), ohne Exit-Code 3 und ohne `--remove`. Quick-Fix `remove-dependency`; ist die Dependency im Parent deklariert, springt der Fix nur dorthin (gilt für alle erbenden Module).
+- **nur in Tests:** Scope `compile`/`provided`, aber nur Testquellen nennen sie. Quick-Fix `set-scope` setzt `test`.
+- **Was „genannt“ heißt:** Imports (auch statische und `import a.b.*` samt der Namen der Datei), voll qualifizierte Namen, in der IDE jede aufgelöste Typ-Referenz. Nicht gezählt: Kommentare, Zeichenketten, Reflection, Klassen, die nur über Typinferenz vorkommen. Reactor-Module, die noch nicht gebaut sind, werden aus ihren Quelldateien erschlossen. Ohne Quelldateien wird „ungenutzt“ nicht geprüft.
+- **Kommandozeile:** Text-Scanner über `src/{main,test}/{java,kotlin,groovy}` und `target/generated(-test)-sources` – ohne Compiler. `--declare` deklariert die undeklarierten (ohne Starter-Fälle), `--remove` entfernt sicher ungenutzte aus dem eigenen POM; ein Durchgang, danach neu prüfen.
+- **In der IDE:** Tab „Ungenutzt/undeklariert“ – prüft auf Klick, löst die Referenzen über den Code-Index auf (Java über die PSI, Kotlin/Groovy über den Text-Scanner), Belege mit Sprung zur Zeile, Mehrfachauswahl, „Beheben“ als ein Undo-Schritt mit anschließendem Maven-Import. Live im Editor markiert die Inspection „Import aus nicht deklarierter Dependency“ (Gruppe Maven Detective) solche Imports, Alt+Enter deklariert die Dependency; Starter-Fälle per Option.
+
 ## Aufbau
 
 ```
@@ -239,10 +271,12 @@ core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, 
                    Schnappschüsse + Diff (snapshot/), IDE-gegen-Kommandozeile (env/BuildSetup, SetupComparison),
                    Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser,
                    ConflictMatrix, ExclusionAudit, ModuleClasspath, JarIndex, DuplicateClasses,
+                   ClassUsages, SourceScanner, DependencyUsage,
                    PomEditor für textgenaue POM-Änderungen, MavenVersion, PomCache)
 maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
-intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies, Konflikt-Matrix, Doppelte Klassen), Listener auf Maven-Läufe, Quick-Fixes,
-                   Editor-Aktion „Warum diese Version?“, Inspection „Veraltete Exclusion“;
+intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies, Konflikt-Matrix, Doppelte Klassen, Ungenutzt/undeklariert),
+                   Listener auf Maven-Läufe, Quick-Fixes, Editor-Aktion „Warum diese Version?“, Inspections „Veraltete Exclusion“
+                   und „Import aus nicht deklarierter Dependency“ (IdeUsages löst Referenzen über den Code-Index auf);
                    IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht)
 fixtures/          Je Fehlerkategorie ein Projekt, das den Fehler absichtlich auslöst (fixtures.txt),
                    dazu 09-changed-since-green für den Schnappschuss-Diff
@@ -257,12 +291,14 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
 - Preflight-Check und Log-Navigator aus dem Konzept.
 - Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.
-- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A5 Unused/undeclared, A6 Upgrade-Simulator.
+- Phase 3 weiter: A1 auch per Rechtsklick im Maven-Tool-Window und unter External Libraries; A6 Upgrade-Simulator.
 - A1 in `runIde` an einem Spring-Boot-Projekt durchklicken (Abnahme laut Konzept: Herkunft jeder Dependency korrekt).
 - A2 in `runIde` an einem Multi-Modul-Projekt durchklicken: Abweichung pinnen, Re-Import, Matrix aktualisieren.
 - A4 in `runIde` an einem Spring-Boot-Projekt durchklicken: eine bekannte veraltete Exclusion (z. B. `commons-logging` bei `spring-core` 6) wird ausgegraut, Quick-Fix entfernt sie.
 - A3 in `runIde` an einem Spring-Boot-Projekt durchklicken: z. B. `commons-logging` neben `spring-jcl` erzwingen, Fund erscheint mit Empfehlung, „Exclusion einfügen“ ändert die POM, nach dem Import ist der Fund weg.
 - A3 erweitern: Versionspaare in die Tabelle (z. B. `plexus-utils` < 4 neben `plexus-xml` 3 → plexus-utils heben statt ausschließen); doppelte Klassen als Beleg auf der Build-Doctor-Karte bei `NoSuchMethodError`/`NoClassDefFoundError` in Tests.
+- A5 in `runIde` an einem Spring-Boot-Projekt durchklicken: Import aus `spring-web` ohne Deklaration (mit „Auch über Starter“), ungenutzte Dependency entfernen, compile → test; prüfen, wie lange „Prüfen“ bei großen Modulen braucht.
+- A5 erweitern: Kotlin über die Kotlin-PSI statt Text-Scanner; die Liste bekannter Laufzeit-Bibliotheken an echten Projekten schärfen; „ungenutzt“ live in der `pom.xml` (braucht einen modulweiten Cache der Nennungen).
 - Konflikt-Matrix mit Deployment-Sicht für EARs: `lib/` gegen `WEB-INF/lib`, `skinnyWars`, `provided` vom Server; `ejb-client` als eigene Zeile.
 - A2-Pin auch als Karte im Build Doctor anbieten (Regel 10 „Laufzeitkonflikt“: verschiedene Versionen über die Module).
 

@@ -1,5 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -226,6 +228,217 @@ public final class PomEditor {
         return insertBefore(xml, at, block, closingIndent, nl, description, "<exclusion>");
     }
 
+    /**
+     * Deklariert {@code groupId:artifactId} unter {@code project/dependencies} – am Ende der
+     * vorhandenen Liste, sonst mit neuem {@code <dependencies>} vor {@code <build>} bzw. am Ende von
+     * {@code <project>}. {@code version} {@code null}, wenn sie aus dem dependencyManagement kommt;
+     * {@code scope}, {@code type}, {@code classifier} nur, wenn nicht Standard.
+     *
+     * @throws IllegalArgumentException wenn die Dependency schon dasteht
+     */
+    public static Edit addDependency(String xml, String groupId, String artifactId, String version, String scope, String type,
+                                     String classifier) {
+        Scan s = Scan.of(xml);
+        if (s.projectEnd < 0) {
+            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+        }
+        for (DepEntry d : s.deps) {
+            if (!d.managed && groupId.equals(d.fields.get("groupId")) && artifactId.equals(d.fields.get("artifactId"))
+                    && same(classifier, d.fields.get("classifier"))) {
+                throw new IllegalArgumentException(groupId + ":" + artifactId + " ist schon deklariert");
+            }
+        }
+        String nl = xml.contains("\r\n") ? "\r\n" : "\n";
+        String unit = s.indentUnit(xml);
+        String coords = groupId + ":" + artifactId + (version == null ? "" : ":" + version)
+                + (scope == null || "compile".equals(scope) ? "" : " (" + scope + ")");
+        if (s.dependencies != null) {
+            int at = s.dependencies.contentEnd;
+            String closingIndent = lineIndent(xml, s.dependencies.tagStart);
+            String block = dependencyBlock(groupId, artifactId, version, scope, type, classifier, closingIndent + unit, unit, nl);
+            return insertBefore(xml, at, block, closingIndent, nl, coords + " deklariert");
+        }
+        int at = s.buildStart >= 0 ? s.buildStart : s.projectEnd;
+        String indent = at == s.projectEnd ? lineIndent(xml, at) + unit : lineIndent(xml, at);
+        String block = indent + "<dependencies>" + nl
+                + dependencyBlock(groupId, artifactId, version, scope, type, classifier, indent + unit, unit, nl)
+                + indent + "</dependencies>" + nl;
+        if (at != s.projectEnd) {
+            block += nl;
+        }
+        String followIndent = at == s.projectEnd ? lineIndent(xml, at) : indent;
+        return insertBefore(xml, at, block, followIndent, nl, "<dependencies> mit " + coords + " angelegt");
+    }
+
+    /**
+     * Entfernt die Dependency {@code groupId:artifactId} (mit {@code classifier}, sonst die erste
+     * ohne) aus {@code project/dependencies}. War es die einzige, geht {@code <dependencies>} mit.
+     *
+     * @throws IllegalArgumentException wenn sie dort nicht steht
+     */
+    public static Edit removeDependency(String xml, String groupId, String artifactId, String classifier) {
+        Scan s = Scan.of(xml);
+        DepEntry found = find(s, groupId, artifactId, classifier);
+        int count = 0;
+        for (DepEntry d : s.deps) {
+            if (!d.managed) {
+                count++;
+            }
+        }
+        Range r = count == 1 && s.dependencies != null ? s.dependencies : found.range;
+        int start = r.tagStart;
+        int end = r.tagEnd;
+        int lineStart = lineStart(xml, start);
+        int lineEnd = lineEnd(xml, end);
+        if (xml.substring(lineStart, start).trim().isEmpty() && xml.substring(end, lineEnd).trim().isEmpty()) {
+            start = lineStart;
+            end = lineEnd < xml.length() ? lineEnd + 1 : lineEnd;
+        }
+        return new Edit(start, end - start, "", lineOf(xml, start),
+                groupId + ":" + artifactId + (r == found.range ? "" : " samt leerem <dependencies>") + " entfernt");
+    }
+
+    /**
+     * Setzt den Scope der Dependency {@code groupId:artifactId} unter {@code project/dependencies}:
+     * vorhandenes {@code <scope>} ändern, sonst nach {@code <version>} (bzw. artifactId, type,
+     * classifier) einfügen.
+     *
+     * @throws IllegalArgumentException wenn sie fehlt oder den Scope schon hat
+     */
+    public static Edit setScope(String xml, String groupId, String artifactId, String scope, String classifier) {
+        Scan s = Scan.of(xml);
+        DepEntry found = find(s, groupId, artifactId, classifier);
+        String description = "Scope von " + groupId + ":" + artifactId + " auf " + scope + " gesetzt";
+        Range current = found.ranges.get("scope");
+        if (current != null) {
+            String old = xml.substring(current.contentStart, current.contentEnd).trim();
+            if (scope.equals(old)) {
+                throw new IllegalArgumentException(groupId + ":" + artifactId + " hat schon Scope " + scope);
+            }
+            return new Edit(current.contentStart, current.contentEnd - current.contentStart, scope, lineOf(xml, current.contentStart),
+                    "Scope von " + groupId + ":" + artifactId + " von " + old + " auf " + scope + " gesetzt");
+        }
+        Range after = null;
+        for (String child : new String[] {"artifactId", "version", "type", "classifier"}) {
+            Range r = found.ranges.get(child);
+            if (r != null && (after == null || r.tagEnd > after.tagEnd)) {
+                after = r;
+            }
+        }
+        if (after == null) {
+            throw new IllegalArgumentException(groupId + ":" + artifactId + " ohne <artifactId>-Element");
+        }
+        String nl = xml.contains("\r\n") ? "\r\n" : "\n";
+        boolean ownLine = xml.substring(lineStart(xml, after.tagStart), after.tagStart).trim().isEmpty();
+        if (!ownLine) {
+            return new Edit(after.tagEnd, 0, "<scope>" + scope + "</scope>", lineOf(xml, after.tagEnd), description);
+        }
+        String text = nl + lineIndent(xml, after.tagStart) + "<scope>" + scope + "</scope>";
+        return new Edit(after.tagEnd, 0, text, lineOf(xml, after.tagEnd) + 1, description);
+    }
+
+    /**
+     * Die Textänderung zu einem POM-Quick-Fix ({@code pin-version}, {@code remove-exclusion},
+     * {@code add-exclusion}, {@code add-dependency}, {@code remove-dependency}, {@code set-scope}).
+     *
+     * @throws IllegalArgumentException bei anderem Typ, fehlenden Parametern oder wenn die Stelle fehlt
+     */
+    public static Edit forFix(String xml, FixAction fix) {
+        String type = fix.getType();
+        String artifact = fix.param("artifact");
+        int colon = artifact == null ? -1 : artifact.indexOf(':');
+        if (colon < 0) {
+            throw new IllegalArgumentException(type + " braucht artifact (groupId:artifactId)");
+        }
+        String g = artifact.substring(0, colon);
+        String a = artifact.substring(colon + 1);
+        if (FixAction.PIN_VERSION.equals(type)) {
+            return pinManagedVersion(xml, g, a, required(fix, "version"));
+        }
+        if (FixAction.REMOVE_EXCLUSION.equals(type)) {
+            return removeExclusion(xml, g, a, required(fix, "exclusion"), "dependencyManagement".equals(fix.param("section")));
+        }
+        if (FixAction.ADD_EXCLUSION.equals(type)) {
+            return addExclusion(xml, g, a, required(fix, "exclusion"));
+        }
+        if (FixAction.ADD_DEPENDENCY.equals(type)) {
+            return addDependency(xml, g, a, fix.param("version"), fix.param("scope"), fix.param("type"), fix.param("classifier"));
+        }
+        if (FixAction.REMOVE_DEPENDENCY.equals(type)) {
+            return removeDependency(xml, g, a, fix.param("classifier"));
+        }
+        if (FixAction.SET_SCOPE.equals(type)) {
+            return setScope(xml, g, a, required(fix, "scope"), fix.param("classifier"));
+        }
+        throw new IllegalArgumentException("Kein POM-Quick-Fix: " + type);
+    }
+
+    /** Ändert dieser Quick-Fix-Typ eine POM über {@link #forFix}? */
+    public static boolean isPomFix(String type) {
+        return FixAction.PIN_VERSION.equals(type) || FixAction.REMOVE_EXCLUSION.equals(type) || FixAction.ADD_EXCLUSION.equals(type)
+                || FixAction.ADD_DEPENDENCY.equals(type) || FixAction.REMOVE_DEPENDENCY.equals(type) || FixAction.SET_SCOPE.equals(type);
+    }
+
+    private static String required(FixAction fix, String key) {
+        String v = fix.param(key);
+        if (v == null || v.isEmpty()) {
+            throw new IllegalArgumentException(fix.getType() + " braucht " + key);
+        }
+        return v;
+    }
+
+    /** Dependency unter {@code project/dependencies}; ohne Classifier bevorzugt die ohne. */
+    private static DepEntry find(Scan s, String groupId, String artifactId, String classifier) {
+        if (s.projectEnd < 0) {
+            throw new IllegalArgumentException("Kein <project>-Element gefunden");
+        }
+        DepEntry found = null;
+        for (DepEntry d : s.deps) {
+            if (d.managed || !groupId.equals(d.fields.get("groupId")) || !artifactId.equals(d.fields.get("artifactId"))) {
+                continue;
+            }
+            String c = d.fields.get("classifier");
+            if (classifier != null && !classifier.isEmpty()) {
+                if (classifier.equals(c)) {
+                    return d;
+                }
+            } else if (found == null || (c == null || c.isEmpty()) && found.fields.get("classifier") != null) {
+                found = d;
+            }
+        }
+        if (found == null || found.range == null) {
+            throw new IllegalArgumentException("Dependency " + groupId + ":" + artifactId + " unter dependencies nicht gefunden");
+        }
+        return found;
+    }
+
+    private static boolean same(String classifier, String other) {
+        String a = classifier == null ? "" : classifier;
+        String b = other == null ? "" : other;
+        return a.equals(b);
+    }
+
+    private static String dependencyBlock(String g, String a, String v, String scope, String type, String classifier, String indent,
+                                          String unit, String nl) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(indent).append("<dependency>").append(nl);
+        sb.append(indent).append(unit).append("<groupId>").append(g).append("</groupId>").append(nl);
+        sb.append(indent).append(unit).append("<artifactId>").append(a).append("</artifactId>").append(nl);
+        if (v != null && !v.isEmpty()) {
+            sb.append(indent).append(unit).append("<version>").append(v).append("</version>").append(nl);
+        }
+        if (type != null && !type.isEmpty() && !"jar".equals(type)) {
+            sb.append(indent).append(unit).append("<type>").append(type).append("</type>").append(nl);
+        }
+        if (classifier != null && !classifier.isEmpty()) {
+            sb.append(indent).append(unit).append("<classifier>").append(classifier).append("</classifier>").append(nl);
+        }
+        if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
+            sb.append(indent).append(unit).append("<scope>").append(scope).append("</scope>").append(nl);
+        }
+        return sb.append(indent).append("</dependency>").append(nl).toString();
+    }
+
     private static String exclusionBlock(String g, String a, String indent, String unit, String nl) {
         return indent + "<exclusion>" + nl
                 + indent + unit + "<groupId>" + g + "</groupId>" + nl
@@ -348,6 +561,8 @@ public final class PomEditor {
         int dmEnd = -1;
         int dmDependenciesEnd = -1;
         int dependenciesStart = -1;
+        /** {@code project/dependencies} komplett; {@code null}, wenn es fehlt. */
+        Range dependencies;
         int buildStart = -1;
         int projectEnd = -1;
         int firstChildStart = -1;
@@ -452,6 +667,8 @@ public final class PomEditor {
                 dmEnd = r.contentEnd;
             } else if ("project/dependencyManagement/dependencies".equals(path)) {
                 dmDependenciesEnd = r.contentEnd;
+            } else if ("project/dependencies".equals(path) && dependencies == null) {
+                dependencies = r;
             } else if (entry != null && isChild(path, entry.managed ? MANAGED_DEPENDENCY : DEPENDENCY)) {
                 entry.fields.put(name, xml.substring(r.contentStart, r.contentEnd).trim());
                 entry.ranges.put(name, r);

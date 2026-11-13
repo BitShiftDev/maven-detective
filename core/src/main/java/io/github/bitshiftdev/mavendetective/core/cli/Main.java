@@ -7,6 +7,7 @@ import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 import io.github.bitshiftdev.mavendetective.core.deps.ConflictMatrix;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.DependencyTreeParser;
+import io.github.bitshiftdev.mavendetective.core.deps.DependencyUsage;
 import io.github.bitshiftdev.mavendetective.core.deps.DuplicateClasses;
 import io.github.bitshiftdev.mavendetective.core.deps.ExclusionAudit;
 import io.github.bitshiftdev.mavendetective.core.deps.JarIndex;
@@ -58,6 +59,7 @@ import java.util.TreeMap;
  * java -jar maven-detective-core.jar matrix [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--pin groupId:artifactId[:version]]
  * java -jar maven-detective-core.jar exclusions [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--remove]
  * java -jar maven-detective-core.jar duplicates [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--exclude]
+ * java -jar maven-detective-core.jar analyze [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--declare] [--remove]
  * </pre>
  *
  * {@code evaluate} ist das Werkzeug für Gate 1: alle Logs eines Ordners einordnen und, falls
@@ -100,6 +102,9 @@ public final class Main {
             }
             if ("duplicates".equals(command)) {
                 return duplicates(o, out, err, stdin);
+            }
+            if ("analyze".equals(command)) {
+                return analyze(o, out, err, stdin);
             }
             if ("evaluate".equals(command) && o.target != null) {
                 return evaluate(o, out);
@@ -418,6 +423,64 @@ public final class Main {
         return 0;
     }
 
+    /**
+     * Modul A5: Dependencies, die der Quelltext nennt, aber nur transitiv da sind, und deklarierte,
+     * die er nicht nennt. {@code --declare} deklariert die undeklarierten (ohne die über Starter),
+     * {@code --remove} entfernt die sicher ungenutzten (nur im eigenen POM, nicht im Parent). Ein
+     * Durchgang – danach neu prüfen. Exit-Code 3, wenn ohne Schalter etwas zu tun wäre (für CI).
+     */
+    private static int analyze(Options o, PrintStream out, PrintStream err, InputStream stdin) throws IOException {
+        Path root = projectRoot(o);
+        Map<String, DepNode> trees = trees(o, err, stdin);
+        PomLocator locator = new PomLocator(root, localRepository(o, root));
+        List<PomFile> poms = projectPoms(locator, root);
+        if (poms.isEmpty()) {
+            err.println("Keine pom.xml unter " + root + " (--project DIR angeben)");
+            return 1;
+        }
+        DependencyUsage result = DependencyUsage.build(locator, poms, trees, new JarIndex(), DependencyUsage.sourceScanner(null), null);
+        if (o.declare || o.remove) {
+            FixExecutor executor = new FixExecutor(Collections.<Path>emptyList());
+            int changed = 0;
+            for (DependencyUsage.Finding f : result.findings()) {
+                boolean wanted = o.declare && f.getKind() == DependencyUsage.Kind.UNDECLARED && !f.isViaBundle()
+                        || o.remove && f.getKind() == DependencyUsage.Kind.UNUSED && f.isCertain() && !f.isInherited();
+                if (!wanted) {
+                    continue;
+                }
+                for (FixAction fix : f.fixes()) {
+                    if (!FixExecutor.canExecute(fix)) {
+                        continue;
+                    }
+                    try {
+                        for (String a : executor.execute(fix).actions) {
+                            out.println(a);
+                        }
+                        changed++;
+                    } catch (IOException e) {
+                        err.println("Übersprungen: " + e.getMessage());
+                    }
+                }
+            }
+            out.println(changed == 0 ? "Nichts zu ändern." : changed + (changed == 1 ? " Änderung." : " Änderungen.")
+                    + " Erneut prüfen" + (trees.isEmpty() ? "." : " (Baum neu erzeugen)."));
+            return 0;
+        }
+        if (o.markdown) {
+            out.print(result.markdown(o.all));
+        } else {
+            for (String line : result.lines(o.all)) {
+                out.println(line);
+            }
+        }
+        for (DependencyUsage.Finding f : result.findings()) {
+            if (f.isCertain() && !f.isViaBundle()) {
+                return 3;
+            }
+        }
+        return 0;
+    }
+
     private static int pin(ConflictMatrix matrix, String spec, PrintStream out, PrintStream err) throws IOException {
         String[] parts = spec.split(":");
         if (parts.length < 2) {
@@ -552,6 +615,9 @@ public final class Main {
         err.println("  duplicates [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--exclude]");
         err.println("      (Modul A3: Klassen in mehreren JARs; --exclude fügt die empfohlenen Exclusions ein,");
         err.println("       Exit 3 = verschiedene Fassungen im Laufzeit-Classpath)");
+        err.println("  analyze [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--declare] [--remove]");
+        err.println("      (Modul A5: genannt, aber nur transitiv da / deklariert, aber nicht genannt; --declare deklariert,");
+        err.println("       --remove entfernt sicher ungenutzte, Exit 3 = es gibt Befunde)");
     }
 
     private static final class Options {
@@ -566,6 +632,7 @@ public final class Main {
         boolean all;
         boolean remove;
         boolean exclude;
+        boolean declare;
         boolean idOnly;
 
         static Options parse(String[] args) {
@@ -590,6 +657,8 @@ public final class Main {
                     o.remove = true;
                 } else if ("--exclude".equals(a)) {
                     o.exclude = true;
+                } else if ("--declare".equals(a)) {
+                    o.declare = true;
                 } else if ("--markdown".equals(a)) {
                     o.markdown = true;
                 } else if ("--id".equals(a)) {

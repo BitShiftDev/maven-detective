@@ -1,0 +1,21 @@
+<html>
+<body>
+Meldet Imports von Klassen, deren JAR das Modul nicht selbst deklariert, sondern nur transitiv bekommt
+(Maven Detective, Modul A5).
+<!-- tooltip end -->
+<p>
+Fällt die vermittelnde Dependency weg oder ändert sie ihre eigenen Abhängigkeiten, bricht der Build –
+ohne dass die eigene <code>pom.xml</code> sich geändert hat. Deklariert man, was man beim Namen nennt,
+bleibt der Classpath stabil.
+</p>
+<p>
+Grundlage ist der Classpath aus dem Maven-Modell der IDE (Stand des letzten Imports). Klassen aus Startern
+ohne eigene Klassen (etwa <code>spring-boot-starter-web</code>) werden standardmäßig nicht gemeldet – dort ist
+das Deklarieren üblich nicht nötig; die Option unten schaltet sie zu. Projektweit, samt ungenutzter
+Dependencies: Tab <i>Ungenutzt/undeklariert</i> im Tool-Window <i>Maven Detective</i> oder
+<code>maven-detective-core.jar analyze</code>.
+</p>
+<p>Quick-Fix: Dependency in der <code>pom.xml</code> des Moduls deklarieren (ohne Version, wenn sie verwaltet ist;
+mit Scope <code>test</code>, wenn der Import in einer Testquelle steht).</p>
+</body>
+</html>

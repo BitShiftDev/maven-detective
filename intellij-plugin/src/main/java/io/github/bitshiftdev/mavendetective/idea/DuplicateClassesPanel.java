@@ -22,7 +22,6 @@ import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.DuplicateClasses;
-import io.github.bitshiftdev.mavendetective.core.deps.JarIndex;
 import io.github.bitshiftdev.mavendetective.core.deps.ModuleClasspath;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
@@ -61,8 +60,6 @@ public final class DuplicateClassesPanel extends JPanel implements Disposable {
     private static final Logger LOG = Logger.getInstance(DuplicateClassesPanel.class);
     private static final JBColor DIFFERS = new JBColor(0xFFE4E1, 0x4D2B2B);
     private static final int MAX_CLASSES_SHOWN = 200;
-    /** JAR-Inhalte über alle Aktualisierungen (mtime + Größe), damit nicht jedes Mal alle Archive geöffnet werden. */
-    private static final JarIndex JARS = new JarIndex();
 
     private final Project project;
     private final JBCheckBox withTests = new JBCheckBox("Auch nur Tests", false);
@@ -180,6 +177,16 @@ public final class DuplicateClassesPanel extends JPanel implements Disposable {
     static @Nullable DuplicateClasses compute(Project project, Cancellation cancellation) {
         Path root = IdeMaven.reactorRoot(project);
         PomLocator locator = DependenciesPanel.locator(project, root);
+        List<PomFile> poms = projectPoms(project, locator, root);
+        if (poms.isEmpty()) {
+            return null;
+        }
+        Map<String, DepNode> trees = IdeMaven.dependencyTrees(project);
+        return DuplicateClasses.build(locator, poms, trees, IdeUsages.JARS, cancellation);
+    }
+
+    /** POMs aller importierten Maven-Module; ohne Import die unter der Reactor-Wurzel. */
+    static List<PomFile> projectPoms(Project project, PomLocator locator, @Nullable Path root) {
         List<PomFile> poms = new ArrayList<>();
         for (IdeMaven.ModuleRef ref : IdeMaven.modules(project)) {
             PomFile p = locator.load(ref.pom());
@@ -195,11 +202,7 @@ public final class DuplicateClassesPanel extends JPanel implements Disposable {
                 }
             }
         }
-        if (poms.isEmpty()) {
-            return null;
-        }
-        Map<String, DepNode> trees = IdeMaven.dependencyTrees(project);
-        return DuplicateClasses.build(locator, poms, trees, JARS, cancellation);
+        return poms;
     }
 
     private void applyFilter() {

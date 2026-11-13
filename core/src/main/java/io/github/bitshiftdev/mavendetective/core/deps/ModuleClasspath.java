@@ -123,6 +123,38 @@ public final class ModuleClasspath {
     /** POMs, die beim Nachbauen ohne Baum fehlten. */
     public List<String> getMissing() { return new ArrayList<String>(missing); }
 
+    /** Eintrag mit diesem JAR bzw. Klassenverzeichnis; {@code null}, wenn keiner passt. */
+    public Entry find(Path file) {
+        if (file == null) {
+            return null;
+        }
+        Path wanted = file.toAbsolutePath().normalize();
+        Entry byName = null;
+        for (Entry e : entries) {
+            if (e.getFile() == null) {
+                continue;
+            }
+            Path p = e.getFile().toAbsolutePath().normalize();
+            if (p.equals(wanted)) {
+                return e;
+            }
+            if (byName == null && !e.isSelf() && p.getFileName().equals(wanted.getFileName())) {
+                byName = e; // anderes lokales Repository oder Symlink: Dateiname a-v.jar ist eindeutig genug
+            }
+        }
+        return byName;
+    }
+
+    /** Erster Eintrag (nicht das Modul selbst) mit {@code groupId:artifactId}; {@code null}, wenn keiner. */
+    public Entry find(String groupId, String artifactId) {
+        for (Entry e : entries) {
+            if (!e.isSelf() && e.getGroupId().equals(groupId) && e.getArtifactId().equals(artifactId)) {
+                return e;
+            }
+        }
+        return null;
+    }
+
     /** Direkte Dependencies ({@code groupId:artifactId}), deren Teilbaum {@code ga} enthält – in Deklarationsreihenfolge. */
     public List<String> directDependenciesBringing(String ga) {
         Set<String> s = viaDirect.get(ga);

@@ -25,6 +25,13 @@ import java.util.Map;
  * <tr><td>{@code add-exclusion}</td><td>{@code file} (POM), {@code artifact} (direkte Dependency unter {@code dependencies},
  *     groupId:artifactId), {@code exclusion} (groupId:artifactId) – nimmt ein transitives JAR aus dem Classpath,
  *     z. B. wegen doppelter Klassen (Modul A3)</td></tr>
+ * <tr><td>{@code add-dependency}</td><td>{@code file} (POM des Moduls), {@code artifact} (groupId:artifactId),
+ *     {@code version} (fehlt, wenn verwaltet), {@code scope}, {@code type}, {@code classifier} (nur wenn nicht Standard) –
+ *     deklariert eine bisher nur transitiv vorhandene Dependency (Modul A5)</td></tr>
+ * <tr><td>{@code remove-dependency}</td><td>{@code file} (POM), {@code artifact} (groupId:artifactId), {@code classifier} –
+ *     entfernt eine ungenutzte Dependency aus {@code dependencies} (Modul A5)</td></tr>
+ * <tr><td>{@code set-scope}</td><td>{@code file} (POM), {@code artifact} (groupId:artifactId), {@code scope},
+ *     {@code classifier} – z. B. auf {@code test}, wenn nur Tests sie nennen (Modul A5)</td></tr>
  * <tr><td>{@code manual}</td><td>nur Beschreibung im Label</td></tr>
  * </table>
  */
@@ -41,6 +48,9 @@ public final class FixAction {
     public static final String PIN_VERSION = "pin-version";
     public static final String REMOVE_EXCLUSION = "remove-exclusion";
     public static final String ADD_EXCLUSION = "add-exclusion";
+    public static final String ADD_DEPENDENCY = "add-dependency";
+    public static final String REMOVE_DEPENDENCY = "remove-dependency";
+    public static final String SET_SCOPE = "set-scope";
     public static final String MANUAL = "manual";
 
     private final String type;

@@ -16,7 +16,8 @@
 #   cause       Ursache in einem Satz. Platzhalter: {var}, {var|Ersatztext}, {a,b|Ersatz}
 #   fix         type + label (+ params). Typen: rebuild, delete-files, open-file,
 #               replace-in-file, switch-jdk, set-jvm-option, insert-plugin-version,
-#               show-dependency, pin-version, remove-exclusion, add-exclusion, manual
+#               show-dependency, pin-version, remove-exclusion, add-exclusion,
+#               add-dependency, remove-dependency, set-scope, manual
 #
 # Regex immer in 'einfache Anführungszeichen' setzen (Backslashes bleiben erhalten,
 # ein Apostroph wird als '' geschrieben). Jede neue Regel braucht mindestens eine Logdatei

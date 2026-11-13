@@ -291,4 +291,118 @@ class PomEditorTest {
                 + "      <exclusions>\n        <exclusion>\n          <groupId>x</groupId>\n          <artifactId>y</artifactId>\n"
                 + "        </exclusion>\n      </exclusions>\n    </dependency>\n  </dependencies>\n</project>\n", out);
     }
+
+    // ---------------------------------------------------------------- A5
+
+    @Test
+    void addsDependencyAtEndOfList() {
+        String xml = """
+                <project>
+                    <artifactId>app</artifactId>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.web</groupId>
+                            <artifactId>web</artifactId>
+                            <version>1.0</version>
+                        </dependency>
+                    </dependencies>
+                </project>
+                """;
+        PomEditor.Edit edit = PomEditor.addDependency(xml, "org.slf4j", "slf4j-api", null, "test", null, null);
+        assertEquals("""
+                <project>
+                    <artifactId>app</artifactId>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.web</groupId>
+                            <artifactId>web</artifactId>
+                            <version>1.0</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.slf4j</groupId>
+                            <artifactId>slf4j-api</artifactId>
+                            <scope>test</scope>
+                        </dependency>
+                    </dependencies>
+                </project>
+                """, edit.apply(xml));
+        assertEquals(9, edit.line);
+        assertThrows(IllegalArgumentException.class,
+                () -> PomEditor.addDependency(xml, "org.web", "web", "1.0", null, null, null));
+    }
+
+    @Test
+    void addsDependenciesBlockBeforeBuild() {
+        String xml = "<project>\n  <artifactId>app</artifactId>\n  <build/>\n</project>\n";
+        String out = PomEditor.addDependency(xml, "g", "a", "1.0", "compile", "test-jar", null).apply(xml);
+        assertEquals("<project>\n  <artifactId>app</artifactId>\n  <dependencies>\n    <dependency>\n      <groupId>g</groupId>\n"
+                + "      <artifactId>a</artifactId>\n      <version>1.0</version>\n      <type>test-jar</type>\n    </dependency>\n"
+                + "  </dependencies>\n\n  <build/>\n</project>\n", out);
+    }
+
+    @Test
+    void removesDependencyAndEmptyBlock() {
+        String xml = """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>g</groupId>
+                      <artifactId>a</artifactId>
+                    </dependency>
+                    <dependency>
+                      <groupId>g</groupId>
+                      <artifactId>b</artifactId>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """;
+        String once = PomEditor.removeDependency(xml, "g", "a", null).apply(xml);
+        assertEquals("""
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>g</groupId>
+                      <artifactId>b</artifactId>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """, once);
+        assertEquals("<project>\n</project>\n", PomEditor.removeDependency(once, "g", "b", null).apply(once));
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.removeDependency(xml, "g", "c", null));
+    }
+
+    @Test
+    void setsScopeAfterVersionOrReplacesIt() {
+        String xml = """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>g</groupId>
+                      <artifactId>a</artifactId>
+                      <version>1.0</version>
+                      <exclusions/>
+                    </dependency>
+                    <dependency><groupId>g</groupId><artifactId>b</artifactId><scope>provided</scope></dependency>
+                  </dependencies>
+                </project>
+                """;
+        PomEditor.Edit edit = PomEditor.setScope(xml, "g", "a", "test", null);
+        String out = edit.apply(xml);
+        assertTrue(out.contains("      <version>1.0</version>\n      <scope>test</scope>\n      <exclusions/>"), out);
+        assertEquals(7, edit.line);
+        String out2 = PomEditor.setScope(out, "g", "b", "test", null).apply(out);
+        assertTrue(out2.contains("<artifactId>b</artifactId><scope>test</scope></dependency>"), out2);
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.setScope(out2, "g", "b", "test", null));
+    }
+
+    @Test
+    void forFixDispatchesByType() {
+        String xml = "<project>\n  <dependencies>\n    <dependency><groupId>g</groupId><artifactId>a</artifactId></dependency>\n"
+                + "  </dependencies>\n</project>\n";
+        String out = PomEditor.forFix(xml, io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction.of(
+                io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction.SET_SCOPE, "x", "artifact", "g:a", "scope", "test")).apply(xml);
+        assertTrue(out.contains("<artifactId>a</artifactId><scope>test</scope>"), out);
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.forFix(xml,
+                io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction.of("manual", "x", "artifact", "g:a")));
+    }
 }

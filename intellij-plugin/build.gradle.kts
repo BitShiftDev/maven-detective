@@ -22,6 +22,8 @@ dependencies {
     intellijPlatform {
         intellijIdea(platformVersion)
         bundledPlugin("org.jetbrains.idea.maven")
+        // Modul A5: Java-PSI (Referenzen auflösen, Inspection auf Imports)
+        bundledPlugin("com.intellij.java")
         pluginVerifier()
     }
 

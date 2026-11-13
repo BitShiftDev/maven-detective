@@ -27,6 +27,11 @@
       <li><b>Duplicate classes:</b> finds classes that sit in more than one JAR of a module, also under different coordinates
           (commons-logging next to jcl-over-slf4j, javax.xml.bind next to jakarta.xml.bind-api 2.x), shows which copy wins
           and whether the contents differ, and inserts the exclusion that removes the redundant JAR.</li>
+      <li><b>Unused and undeclared dependencies:</b> resolves the classes your sources name via the code index and reports
+          dependencies that are used but only arrive transitively (also live on the import in the editor), declared ones that
+          no source names, and compile dependencies only tests use – with one-click declare, remove or change scope.
+          Known runtime-only libraries (JDBC drivers, logging backends, test engines) and JARs that register services are not
+          reported as unused for sure.</li>
       <li>Complements Maven Helper and the Dependency Analyzer: they show facts, Maven Detective shows cause and fix.</li>
     </ul>
     ]]></description>
@@ -34,6 +39,7 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.idea.maven</depends>
     <depends>com.intellij.modules.xml</depends>
+    <depends>com.intellij.java</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Maven Detective"
@@ -49,6 +55,14 @@
                          enabledByDefault="true"
                          level="WARNING"
                          implementationClass="io.github.bitshiftdev.mavendetective.idea.StaleExclusionInspection"/>
+        <!-- Modul A5: Beschreibung in inspectionDescriptions/MavenDetectiveUndeclaredDependency.html -->
+        <localInspection language="JAVA"
+                         shortName="MavenDetectiveUndeclaredDependency"
+                         displayName="Import aus nicht deklarierter Dependency"
+                         groupName="Maven Detective"
+                         enabledByDefault="true"
+                         level="WEAK WARNING"
+                         implementationClass="io.github.bitshiftdev.mavendetective.idea.UndeclaredDependencyInspection"/>
     </extensions>
 
     <actions>

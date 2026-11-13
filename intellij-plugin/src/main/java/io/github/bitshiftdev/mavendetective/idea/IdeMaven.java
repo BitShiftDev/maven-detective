@@ -3,6 +3,7 @@ package io.github.bitshiftdev.mavendetective.idea;
 import com.intellij.execution.ExecutionException;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.module.Module;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
@@ -221,6 +222,38 @@ final class IdeMaven {
             LOG.warn("Maven Detective: Module nicht lesbar", e);
         }
         return out;
+    }
+
+    /** IntelliJ-Modul zu einer Maven-POM; {@code null}, wenn nicht importiert. */
+    static @Nullable Module module(@NotNull Project project, @NotNull Path pom) {
+        try {
+            return read(() -> {
+                MavenProjectsManager manager = MavenProjectsManager.getInstance(project);
+                for (MavenProject p : manager.getProjects()) {
+                    if (Paths.get(p.getPath()).equals(pom)) {
+                        return manager.findModule(p);
+                    }
+                }
+                return null;
+            });
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: Modul zu " + pom + " nicht ermittelbar", e);
+            return null;
+        }
+    }
+
+    /** POM eines IntelliJ-Moduls; {@code null}, wenn es kein Maven-Modul ist. Aufruf in einer Read-Action. */
+    static @Nullable Path pom(@NotNull Module module) {
+        MavenProject p = MavenProjectsManager.getInstance(module.getProject()).findProject(module);
+        return p == null ? null : Paths.get(p.getPath());
+    }
+
+    /** {@code groupId:artifactId} eines IntelliJ-Moduls; {@code null}, wenn es kein Maven-Modul ist. Aufruf in einer Read-Action. */
+    static @Nullable String ga(@NotNull Module module) {
+        MavenProject p = MavenProjectsManager.getInstance(module.getProject()).findProject(module);
+        return p == null ? null : p.getMavenId().getGroupId() + ":" + p.getMavenId().getArtifactId();
     }
 
     /** Wurzel des Reactors (Verzeichnis der obersten POM), sonst das Projektverzeichnis. */
