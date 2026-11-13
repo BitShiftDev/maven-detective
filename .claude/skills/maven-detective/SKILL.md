@@ -115,6 +115,12 @@ Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFi
 - Plugin A6: Tab `UpgradeSimulatorPanel` („Upgrade-Simulator“; Vorschläge aus Bäumen/Parents/BOM-Importen, Versionen lokal; „Fehlende POMs laden“ = `Task.Backgroundable` mit `JAVA_HOME` der IDE und `IdeMaven.mavenHome`; „Übernehmen“ = `FixRunner.editPoms`), `SimulateUpgradeAction` (EditorPopupMenu, `<dependency>` oder `<parent>`).
 - `DependencyUsage.undeclared(cp, entry, class, test, file, line, index)` für die Live-Inspection `UndeclaredDependencyInspection` (Java-Imports; Classpath gecacht an `ProjectRootManager` + POM; `ModuleClasspath.find(Path | g, a)`). Tab `DependencyUsagePanel` („Ungenutzt/undeklariert“, Mehrfachauswahl, `FixRunner.editPoms`). `IdeUsages.JARS` = gemeinsamer `JarIndex` (auch A3).
 
+## Plugin-UI (Plan: `Maven Detective – UI-Plan.md`)
+
+- Jede Seite des Tool-Windows erbt `idea/ui/DetectivePanel` (`SimpleToolWindowPanel`): `installToolbar(leading, ActionGroup, trailing)`, `setBody`, `setStatus`, `background(text).run(c -> …, ergebnis -> …)` (Generation, Abbruch via `Cancellation`, Ladeanzeige, Fehler → `failed`), `rows(table, ort, text)` (Kontextmenü `MavenDetective.RowPopup`, F4 über `pfad:zeile`, Strg+C), `emptyText`, `toggle`/`filterGroup`/`searchField`. Hooks für gemeinsame Aktionen: `supportsRefresh/refresh/refreshText/refreshIcon`, `canCopyMarkdown/markdown`.
+- Keine `JButton`s in `FlowLayout`-Leisten: Befehle = `AnAction` (in `plugin.xml` registriert, Text im Bundle `action.<id>.text`), Hauptaktion zur Auswahl = `FixBar.primary(button)`. Detail-HTML über `HtmlView` + `Html.esc/fileLink/pomLink`, Farben aus `DetectiveColors`.
+- Texte: `MavenDetectiveBundle.message(key)`; `MavenDetectiveBundleTest` prüft, dass jeder Schlüssel aus Code und `plugin.xml` existiert.
+
 ## Offene Punkte (Stand README)
 
 Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1–A6 fertig (alle nicht in `runIde` geklickt); Plugin Verifier braucht Netz (in der Sandbox nicht lauffähig). Vor größeren Features README „Nächste Schritte“ prüfen.

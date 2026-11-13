@@ -1,21 +1,16 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
-import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.ide.CopyPasteManager;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.ColoredTableCellRenderer;
-import com.intellij.ui.DocumentAdapter;
-import com.intellij.ui.JBColor;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.SimpleTextAttributes;
-import com.intellij.ui.components.JBCheckBox;
-import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.TableSpeedSearch;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.table.JBTable;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
@@ -24,30 +19,30 @@ import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.MavenVersion;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
+import io.github.bitshiftdev.mavendetective.idea.ui.Html;
+import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
+import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JEditorPane;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.HyperlinkEvent;
 import javax.swing.table.AbstractTableModel;
 import java.awt.BorderLayout;
-import java.awt.FlowLayout;
-import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
  * Tab „Konflikt-Matrix“ (Modul A2): Zeile = Artifact, Spalte = Modul, Zelle = aufgelöste Version.
@@ -55,53 +50,33 @@ import java.util.Map;
  * {@code dependencyManagement} festzulegen, samt den Stellen, die das überstimmen würden.
  * Doppelklick auf eine Zelle öffnet „Warum diese Version?“ für Modul und Artifact.
  */
-public final class ConflictMatrixPanel extends JPanel implements Disposable {
+public final class ConflictMatrixPanel extends DetectivePanel {
 
-    static final String TAB_NAME = "Konflikt-Matrix";
+    static final String TAB_NAME = MavenDetectiveBundle.message("tab.matrix");
 
-    private static final JBColor DEVIATION = new JBColor(0xFFF1D6, 0x4D3B1F);
-
-    private final Project project;
-    private final JBCheckBox onlyDivergent = new JBCheckBox("Nur Abweichungen", true);
-    private final SearchTextField search = new SearchTextField(false);
-    private final JButton copy = new JButton("Als Markdown kopieren");
-    private final JLabel status = new JLabel();
+    private boolean onlyDivergent = true;
+    private final SearchTextField search;
     private final MatrixModel model = new MatrixModel();
     private final JBTable table = new JBTable(model);
-    private final JEditorPane details = new JEditorPane("text/html", "");
+    private final HtmlView details;
     private final ComboBox<String> versions = new ComboBox<>();
-    private final JButton pin = new JButton("Im Parent festlegen");
+    private final JButton pin = FixBar.primary(new JButton(MavenDetectiveBundle.message("matrix.pin")));
+    private final Background loader = background(MavenDetectiveBundle.message("loading.modules"));
     private ConflictMatrix matrix;
-    /** Zähler der Neuberechnungen (nur EDT): Ein älteres Ergebnis überschreibt kein neueres. */
-    private int generation;
-    private volatile boolean disposed;
 
     public ConflictMatrixPanel(@NotNull Project project) {
-        super(new BorderLayout());
-        this.project = project;
+        super(project);
 
-        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton refresh = new JButton("Aktualisieren");
-        refresh.setToolTipText("Module und Bäume neu aus dem Maven-Modell der IDE lesen (Stand des letzten Imports)");
-        refresh.addActionListener(e -> reload());
-        onlyDivergent.addActionListener(e -> applyFilter());
-        search.addDocumentListener(new DocumentAdapter() {
-            @Override
-            protected void textChanged(@NotNull DocumentEvent e) {
-                applyFilter();
-            }
-        });
-        copy.setEnabled(false);
-        copy.addActionListener(e -> {
-            if (matrix != null) {
-                CopyPasteManager.getInstance().setContents(new StringSelection(matrix.markdown(!onlyDivergent.isSelected())));
-            }
-        });
-        toolbar.add(refresh);
-        toolbar.add(onlyDivergent);
-        toolbar.add(search);
-        toolbar.add(copy);
-        toolbar.add(status);
+        search = searchField(MavenDetectiveBundle.message("search.artifacts"), this::applyFilter);
+        DefaultActionGroup actions = new DefaultActionGroup();
+        actions.add(registered("MavenDetective.Refresh"));
+        actions.add(filterGroup(toggle(MavenDetectiveBundle.message("matrix.filter.divergent"), null,
+                () -> onlyDivergent, v -> {
+                    onlyDivergent = v;
+                    applyFilter();
+                })));
+        actions.add(registered("MavenDetective.CopyMarkdown"));
+        installToolbar(null, actions, search);
 
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
@@ -123,47 +98,50 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
                 }
             }
         });
+        TableSpeedSearch.installOn(table, (value, cell) -> value instanceof ConflictMatrix.Row r ? r.ga()
+                : value instanceof ConflictMatrix.Cell c ? c.getVersion() : null);
+        emptyText(table.getEmptyText(), MavenDetectiveBundle.message("loading.modules"), null, null);
 
-        details.setEditable(false);
-        details.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-        details.addHyperlinkListener(e -> {
-            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getDescription() != null) {
-                FixRunner.openLocation(project, e.getDescription());
-            }
-        });
+        details = new HtmlView(project);
         pin.addActionListener(e -> pinSelected());
-        JPanel fixBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        fixBar.add(new JLabel("Version:"));
-        fixBar.add(versions);
-        fixBar.add(pin);
         JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(new JBScrollPane(details), BorderLayout.CENTER);
-        bottom.add(fixBar, BorderLayout.SOUTH);
+        bottom.add(details.component(), BorderLayout.CENTER);
+        bottom.add(new FixBar(new JBLabel(MavenDetectiveBundle.message("matrix.version")), versions, pin), BorderLayout.SOUTH);
         showRow(null);
 
-        JBSplitter splitter = new JBSplitter(true, 0.6f);
-        splitter.setFirstComponent(new JBScrollPane(table));
+        JBSplitter splitter = new JBSplitter(true, "MavenDetective.Matrix.split", 0.6f);
+        splitter.setFirstComponent(rows(table, this::selectedLocation, this::selectedText));
         splitter.setSecondComponent(bottom);
-        add(toolbar, BorderLayout.NORTH);
-        add(splitter, BorderLayout.CENTER);
+        setBody(splitter);
 
         reload();
     }
 
+    @Override
+    public boolean supportsRefresh() {
+        return true;
+    }
+
+    @Override
+    public void refresh() {
+        reload();
+    }
+
+    @Override
+    public boolean canCopyMarkdown() {
+        return matrix != null;
+    }
+
+    @Override
+    public @Nullable String markdown() {
+        return matrix == null ? null : matrix.markdown(!onlyDivergent);
+    }
+
     private void reload() {
-        status.setText("Lese Module …");
         DependenciesPanel.saveUnsavedPoms();
-        int gen = ++generation;
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            ConflictMatrix m = compute(project);
-            ApplicationManager.getApplication().invokeLater(() -> {
-                if (gen != generation) {
-                    return;   // „Aktualisieren“ wurde inzwischen erneut geklickt
-                }
-                matrix = m;
-                copy.setEnabled(m != null);
-                applyFilter();
-            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
+        loader.run(c -> compute(project), m -> {
+            matrix = m;
+            applyFilter();
         });
     }
 
@@ -199,13 +177,15 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
         List<ConflictMatrix.Row> rows = new ArrayList<>();
         if (matrix == null) {
             model.set(List.of(), rows);
-            status.setText("Kein Maven-Projekt gefunden.");
+            setStatus(null);
+            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+                    MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             showRow(null);
             return;
         }
         String q = search.getText().trim().toLowerCase(Locale.ROOT);
         for (ConflictMatrix.Row r : matrix.getRows()) {
-            if ((!onlyDivergent.isSelected() || r.isDivergent()) && (q.isEmpty() || r.ga().toLowerCase(Locale.ROOT).contains(q))) {
+            if ((!onlyDivergent || r.isDivergent()) && (q.isEmpty() || r.ga().toLowerCase(Locale.ROOT).contains(q))) {
                 rows.add(r);
             }
         }
@@ -215,7 +195,16 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
             table.getColumnModel().getColumn(i).setPreferredWidth(130);
         }
         int divergent = matrix.divergent().size();
-        status.setText(matrix.getModules().size() + " Module, " + divergent + (divergent == 1 ? " Abweichung" : " Abweichungen")
+        if (onlyDivergent && matrix.divergent().isEmpty()) {
+            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("matrix.empty.no.divergence"),
+                    MavenDetectiveBundle.message("matrix.empty.show.all"), () -> {
+                        onlyDivergent = false;
+                        applyFilter();
+                    });
+        } else {
+            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.match"), null, null);
+        }
+        setStatus(matrix.getModules().size() + " Module, " + divergent + (divergent == 1 ? " Abweichung" : " Abweichungen")
                 + (matrix.isPartial() ? " – ohne Baum nur direkte Dependencies (Maven-Projekt neu laden)" : ""));
         int idx = before == null ? -1 : rows.indexOf(before);
         if (idx < 0) {
@@ -242,8 +231,8 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
         versions.removeAllItems();
         pin.setEnabled(false);
         if (row == null) {
-            pin.setText("Im Parent festlegen");
-            showText(matrix != null && matrix.divergent().isEmpty() && onlyDivergent.isSelected()
+            pin.setText(MavenDetectiveBundle.message("matrix.pin"));
+            showText(matrix != null && matrix.divergent().isEmpty() && onlyDivergent
                     ? "<p>Alle Module nutzen jeweils dieselbe Version. „Nur Abweichungen“ abwählen, um alle Artifacts zu sehen.</p>"
                     : "<p>Zeile wählen, um Versionen, Herkunft und den Vorschlag zu sehen. Doppelklick auf eine Zelle zeigt "
                     + "„Warum diese Version?“ für dieses Modul.</p>");
@@ -287,9 +276,7 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
             if (!p.getBlockers().isEmpty()) {
                 sb.append("<p><b>Überstimmt den Pin danach noch:</b></p><ul>");
                 for (ConflictMatrix.Blocker b : p.getBlockers()) {
-                    sb.append("<li>").append(esc(b.getText())).append(" – <a href=\"").append(esc(b.getFile() + ":" + b.getLine())).append("\">")
-                            .append(esc(Paths.get(b.getFile()).getParent().getFileName() + "/" + Paths.get(b.getFile()).getFileName()
-                                    + ":" + b.getLine())).append("</a></li>");
+                    sb.append("<li>").append(esc(b.getText())).append(" – ").append(Html.pomLink(b.getFile(), b.getLine())).append("</li>");
                 }
                 sb.append("</ul>");
             }
@@ -298,7 +285,7 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
                 versions.addItem(vs.get(i));
             }
             versions.setSelectedItem(p.getVersion());
-            pin.setText("In " + p.getTarget().getArtifactId() + " festlegen");
+            pin.setText(MavenDetectiveBundle.message("matrix.pin.in", p.getTarget().getArtifactId()));
             pin.setEnabled(true);
         } else if (row.getPinProblem() != null) {
             sb.append("<p>").append(esc(row.getPinProblem())).append("</p>");
@@ -334,17 +321,28 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
     }
 
     private void showText(String body) {
-        details.setText("<html><body>" + body + "</body></html>");
-        details.setCaretPosition(0);
+        details.show(body);
     }
 
-    private static String esc(String s) {
-        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    /** F4: Zelle (Spalte gewählt) bzw. Ziel-POM des Vorschlags. */
+    private @Nullable String selectedLocation() {
+        ConflictMatrix.Row row = selectedRow();
+        if (row == null) {
+            return null;
+        }
+        int col = table.getSelectedColumn();
+        if (col >= 1) {
+            ConflictMatrix.Cell c = row.cell(model.modules.get(table.convertColumnIndexToModel(col) - 1));
+            if (c != null && c.getFile() != null) {
+                return Locations.of(c.getFile(), c.getLine());
+            }
+        }
+        return row.getPin() == null ? null : row.getPin().getTarget().getFile().toString();
     }
 
-    @Override
-    public void dispose() {
-        disposed = true;   // laufende Neuberechnung verwirft ihr Ergebnis
+    private @Nullable String selectedText() {
+        ConflictMatrix.Row row = selectedRow();
+        return row == null ? null : row.ga() + " " + String.join(", ", row.versions());
     }
 
     /** Spalte 0 = Artifact, danach je Modul eine Spalte. */
@@ -404,7 +402,7 @@ public final class ConflictMatrixPanel extends JPanel implements Disposable {
             String suggested = r.getPin() != null ? r.getPin().getVersion() : MavenVersion.max(r.versions());
             boolean deviates = r.isDivergent() && !c.getVersion().equals(suggested);
             if (deviates && !selected) {
-                setBackground(DEVIATION);
+                setBackground(DetectiveColors.WARNING_BACKGROUND);
             }
             append(c.getVersion(), deviates ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : SimpleTextAttributes.REGULAR_ATTRIBUTES);
             append("  " + shortSource(c), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);

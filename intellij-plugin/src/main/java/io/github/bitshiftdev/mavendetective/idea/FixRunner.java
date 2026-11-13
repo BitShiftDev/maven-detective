@@ -20,6 +20,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.fix.FixExecutor;
+import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
 import org.jetbrains.idea.maven.execution.MavenRunConfigurationType;
@@ -396,19 +397,7 @@ final class FixRunner {
 
     /** "pfad:zeile" öffnen; Zeile ist 1-basiert. */
     static void openLocation(Project project, String location) {
-        String path = location;
-        int line = 0;
-        int colon = location.lastIndexOf(':');
-        if (colon > 1 && location.substring(colon + 1).matches("-?\\d+")) {
-            path = location.substring(0, colon);
-            line = Math.max(0, Integer.parseInt(location.substring(colon + 1)) - 1);
-        }
-        VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Paths.get(path));
-        if (vf == null) {
-            notify(project, "Datei nicht gefunden: " + path, NotificationType.WARNING);
-            return;
-        }
-        new OpenFileDescriptor(project, vf, line, 0).navigate(true);
+        Locations.open(project, location);
     }
 
     /**

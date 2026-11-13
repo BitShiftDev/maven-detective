@@ -1,20 +1,20 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
-import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.ide.CopyPasteManager;
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.ui.ColoredTableCellRenderer;
-import com.intellij.ui.JBColor;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.TableSpeedSearch;
 import com.intellij.ui.components.JBCheckBox;
-import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.panels.HorizontalLayout;
 import com.intellij.ui.table.JBTable;
+import com.intellij.util.ui.JBUI;
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
@@ -25,28 +25,30 @@ import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.deps.UpgradeSimulator;
 import io.github.bitshiftdev.mavendetective.core.env.BuildSetup;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
+import io.github.bitshiftdev.mavendetective.idea.ui.Html;
+import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
+import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.BorderFactory;
+import javax.swing.Icon;
 import javax.swing.JButton;
-import javax.swing.JEditorPane;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
-import javax.swing.event.HyperlinkEvent;
 import javax.swing.table.AbstractTableModel;
 import java.awt.BorderLayout;
-import java.awt.FlowLayout;
-import java.awt.datatransfer.StringSelection;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
+
+import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
  * Tab „Upgrade-Simulator“ (Modul A6): Artifact, BOM, Parent oder Property und Zielversion wählen,
@@ -56,39 +58,35 @@ import java.util.TreeSet;
  * „Fehlende POMs laden“ holt mit Maven, was für die neue Version lokal fehlt – der einzige
  * Netzzugriff in Modul A und nur auf Klick.
  */
-public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
+public final class UpgradeSimulatorPanel extends DetectivePanel {
 
-    static final String TAB_NAME = "Upgrade-Simulator";
+    static final String TAB_NAME = MavenDetectiveBundle.message("tab.upgrade");
 
-    private static final JBColor RISK = new JBColor(0xFDE2E1, 0x5A2A2A);
-
-    private final Project project;
     private final ComboBox<String> artifact = new ComboBox<>();
     private final ComboBox<String> version = new ComboBox<>();
-    private final JBCheckBox manage = new JBCheckBox("Im dependencyManagement festlegen");
-    private final JButton simulate = new JButton("Simulieren");
-    private final JButton fetch = new JButton("Fehlende POMs laden");
-    private final JButton apply = new JButton("Übernehmen");
-    private final JButton copy = new JButton("Als Markdown kopieren");
-    private final JLabel status = new JLabel();
+    private final JBCheckBox manage = new JBCheckBox(MavenDetectiveBundle.message("upgrade.manage"));
+    private final JButton fetch = new JButton(MavenDetectiveBundle.message("upgrade.fetch"), AllIcons.Actions.Download);
+    private final JButton apply = FixBar.primary(new JButton(MavenDetectiveBundle.message("upgrade.apply")));
     private final DeltaModel model = new DeltaModel();
     private final JBTable table = new JBTable(model);
-    private final JEditorPane details = new JEditorPane("text/html", "");
+    private final HtmlView details;
+    private final Background simulation = background(MavenDetectiveBundle.message("loading.simulate"));
+    private final Background suggestions = background(null);
+    private final Background localVersions = background(null);
     /** Je {@code g:a} die heutige(n) Version(en) im Projekt – für Vorschläge und den Status. */
     private volatile Map<String, String> current = Map.of();
     private UpgradeSimulator.Result result;
     /** Fehlermeldung des letzten Ladens fehlender POMs. */
     private String fetchError;
-    private int generation;
-    private volatile boolean disposed;
+    /** Fehlende POMs werden gerade geladen (nur EDT). */
+    private boolean fetching;
 
     public UpgradeSimulatorPanel(@NotNull Project project) {
-        super(new BorderLayout());
-        this.project = project;
+        super(project);
 
         artifact.setEditable(true);
         artifact.setPrototypeDisplayValue("com.fasterxml.jackson.core:jackson-databind");
-        artifact.setToolTipText("groupId:artifactId eines Artifacts, BOMs oder Parents – oder ${property}");
+        artifact.setToolTipText(MavenDetectiveBundle.message("upgrade.artifact.tooltip"));
         artifact.addActionListener(e -> {
             if ("comboBoxChanged".equals(e.getActionCommand())) {
                 loadVersions(null);
@@ -96,29 +94,26 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
         });
         version.setEditable(true);
         version.setPrototypeDisplayValue("2.17.10-SNAPSHOT");
-        version.setToolTipText("Zielversion; vorgeschlagen werden Versionen, deren POM lokal liegt");
-        manage.setToolTipText("Statt an der heutigen Stelle (Property, BOM, direkte Angabe) im dependencyManagement der obersten Projekt-POM festlegen");
-        simulate.addActionListener(e -> simulate());
+        version.setToolTipText(MavenDetectiveBundle.message("upgrade.version.tooltip"));
+        manage.setToolTipText(MavenDetectiveBundle.message("upgrade.manage.tooltip"));
+        manage.setOpaque(false);
         fetch.addActionListener(e -> fetchMissing());
         apply.addActionListener(e -> applyResult());
-        copy.addActionListener(e -> {
-            if (result != null) {
-                CopyPasteManager.getInstance().setContents(new StringSelection(result.markdown(true)));
-            }
-        });
         fetch.setEnabled(false);
         apply.setEnabled(false);
-        copy.setEnabled(false);
-        fetch.setToolTipText("Lädt die POMs, die für die neue Version lokal fehlen, mit Maven (dependency:collect) und simuliert erneut");
+        fetch.setToolTipText(MavenDetectiveBundle.message("upgrade.fetch.tooltip"));
 
-        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        toolbar.add(new JLabel("Artifact:"));
-        toolbar.add(artifact);
-        toolbar.add(new JLabel("Version:"));
-        toolbar.add(version);
-        toolbar.add(manage);
-        toolbar.add(simulate);
-        toolbar.add(status);
+        JPanel form = new JPanel(new HorizontalLayout(JBUI.scale(6)));
+        form.setBorder(JBUI.Borders.emptyLeft(4));
+        form.add(new JBLabel(MavenDetectiveBundle.message("upgrade.artifact")));
+        form.add(artifact);
+        form.add(new JBLabel(MavenDetectiveBundle.message("upgrade.version")));
+        form.add(version);
+        form.add(manage);
+        DefaultActionGroup actions = new DefaultActionGroup();
+        actions.add(registered("MavenDetective.Refresh"));
+        actions.add(registered("MavenDetective.CopyMarkdown"));
+        installToolbar(form, actions, null);
 
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setDefaultRenderer(Object.class, new Renderer());
@@ -127,31 +122,77 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
                 render();
             }
         });
-        details.setEditable(false);
-        details.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-        details.addHyperlinkListener(e -> {
-            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getDescription() != null) {
-                FixRunner.openLocation(project, e.getDescription());
-            }
-        });
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        actions.add(apply);
-        actions.add(fetch);
-        actions.add(copy);
-        JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(new JBScrollPane(details), BorderLayout.CENTER);
-        bottom.add(actions, BorderLayout.SOUTH);
+        TableSpeedSearch.installOn(table, (value, cell) -> cell.column == 2 && value != null ? value.toString() : null);
+        emptyText(table.getEmptyText(), MavenDetectiveBundle.message("upgrade.empty.start"),
+                MavenDetectiveBundle.message("action.simulate"), this::simulate);
 
-        JBSplitter splitter = new JBSplitter(true, 0.5f);
-        splitter.setFirstComponent(new JBScrollPane(table));
+        details = new HtmlView(project);
+        JPanel bottom = new JPanel(new BorderLayout());
+        bottom.add(details.component(), BorderLayout.CENTER);
+        bottom.add(new FixBar(apply, fetch), BorderLayout.SOUTH);
+
+        JBSplitter splitter = new JBSplitter(true, "MavenDetective.Upgrade.split", 0.5f);
+        splitter.setFirstComponent(rows(table, this::selectedLocation, this::selectedText));
         splitter.setSecondComponent(bottom);
-        add(toolbar, BorderLayout.NORTH);
-        add(splitter, BorderLayout.CENTER);
+        setBody(splitter);
         showText("<p>Artifact (<code>groupId:artifactId</code>, auch BOM oder Parent) oder <code>${property}</code> und Zielversion "
                 + "wählen, dann „Simulieren“. Die POMs bleiben unverändert, bis „Übernehmen“ geklickt wird.</p>"
                 + "<p>Im Editor: Rechtsklick auf eine <code>&lt;dependency&gt;</code> oder den <code>&lt;parent&gt;</code> in der "
                 + "<code>pom.xml</code> → „Upgrade simulieren…“.</p>");
         loadSuggestions();
+    }
+
+    @Override
+    public boolean supportsRefresh() {
+        return true;
+    }
+
+    @Override
+    public boolean canRefresh() {
+        return !fetching && !simulation.isRunning();
+    }
+
+    @Override
+    public void refresh() {
+        simulate();
+    }
+
+    @Override
+    public @NotNull String refreshText() {
+        return MavenDetectiveBundle.message("action.simulate");
+    }
+
+    @Override
+    public @NotNull Icon refreshIcon() {
+        return AllIcons.Actions.Execute;
+    }
+
+    @Override
+    public boolean canCopyMarkdown() {
+        return result != null;
+    }
+
+    @Override
+    public @Nullable String markdown() {
+        return result == null ? null : result.markdown(true);
+    }
+
+    /** F4: erste Stelle, die die Simulation in einer POM ändern würde. */
+    private @Nullable String selectedLocation() {
+        UpgradeSimulator.Result res = result;
+        if (res == null || res.getSteps().isEmpty()) {
+            return null;
+        }
+        UpgradeSimulator.Step s = res.getSteps().get(0);
+        return Locations.of(s.getFile(), s.getLine());
+    }
+
+    private @Nullable String selectedText() {
+        Row row = selected();
+        if (row == null) {
+            return null;
+        }
+        return row.module.getName() + ": " + (row.delta != null ? row.delta.message() : row.risk.message());
     }
 
     /** Von der Editor-Aktion: Artifact vorbelegen, Versionen laden, bei lokal vorhandener neuerer Version gleich simulieren. */
@@ -161,7 +202,7 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
     }
 
     private void loadSuggestions() {
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+        suggestions.run(c -> {
             Map<String, String> found = new TreeMap<>();
             Path root = IdeMaven.reactorRoot(project);
             PomLocator locator = DependenciesPanel.locator(project, root);
@@ -176,15 +217,15 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
                     found.putIfAbsent(s.declaration.ga(), s.version.value);
                 }
             }
-            ApplicationManager.getApplication().invokeLater(() -> {
-                current = found;
-                Object typed = artifact.getEditor().getItem();
-                artifact.removeAllItems();
-                for (String ga : found.keySet()) {
-                    artifact.addItem(ga);
-                }
-                artifact.setSelectedItem(typed == null || typed.toString().isBlank() ? null : typed.toString());
-            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
+            return found;
+        }, found -> {
+            current = found;
+            Object typed = artifact.getEditor().getItem();
+            artifact.removeAllItems();
+            for (String ga : found.keySet()) {
+                artifact.addItem(ga);
+            }
+            artifact.setSelectedItem(typed == null || typed.toString().isBlank() ? null : typed.toString());
         });
     }
 
@@ -205,26 +246,25 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
             return;
         }
         String now = current.get(ga);
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+        localVersions.run(c -> {
             Path repo = DependenciesPanel.locator(project, IdeMaven.reactorRoot(project)).getLocalRepository();
-            List<String> versions = UpgradeSimulator.localVersions(repo, p[0], p[1]);
-            ApplicationManager.getApplication().invokeLater(() -> {
-                if (!ga.equals(text(artifact))) {
-                    return;
-                }
-                version.removeAllItems();
-                for (String v : versions) {
-                    version.addItem(v);
-                }
-                String newer = versions.isEmpty() || now == null || MavenVersion.compare(versions.get(0), now) <= 0 ? null : versions.get(0);
-                version.setSelectedItem(newer);
-                status.setText(now == null ? "" : "heute " + now + (newer == null ? " – keine neuere Version lokal, Zielversion eintippen" : ""));
-                if (autoSimulateFor != null && newer != null) {
-                    simulate();
-                } else if (autoSimulateFor != null) {
-                    version.requestFocusInWindow();
-                }
-            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
+            return UpgradeSimulator.localVersions(repo, p[0], p[1]);
+        }, versions -> {
+            if (!ga.equals(text(artifact))) {
+                return;
+            }
+            version.removeAllItems();
+            for (String v : versions) {
+                version.addItem(v);
+            }
+            String newer = versions.isEmpty() || now == null || MavenVersion.compare(versions.get(0), now) <= 0 ? null : versions.get(0);
+            version.setSelectedItem(newer);
+            setStatus(now == null ? null : "heute " + now + (newer == null ? " – keine neuere Version lokal, Zielversion eintippen" : ""));
+            if (autoSimulateFor != null && newer != null) {
+                simulate();
+            } else if (autoSimulateFor != null) {
+                version.requestFocusInWindow();
+            }
         });
     }
 
@@ -232,7 +272,7 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
         String what = text(artifact);
         String v = text(version);
         if (what.isEmpty() || v.isEmpty()) {
-            status.setText("Artifact und Version angeben.");
+            setStatus(MavenDetectiveBundle.message("upgrade.missing.input"));
             return null;
         }
         UpgradeSimulator.Request r;
@@ -240,7 +280,7 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
             r = what.startsWith("${") || !what.contains(":") ? UpgradeSimulator.Request.parse(what + "=" + v)
                     : UpgradeSimulator.Request.parse(what + ":" + v);
         } catch (IllegalArgumentException e) {
-            status.setText(e.getMessage());
+            setStatus(e.getMessage());
             return null;
         }
         return manage.isSelected() && !r.isProperty() ? r.pinned() : r;
@@ -252,17 +292,8 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
             return;
         }
         DependenciesPanel.saveUnsavedPoms();
-        status.setText("Simuliere …");
-        simulate.setEnabled(false);
-        int gen = ++generation;
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            UpgradeSimulator.Result res = compute(project, r);
-            ApplicationManager.getApplication().invokeLater(() -> {
-                if (gen == generation) {
-                    display(res, null);
-                }
-            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
-        });
+        setStatus(null);
+        simulation.run(c -> compute(project, r), res -> display(res, null));
     }
 
     /** Simulation über alle Module (Hintergrund-Thread; liest nur Dateien). */
@@ -303,9 +334,9 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
         }
         UpgradeSimulator.Request r = start.getRequest();
         fetch.setEnabled(false);
-        simulate.setEnabled(false);
-        int gen = ++generation;
-        new Task.Backgroundable(project, "Maven Detective: fehlende POMs laden", true) {
+        fetching = true;
+        int gen = simulation.next();
+        new Task.Backgroundable(project, MavenDetectiveBundle.message("upgrade.fetch.task"), true) {
             private UpgradeSimulator.Result last = start;
             private String error;
 
@@ -349,10 +380,9 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
 
             @Override
             public void onFinished() {
-                if (gen == generation && !disposed) {
+                fetching = false;
+                if (simulation.isCurrent(gen) && !isGone()) {
                     display(last, error);
-                } else {
-                    simulate.setEnabled(true);
                 }
             }
         }.queue();
@@ -365,12 +395,11 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
         int n = FixRunner.editPoms(project, result.fixes(), "Upgrade übernehmen (Maven Detective)");
         apply.setEnabled(false);
         fetch.setEnabled(false);
-        status.setText(n == 0 ? "Nichts geändert." : "Übernommen – Maven-Projekt wird neu geladen.");
+        setStatus(MavenDetectiveBundle.message(n == 0 ? "upgrade.applied.none" : "upgrade.applied"));
     }
 
     private void display(@Nullable UpgradeSimulator.Result res, @Nullable String error) {
         result = res;
-        simulate.setEnabled(true);
         List<Row> rows = new ArrayList<>();
         if (res != null) {
             for (UpgradeSimulator.ModuleResult m : res.getModules()) {
@@ -391,12 +420,14 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
         }
         apply.setEnabled(res != null && !res.getSteps().isEmpty());
         fetch.setEnabled(res != null && !PomFetcher.coordinates(res.getMissing()).isEmpty());
-        copy.setEnabled(res != null);
         if (res == null) {
-            status.setText("Kein Maven-Projekt gefunden.");
+            setStatus(null);
+            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+                    MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
         } else {
+            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("upgrade.empty.unchanged"), null, null);
             int changed = res.changed().size();
-            status.setText(changed + (changed == 1 ? " Modul ändert sich" : " Module ändern sich")
+            setStatus(changed + (changed == 1 ? " Modul ändert sich" : " Module ändern sich")
                     + (res.isComplete() ? "" : " – unvollständig, POMs fehlen lokal"));
         }
         this.fetchError = error;
@@ -411,14 +442,12 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
         }
         StringBuilder sb = new StringBuilder("<h3>").append(esc(res.headline())).append("</h3>");
         if (fetchError != null) {
-            sb.append("<p style='color:#c62828'><b>").append(esc(fetchError).replace("\n", "<br>")).append("</b></p>");
+            sb.append("<p><b>").append(Html.error(esc(fetchError).replace("\n", "<br>"))).append("</b></p>");
         }
         if (!res.getSteps().isEmpty()) {
             sb.append("<p><b>Änderung an den POMs</b> (noch nicht angewendet):</p><ol>");
             for (UpgradeSimulator.Step s : res.getSteps()) {
-                Path f = Paths.get(s.getFile());
-                sb.append("<li>").append(esc(s.getDescription())).append(" – <a href=\"").append(esc(s.getFile() + ":" + s.getLine()))
-                        .append("\">").append(esc(f.getParent().getFileName() + "/" + f.getFileName() + ":" + s.getLine())).append("</a>");
+                sb.append("<li>").append(esc(s.getDescription())).append(" – ").append(Html.pomLink(s.getFile(), s.getLine()));
                 if (s.getReason() != null) {
                     sb.append("<br><small>").append(esc(s.getReason())).append("</small>");
                 }
@@ -486,22 +515,12 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
     }
 
     private void showText(String body) {
-        details.setText("<html><body>" + body + "</body></html>");
-        details.setCaretPosition(0);
+        details.show(body);
     }
 
     private static String text(ComboBox<String> box) {
         Object item = box.isEditable() ? box.getEditor().getItem() : box.getSelectedItem();
         return item == null ? "" : item.toString().trim();
-    }
-
-    private static String esc(String s) {
-        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
-    }
-
-    @Override
-    public void dispose() {
-        disposed = true;
     }
 
     /** Eine Tabellenzeile: Änderung im Baum oder neuer Konflikt. */
@@ -578,7 +597,7 @@ public final class UpgradeSimulatorPanel extends JPanel implements Disposable {
             Row r = model.rows.get(t.convertRowIndexToModel(row));
             boolean risky = r.risk != null || r.delta.getKind() == UpgradeSimulator.Kind.DOWNGRADED;
             if (risky && !selected) {
-                setBackground(RISK);
+                setBackground(DetectiveColors.ERROR_BACKGROUND);
             }
             SimpleTextAttributes attrs = r.delta != null && r.delta.getKind() == UpgradeSimulator.Kind.REMOVED
                     ? SimpleTextAttributes.GRAYED_ATTRIBUTES

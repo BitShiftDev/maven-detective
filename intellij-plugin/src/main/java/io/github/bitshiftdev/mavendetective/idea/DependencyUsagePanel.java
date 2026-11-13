@@ -1,20 +1,13 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
-import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.ide.CopyPasteManager;
-import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.ColoredTableCellRenderer;
-import com.intellij.ui.DocumentAdapter;
-import com.intellij.ui.JBColor;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.SimpleTextAttributes;
-import com.intellij.ui.components.JBCheckBox;
-import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.TableSpeedSearch;
 import com.intellij.ui.table.JBTable;
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.deps.ClassUsages;
@@ -24,27 +17,28 @@ import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
+import io.github.bitshiftdev.mavendetective.idea.ui.Html;
+import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.BorderFactory;
+import javax.swing.Icon;
 import javax.swing.JButton;
-import javax.swing.JEditorPane;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.HyperlinkEvent;
 import javax.swing.table.AbstractTableModel;
 import java.awt.BorderLayout;
-import java.awt.FlowLayout;
-import java.awt.datatransfer.StringSelection;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
  * Tab „Ungenutzt/undeklariert“ (Modul A5): je Modul Dependencies, die der Code nennt, aber nur
@@ -52,61 +46,43 @@ import java.util.Map;
  * nennen. Die Namen kommen über den Code-Index ({@link IdeUsages}); unten Belege mit Sprung zur
  * Zeile. „Beheben“ wendet die Vorschläge aller markierten Zeilen in einem Undo-Schritt an.
  */
-public final class DependencyUsagePanel extends JPanel implements Disposable {
+public final class DependencyUsagePanel extends DetectivePanel {
 
-    static final String TAB_NAME = "Ungenutzt/undeklariert";
+    static final String TAB_NAME = MavenDetectiveBundle.message("tab.usage");
 
-    private static final Logger LOG = Logger.getInstance(DependencyUsagePanel.class);
-    private static final JBColor UNDECLARED = new JBColor(0xFFF4D6, 0x4A3F22);
-
-    private final Project project;
-    private final JBCheckBox withBundles = new JBCheckBox("Auch über Starter", false);
-    private final JBCheckBox withUncertain = new JBCheckBox("Auch unsichere", true);
-    private final SearchTextField search = new SearchTextField(false);
-    private final JButton copy = new JButton("Als Markdown kopieren");
-    private final JButton apply = new JButton("Beheben");
-    private final JLabel status = new JLabel();
+    private boolean withBundles;
+    private boolean withUncertain = true;
+    private final SearchTextField search;
+    private final JButton apply = FixBar.primary(new JButton(MavenDetectiveBundle.message("usage.apply")));
     private final FindingModel model = new FindingModel();
     private final JBTable table = new JBTable(model);
-    private final JEditorPane details = new JEditorPane("text/html", "");
+    private final HtmlView details;
+    private final Background checker = background(MavenDetectiveBundle.message("loading.usage"));
     private DependencyUsage result;
-    private int generation;
-    private volatile boolean disposed;
 
     public DependencyUsagePanel(@NotNull Project project) {
-        super(new BorderLayout());
-        this.project = project;
+        super(project);
 
-        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton refresh = new JButton("Prüfen");
-        refresh.setToolTipText("Klassen, die die Quellen nennen, über den Code-Index auflösen und mit den Dependencies jedes Moduls vergleichen");
-        refresh.addActionListener(e -> reload());
-        withBundles.setToolTipText("Undeklarierte, die über einen Starter ohne eigene Klassen kommen (z. B. spring-boot-starter-web)");
-        withUncertain.setToolTipText("Ungenutzte, die sich ohne Nennung im Code registrieren (META-INF/services, Spring-Autokonfiguration)");
-        withBundles.addActionListener(e -> applyFilter());
-        withUncertain.addActionListener(e -> applyFilter());
-        search.addDocumentListener(new DocumentAdapter() {
-            @Override
-            protected void textChanged(@NotNull DocumentEvent e) {
-                applyFilter();
-            }
-        });
-        search.setToolTipText("Filtert nach Modul, Artifact oder Klassenname");
-        copy.setEnabled(false);
-        copy.addActionListener(e -> {
-            if (result != null) {
-                CopyPasteManager.getInstance().setContents(new StringSelection(result.markdown(withBundles.isSelected())));
-            }
-        });
+        search = searchField(MavenDetectiveBundle.message("search.findings"), this::applyFilter);
+        DefaultActionGroup actions = new DefaultActionGroup();
+        actions.add(registered("MavenDetective.Refresh"));
+        actions.add(registered("MavenDetective.Stop"));
+        actions.add(filterGroup(
+                toggle(MavenDetectiveBundle.message("usage.filter.bundles"), MavenDetectiveBundle.message("usage.filter.bundles.description"),
+                        () -> withBundles, v -> {
+                            withBundles = v;
+                            applyFilter();
+                        }),
+                toggle(MavenDetectiveBundle.message("usage.filter.uncertain"), MavenDetectiveBundle.message("usage.filter.uncertain.description"),
+                        () -> withUncertain, v -> {
+                            withUncertain = v;
+                            applyFilter();
+                        })));
+        actions.add(registered("MavenDetective.CopyMarkdown"));
+        installToolbar(null, actions, search);
+
         apply.setEnabled(false);
         apply.addActionListener(e -> applySelected());
-        toolbar.add(refresh);
-        toolbar.add(withBundles);
-        toolbar.add(withUncertain);
-        toolbar.add(search);
-        toolbar.add(apply);
-        toolbar.add(copy);
-        toolbar.add(status);
 
         table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         table.setDefaultRenderer(Object.class, new Renderer());
@@ -117,54 +93,95 @@ public final class DependencyUsagePanel extends JPanel implements Disposable {
                 updateApply(sel);
             }
         });
-
-        details.setEditable(false);
-        details.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-        details.addHyperlinkListener(e -> {
-            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getDescription() != null) {
-                FixRunner.openLocation(project, e.getDescription());
-            }
-        });
-
-        JBSplitter splitter = new JBSplitter(true, 0.55f);
-        splitter.setFirstComponent(new JBScrollPane(table));
-        splitter.setSecondComponent(new JBScrollPane(details));
-        add(toolbar, BorderLayout.NORTH);
-        add(splitter, BorderLayout.CENTER);
-
+        TableSpeedSearch.installOn(table, (value, cell) -> value instanceof DependencyUsage.Finding f && cell.column == 2 ? f.getEntry().label() : null);
         // Nicht automatisch prüfen: das löst alle Referenzen aller Module auf – erst auf Klick
-        status.setText("„Prüfen“ klicken, um ungenutzte und undeklarierte Dependencies zu suchen.");
+        emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+                MavenDetectiveBundle.message("empty.check.now"), this::reload);
+
+        details = new HtmlView(project);
+        JPanel bottom = new JPanel(new BorderLayout());
+        bottom.add(details.component(), BorderLayout.CENTER);
+        bottom.add(new FixBar(apply), BorderLayout.SOUTH);
+
+        JBSplitter splitter = new JBSplitter(true, "MavenDetective.Usage.split", 0.55f);
+        splitter.setFirstComponent(rows(table, this::selectedLocation, this::selectedText));
+        splitter.setSecondComponent(bottom);
+        setBody(splitter);
         show(null, 0);
     }
 
+    @Override
+    public boolean supportsRefresh() {
+        return true;
+    }
+
+    @Override
+    public void refresh() {
+        reload();
+    }
+
+    @Override
+    public @NotNull String refreshText() {
+        return MavenDetectiveBundle.message("action.check");
+    }
+
+    @Override
+    public @NotNull Icon refreshIcon() {
+        return AllIcons.Actions.Execute;
+    }
+
+    @Override
+    public boolean canCopyMarkdown() {
+        return result != null;
+    }
+
+    @Override
+    public @Nullable String markdown() {
+        return result == null ? null : result.markdown(withBundles);
+    }
+
     private void reload() {
-        status.setText("Löse Referenzen auf und lese Classpaths …");
         DependenciesPanel.saveUnsavedPoms();
-        int gen = ++generation;
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            DependencyUsage r;
-            try {
-                r = compute(project, () -> {
-                    if (disposed || project.isDisposed() || gen != generation) {
-                        throw new ProcessCanceledException();
-                    }
-                });
-            } catch (ProcessCanceledException e) {
-                return;
-            } catch (RuntimeException e) {
-                LOG.warn("Maven Detective: Prüfung der Dependency-Nutzung fehlgeschlagen", e);
-                r = null;
-            }
-            DependencyUsage fin = r;
-            ApplicationManager.getApplication().invokeLater(() -> {
-                if (gen != generation) {
-                    return;
-                }
-                result = fin;
-                copy.setEnabled(fin != null);
-                applyFilter();
-            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
+        setStatus(null);
+        checker.run(c -> compute(project, c), r -> {
+            result = r;
+            applyFilter();
         });
+    }
+
+    @Override
+    protected void cancelled() {
+        super.cancelled();
+        if (result == null) {
+            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+                    MavenDetectiveBundle.message("empty.check.now"), this::reload);
+        }
+    }
+
+    /** F4: Deklaration in der POM, sonst die erste Fundstelle im Code. */
+    private @Nullable String selectedLocation() {
+        List<DependencyUsage.Finding> sel = selected();
+        if (sel.isEmpty()) {
+            return null;
+        }
+        DependencyUsage.Finding f = sel.get(0);
+        if (f.declarationLocation() != null) {
+            return f.declarationLocation();
+        }
+        List<ClassUsages.Use> uses = !f.getMainUses().isEmpty() ? f.getMainUses() : f.getTestUses();
+        return uses.isEmpty() || uses.get(0).getFile() == null ? null : uses.get(0).location();
+    }
+
+    private @Nullable String selectedText() {
+        List<DependencyUsage.Finding> sel = selected();
+        if (sel.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (DependencyUsage.Finding f : sel) {
+            sb.append(sb.length() == 0 ? "" : "\n").append(f.getModule().getName()).append(": ").append(f.message());
+        }
+        return sb.toString();
     }
 
     /** Hintergrund-Thread, außerhalb einer Read-Action (die Sammlung nimmt sich je Datei eine). */
@@ -185,14 +202,15 @@ public final class DependencyUsagePanel extends JPanel implements Disposable {
         List<DependencyUsage.Finding> rows = new ArrayList<>();
         if (result == null) {
             model.set(rows);
-            status.setText("Kein Maven-Projekt gefunden.");
+            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+                    MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             show(null, 0);
             return;
         }
         String q = search.getText().trim().toLowerCase(Locale.ROOT);
         int hidden = 0;
         for (DependencyUsage.Finding f : result.findings()) {
-            boolean visible = (withBundles.isSelected() || !f.isViaBundle()) && (withUncertain.isSelected() || f.isCertain());
+            boolean visible = (withBundles || !f.isViaBundle()) && (withUncertain || f.isCertain());
             if (visible && !q.isEmpty() && !matches(f, q)) {
                 visible = false;
             }
@@ -209,7 +227,9 @@ public final class DependencyUsagePanel extends JPanel implements Disposable {
             unchecked += m.getUnchecked().size();
             files += m.getUsages().getMainFiles() + m.getUsages().getTestFiles();
         }
-        status.setText(result.getModules().size() + " Module, " + files + " Quelldateien – "
+        emptyText(table.getEmptyText(), MavenDetectiveBundle.message(result.findings().isEmpty() ? "usage.empty.none" : "empty.all.filtered"),
+                null, null);
+        setStatus(result.getModules().size() + " Module, " + files + " Quelldateien – "
                 + result.findings(DependencyUsage.Kind.UNDECLARED).size() + " undeklariert, "
                 + result.findings(DependencyUsage.Kind.UNUSED).size() + " ungenutzt, "
                 + result.findings(DependencyUsage.Kind.TEST_ONLY).size() + " nur in Tests"
@@ -330,7 +350,8 @@ public final class DependencyUsagePanel extends JPanel implements Disposable {
         }
         boolean jump = pom == 0 && sel.size() == 1 && !sel.get(0).fixes().isEmpty();
         apply.setEnabled(pom > 0 || jump);
-        apply.setText(jump ? "Zur Deklaration" : pom > 1 ? pom + " Vorschläge anwenden" : "Beheben");
+        apply.setText(jump ? MavenDetectiveBundle.message("fix.goto.declaration")
+                : pom > 1 ? MavenDetectiveBundle.message("usage.apply.many", pom) : MavenDetectiveBundle.message("usage.apply"));
         apply.setToolTipText(sel.size() == 1 && !sel.get(0).fixes().isEmpty() ? sel.get(0).fixes().get(0).getLabel() : null);
     }
 
@@ -362,21 +383,11 @@ public final class DependencyUsagePanel extends JPanel implements Disposable {
     }
 
     private static String link(String location, String label) {
-        return "<a href=\"" + esc(location) + "\">" + esc(label) + "</a>";
+        return Html.link(location, label);
     }
 
     private void showText(String body) {
-        details.setText("<html><body>" + body + "</body></html>");
-        details.setCaretPosition(0);
-    }
-
-    private static String esc(String s) {
-        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
-    }
-
-    @Override
-    public void dispose() {
-        disposed = true;
+        details.show(body);
     }
 
     private static final class FindingModel extends AbstractTableModel {
@@ -418,7 +429,7 @@ public final class DependencyUsagePanel extends JPanel implements Disposable {
             }
             boolean strong = f.getKind() == DependencyUsage.Kind.UNDECLARED && f.getMainCount() > 0 && !f.isViaBundle();
             if (strong && !selected) {
-                setBackground(UNDECLARED);
+                setBackground(DetectiveColors.WARNING_BACKGROUND);
             }
             SimpleTextAttributes plain = f.isCertain() && !f.isViaBundle() ? SimpleTextAttributes.REGULAR_ATTRIBUTES
                     : SimpleTextAttributes.GRAYED_ATTRIBUTES;

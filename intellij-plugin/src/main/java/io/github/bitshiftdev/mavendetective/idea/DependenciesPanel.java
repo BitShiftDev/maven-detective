@@ -1,21 +1,17 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
-import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.ColoredListCellRenderer;
-import com.intellij.ui.DocumentAdapter;
 import com.intellij.ui.JBSplitter;
+import com.intellij.ui.ListSpeedSearch;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.JBList;
-import com.intellij.ui.components.JBScrollPane;
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.PomCache;
@@ -24,21 +20,15 @@ import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplanation;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.Html;
+import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
-import javax.swing.JButton;
-import javax.swing.JEditorPane;
 import javax.swing.JList;
-import javax.swing.JPanel;
 import javax.swing.ListSelectionModel;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.HyperlinkEvent;
-import java.awt.BorderLayout;
-import java.awt.FlowLayout;
-import java.awt.datatransfer.StringSelection;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -48,64 +38,51 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
+
 /**
  * Tab „Dependencies“ (Modul A): links die aufgelösten Dependencies eines Moduls, rechts die
  * Antwort auf „Warum diese Version?“ mit klickbaren Stationen bis in Parent-POMs und BOMs.
  */
-public final class DependenciesPanel extends JPanel implements Disposable {
+public final class DependenciesPanel extends DetectivePanel {
 
-    static final String TAB_NAME = "Dependencies";
+    static final String TAB_NAME = MavenDetectiveBundle.message("tab.dependencies");
 
     /** Ein Eintrag der Liste: die Dependency, die im Classpath landet, und wie viele Versionen sie verdrängt hat. */
     private record Entry(DepNode node, int conflicts) {
     }
 
-    private final Project project;
+    /** Ergebnis des Ladens: Baum des Moduls und die Einträge der Liste. */
+    private record Loaded(@Nullable DepNode tree, List<Entry> entries) {
+    }
+
     private final ComboBox<IdeMaven.ModuleRef> modules = new ComboBox<>();
-    private final SearchTextField search = new SearchTextField(false);
+    private final SearchTextField search;
     private final DefaultListModel<Entry> listModel = new DefaultListModel<>();
     private final JBList<Entry> list = new JBList<>(listModel);
-    private final JEditorPane details = new JEditorPane("text/html", "");
-    private final JButton copy = new JButton("Als Markdown kopieren");
+    private final HtmlView details;
+    private final Background trees = background(MavenDetectiveBundle.message("loading.tree"));
+    private final Background explanations = background(null);
     private List<Entry> all = new ArrayList<>();
     private DepNode tree;
     private VersionExplanation shown;
     private boolean loading;
-    /** Zähler je Hintergrund-Aufgabe (nur EDT): Ein älteres Ergebnis überschreibt kein neueres. */
-    private int treeGeneration;
-    private int explainGeneration;
-    private volatile boolean disposed;
 
     public DependenciesPanel(@NotNull Project project) {
-        super(new BorderLayout());
-        this.project = project;
+        super(project);
 
-        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton refresh = new JButton("Aktualisieren");
-        refresh.setToolTipText("Module und Bäume neu aus dem Maven-Modell der IDE lesen (Stand des letzten Imports)");
-        refresh.addActionListener(e -> reloadModules(null));
-        copy.setEnabled(false);
-        copy.addActionListener(e -> {
-            if (shown != null) {
-                CopyPasteManager.getInstance().setContents(new StringSelection(shown.markdown()));
-            }
-        });
-        toolbar.add(modules);
-        toolbar.add(search);
-        toolbar.add(refresh);
-        toolbar.add(copy);
-
+        search = searchField(MavenDetectiveBundle.message("search.dependencies"), this::applyFilter);
+        modules.setToolTipText(MavenDetectiveBundle.message("dependencies.module.tooltip"));
         modules.addActionListener(e -> {
             if (!loading) {
                 loadTree(null, null);
             }
         });
-        search.addDocumentListener(new DocumentAdapter() {
-            @Override
-            protected void textChanged(@NotNull DocumentEvent e) {
-                applyFilter();
-            }
-        });
+        DefaultActionGroup actions = new DefaultActionGroup();
+        actions.add(registered("MavenDetective.Refresh"));
+        actions.add(registered("MavenDetective.CopyMarkdown"));
+        installToolbar(modules, actions, search);
+
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer(new ColoredListCellRenderer<>() {
             @Override
@@ -130,24 +107,38 @@ public final class DependenciesPanel extends JPanel implements Disposable {
                 explain(n.getGroupId(), n.getArtifactId());
             }
         });
+        ListSpeedSearch.installOn(list, e -> e.node().ga());
 
-        details.setEditable(false);
-        details.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-        details.addHyperlinkListener(e -> {
-            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getDescription() != null) {
-                FixRunner.openLocation(project, e.getDescription());
-            }
-        });
-        showText("<p>Dependency links auswählen oder in einer <code>pom.xml</code> per Rechtsklick "
+        details = new HtmlView(project);
+        details.show("<p>Dependency links auswählen oder in einer <code>pom.xml</code> per Rechtsklick "
                 + "„Warum diese Version?“ aufrufen.</p>");
 
-        JBSplitter splitter = new JBSplitter(false, 0.35f);
-        splitter.setFirstComponent(new JBScrollPane(list));
-        splitter.setSecondComponent(new JBScrollPane(details));
-        add(toolbar, BorderLayout.NORTH);
-        add(splitter, BorderLayout.CENTER);
+        JBSplitter splitter = new JBSplitter(false, "MavenDetective.Dependencies.split", 0.35f);
+        splitter.setFirstComponent(rows(list, () -> null, () -> list.getSelectedValue() == null ? null : list.getSelectedValue().node().gav()));
+        splitter.setSecondComponent(details.component());
+        setBody(splitter);
 
         reloadModules(null);
+    }
+
+    @Override
+    public boolean supportsRefresh() {
+        return true;
+    }
+
+    @Override
+    public void refresh() {
+        reloadModules(null);
+    }
+
+    @Override
+    public boolean canCopyMarkdown() {
+        return shown != null;
+    }
+
+    @Override
+    public @Nullable String markdown() {
+        return shown == null ? null : shown.markdown();
     }
 
     /** Einstieg aus der Editor-Aktion: Modul wählen und die Erklärung zeigen. */
@@ -181,29 +172,31 @@ public final class DependenciesPanel extends JPanel implements Disposable {
         IdeMaven.ModuleRef module = (IdeMaven.ModuleRef) modules.getSelectedItem();
         if (module == null) {
             listModel.clear();
-            showText("<p>Kein Maven-Projekt importiert. Nach dem Maven-Import „Aktualisieren“ klicken.</p>");
+            all = new ArrayList<>();
+            emptyText(list.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+                    MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             return;
         }
-        int generation = ++treeGeneration;
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+        // Nicht ModalityState.any(): explain() speichert Dokumente, und das verlangt einen
+        // write-safe Kontext (TransactionGuard), den any() nie bietet – Background nutzt defaultModalityState()
+        trees.run(c -> {
             DepNode t = IdeMaven.dependencyTree(project, module.pom());
-            List<Entry> entries = entries(t);
-            // Nicht ModalityState.any(): explain() speichert Dokumente, und das verlangt einen
-            // write-safe Kontext (TransactionGuard), den any() nie bietet
-            ApplicationManager.getApplication().invokeLater(() -> {
-                if (generation != treeGeneration) {
-                    return;   // inzwischen ein anderes Modul gewählt
-                }
-                tree = t;
-                all = entries;
-                applyFilter();
-                if (groupId != null) {
-                    selectInList(groupId, artifactId);
-                    explain(groupId, artifactId);
-                } else if (entries.isEmpty()) {
-                    showText("<p>Für dieses Modul liegt kein aufgelöster Baum vor. Maven-Projekt neu laden und „Aktualisieren“ klicken.</p>");
-                }
-            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
+            return new Loaded(t, entries(t));
+        }, r -> {
+            List<Entry> entries = r.entries();
+            tree = r.tree();
+            all = entries;
+            if (entries.isEmpty()) {
+                emptyText(list.getEmptyText(), MavenDetectiveBundle.message("empty.no.tree"),
+                        MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
+            } else {
+                emptyText(list.getEmptyText(), MavenDetectiveBundle.message("empty.no.match"), null, null);
+            }
+            applyFilter();
+            if (groupId != null) {
+                selectInList(groupId, artifactId);
+                explain(groupId, artifactId);
+            }
         });
     }
 
@@ -266,18 +259,10 @@ public final class DependenciesPanel extends JPanel implements Disposable {
         // Ungespeicherte Änderungen an POMs sollen in die Erklärung eingehen
         saveUnsavedPoms();
         DepNode t = tree;
-        int generation = ++explainGeneration;
-        showText("<p>Ermittle, woher die Version von " + esc(groupId + ":" + artifactId) + " kommt …</p>");
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            VersionExplanation x = explainNow(project, module.pom(), groupId, artifactId, t);
-            ApplicationManager.getApplication().invokeLater(() -> {
-                if (generation != explainGeneration) {
-                    return;   // inzwischen eine andere Dependency gewählt
-                }
-                shown = x;
-                copy.setEnabled(x != null);
-                showText(x == null ? "<p>Die POM des Moduls ist nicht lesbar.</p>" : render(x));
-            }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
+        details.show("<p>Ermittle, woher die Version von " + esc(groupId + ":" + artifactId) + " kommt …</p>");
+        explanations.run(c -> explainNow(project, module.pom(), groupId, artifactId, t), x -> {
+            shown = x;
+            details.show(x == null ? "<p>Die POM des Moduls ist nicht lesbar.</p>" : render(x));
         });
     }
 
@@ -378,25 +363,6 @@ public final class DependenciesPanel extends JPanel implements Disposable {
 
     private static String station(VersionExplanation.Station s) {
         String text = esc(s.getText());
-        if (s.getFile() == null) {
-            return text;
-        }
-        String target = s.getFile() + (s.getLine() > 0 ? ":" + s.getLine() : "");
-        String name = Paths.get(s.getFile()).getFileName() + (s.getLine() > 0 ? ":" + s.getLine() : "");
-        return text + " – <a href=\"" + esc(target) + "\">" + esc(name) + "</a>";
-    }
-
-    private void showText(String body) {
-        details.setText("<html><body>" + body + "</body></html>");
-        details.setCaretPosition(0);
-    }
-
-    private static String esc(String s) {
-        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
-    }
-
-    @Override
-    public void dispose() {
-        disposed = true;   // laufende Hintergrund-Aufgaben verwerfen ihr Ergebnis
+        return s.getFile() == null ? text : text + " – " + Html.fileLink(s.getFile(), s.getLine());
     }
 }

@@ -1,86 +1,64 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
-import com.intellij.openapi.Disposable;
-import com.intellij.openapi.ide.CopyPasteManager;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
-import com.intellij.ui.components.JBScrollPane;
+import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.ui.content.Content;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.env.SetupComparison;
 import io.github.bitshiftdev.mavendetective.core.report.Reports;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotDiff;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
+import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
+import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JEditorPane;
 import javax.swing.JPanel;
-import javax.swing.event.HyperlinkEvent;
 import java.awt.BorderLayout;
-import java.awt.FlowLayout;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.StringSelection;
 import java.util.List;
+import java.util.function.Consumer;
+
+import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
  * Die Diagnose-Karte: Kategorie und Sicherheit, Ursache in einem Satz, Belege (klickbar, wenn sie
  * auf eine Datei zeigen), was sich seit dem letzten grünen Build geändert hat, Abweichungen zwischen
- * IDE und Kommandozeile und Quick-Fix-Knöpfe.
+ * IDE und Kommandozeile und Quick-Fix-Knöpfe (der erste als Hauptaktion).
  */
-public final class BuildDoctorPanel extends JPanel implements Disposable, BuildDoctorService.Listener {
+public final class BuildDoctorPanel extends DetectivePanel implements BuildDoctorService.Listener {
+
+    static final String TAB_NAME = MavenDetectiveBundle.message("tab.build.doctor");
 
     private static final String LINK_SETUP = "md:setup";
     private static final String LINK_BACK = "md:back";
     private static final int MAX_CHANGES = 8;
 
-    private final Project project;
     private final BuildDoctorService service;
-    private final JEditorPane card = new JEditorPane("text/html", "");
-    private final JPanel fixes = new JPanel(new FlowLayout(FlowLayout.LEFT));
-    private final JButton copyReport = new JButton("Bericht kopieren");
-    private final JButton wrong = new JButton("Falsch erkannt");
+    private final HtmlView card;
+    private final FixBar fixes = new FixBar();
     private BuildDoctorService.Result shown;
 
-    public BuildDoctorPanel(Project project) {
-        super(new BorderLayout());
-        this.project = project;
+    public BuildDoctorPanel(@NotNull Project project) {
+        super(project);
         this.service = BuildDoctorService.getInstance(project);
 
-        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton fromClipboard = new JButton("Log aus Zwischenablage analysieren");
-        fromClipboard.addActionListener(e -> {
-            String text = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor);
-            if (text != null && !text.isBlank()) {
-                service.analyzeLog(text, null, false);
-            }
-        });
-        JButton compare = new JButton("IDE gegen Kommandozeile");
-        compare.setToolTipText("Vergleicht Maven, JDK, settings.xml, Profile und .mvn/-Konfiguration von IDE und ./mvnw");
-        compare.addActionListener(e -> showSetup(shown != null && shown.setup() != null ? shown.setup() : null));
-        copyReport.addActionListener(e -> {
-            if (shown != null) {
-                CopyPasteManager.getInstance().setContents(new StringSelection(report(shown)));
-            }
-        });
-        wrong.addActionListener(e -> {
-            if (shown != null) {
-                FixRunner.reportMisdiagnosis(project, shown);
-            }
-        });
-        toolbar.add(fromClipboard);
-        toolbar.add(compare);
-        toolbar.add(copyReport);
-        toolbar.add(wrong);
+        DefaultActionGroup actions = new DefaultActionGroup();
+        actions.add(registered("MavenDetective.AnalyzeClipboard"));
+        actions.add(registered("MavenDetective.CompareSetup"));
+        actions.addSeparator();
+        actions.add(registered("MavenDetective.CopyMarkdown"));
+        actions.add(registered("MavenDetective.ReportMisdiagnosis"));
+        installToolbar(null, actions, null);
 
-        card.setEditable(false);
-        card.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-        card.addHyperlinkListener(e -> {
-            if (e.getEventType() != HyperlinkEvent.EventType.ACTIVATED || e.getDescription() == null) {
-                return;
-            }
-            String target = e.getDescription();
+        card = new HtmlView(project, target -> {
             if (LINK_SETUP.equals(target)) {
-                showSetup(shown == null ? null : shown.setup());
+                showSetupView();
             } else if (LINK_BACK.equals(target)) {
                 if (shown != null) {
                     resultChanged(shown);
@@ -88,13 +66,14 @@ public final class BuildDoctorPanel extends JPanel implements Disposable, BuildD
                     showEmpty();
                 }
             } else {
-                FixRunner.openLocation(project, target);
+                return false;
             }
+            return true;
         });
-
-        add(toolbar, BorderLayout.NORTH);
-        add(new JBScrollPane(card), BorderLayout.CENTER);
-        add(fixes, BorderLayout.SOUTH);
+        JPanel body = new JPanel(new BorderLayout());
+        body.add(card.component(), BorderLayout.CENTER);
+        body.add(fixes, BorderLayout.SOUTH);
+        setBody(body);
 
         service.addListener(this, this);
         BuildDoctorService.Result last = service.getLast();
@@ -105,56 +84,87 @@ public final class BuildDoctorPanel extends JPanel implements Disposable, BuildD
         }
     }
 
+    /** Tool-Window öffnen, Seite wählen und dann {@code action} auf ihr ausführen. */
+    static void open(@NotNull Project project, @NotNull Consumer<BuildDoctorPanel> action) {
+        ToolWindow window = ToolWindowManager.getInstance(project).getToolWindow(BuildDoctorService.TOOL_WINDOW_ID);
+        if (window == null) {
+            return;
+        }
+        window.activate(() -> {
+            Content content = window.getContentManager().findContent(TAB_NAME);
+            if (content != null && content.getComponent() instanceof BuildDoctorPanel panel) {
+                window.getContentManager().setSelectedContent(content);
+                action.accept(panel);
+            }
+        });
+    }
+
     @Override
     public void resultChanged(BuildDoctorService.Result result) {
         shown = result;
         fixes.removeAll();
         if (result.diagnoses().isEmpty()) {
-            card.setText(html(result.environment() == null
+            card.show(result.environment() == null
                     ? "<p>In der Zwischenablage steht kein Maven-Log mit Fehlerzeilen (<code>[ERROR]</code>).</p>"
                     : "<p><b>Der Maven-Lauf ist gescheitert, aber im Log steht keine Fehlerzeile von Maven.</b></p>"
                     + "<p>Letzte Zeilen der Ausgabe:</p><pre>" + esc(tail(result.rawLog(), 15)) + "</pre>"
-                    + "<p>Bitte mit „Falsch erkannt“ als Testfall speichern.</p>"));
-            wrong.setEnabled(true);
+                    + "<p>Bitte mit „Falsch erkannt“ als Testfall speichern.</p>");
         } else {
             Diagnosis d = result.diagnoses().get(0);
-            card.setText(html(render(result)));
+            card.show(render(result));
+            boolean first = true;
             for (FixAction fix : d.getFixes()) {
                 JButton b = new JButton(fix.getLabel());
-                b.setEnabled(FixRunner.isSupported(fix));
-                b.setToolTipText(FixRunner.isSupported(fix) ? null : "Wird in einer späteren Version automatisch ausgeführt");
+                boolean supported = FixRunner.isSupported(fix);
+                b.setEnabled(supported);
+                b.setToolTipText(supported ? null : MavenDetectiveBundle.message("doctor.fix.unsupported"));
                 b.addActionListener(e -> FixRunner.run(project, fix, result));
-                fixes.add(b);
+                fixes.add(first && supported ? FixBar.primary(b) : b);
+                first = false;
             }
         }
-        copyReport.setEnabled(!result.diagnoses().isEmpty());
-        wrong.setEnabled(!result.diagnoses().isEmpty() || result.environment() != null);
+        fixes.setVisible(fixes.getComponentCount() > 0);
         fixes.revalidate();
         fixes.repaint();
-        card.setCaretPosition(0);
+    }
+
+    /** Kurze Meldung statt der Karte (z. B. leere Zwischenablage); „Zurück“ führt zur Karte. */
+    void showMessage(@NotNull String text) {
+        card.show("<p>" + esc(text) + "</p><p><a href=\"" + LINK_BACK + "\">Zurück</a></p>");
     }
 
     /** Vergleich IDE gegen Kommandozeile anzeigen; ohne fertigen Vergleich wird er jetzt ermittelt. */
-    private void showSetup(SetupComparison known) {
+    void showSetupView() {
+        SetupComparison known = shown == null ? null : shown.setup();
         if (known != null) {
-            card.setText(html(renderSetup(known)));
-            card.setCaretPosition(0);
+            card.show(renderSetup(known));
             return;
         }
-        card.setText(html("<p>Vergleiche IDE und Kommandozeile …</p>"));
-        service.compareSetupsAsync(shown == null ? null : shown.configuration(), c -> {
-            card.setText(html(renderSetup(c)));
-            card.setCaretPosition(0);
-        });
+        card.show("<p>" + esc(MavenDetectiveBundle.message("doctor.setup.loading")) + "</p>");
+        service.compareSetupsAsync(shown == null ? null : shown.configuration(), c -> card.show(renderSetup(c)));
     }
 
     private void showEmpty() {
-        copyReport.setEnabled(false);
-        wrong.setEnabled(false);
-        card.setText(html("<p>Noch keine Diagnose. Scheitert ein Maven-Lauf in der IDE, erscheint sie hier automatisch.</p>"
-                + "<p>Für Logs aus CI oder Terminal: Log kopieren und „Log aus Zwischenablage analysieren“.</p>"
+        card.show("<p>Noch keine Diagnose. Scheitert ein Maven-Lauf in der IDE, erscheint sie hier automatisch.</p>"
+                + "<p>Für Logs aus CI oder Terminal: Log kopieren und „Log aus Zwischenablage analysieren“ (Toolbar oben).</p>"
                 + "<p>Jeder grüne Maven-Lauf aus der IDE wird als Referenz gespeichert. Scheitert ein späterer Lauf, "
-                + "zeigt die Karte, was sich seitdem geändert hat.</p>"));
+                + "zeigt die Karte, was sich seitdem geändert hat.</p>");
+        fixes.setVisible(false);
+    }
+
+    @Override
+    public boolean canCopyMarkdown() {
+        return shown != null && !shown.diagnoses().isEmpty();
+    }
+
+    @Override
+    public @Nullable String markdown() {
+        return canCopyMarkdown() ? report(shown) : null;
+    }
+
+    @Override
+    public @Nullable String copyMarkdownText() {
+        return MavenDetectiveBundle.message("doctor.copy.report");
     }
 
     static String report(BuildDoctorService.Result r) {
@@ -176,7 +186,7 @@ public final class BuildDoctorPanel extends JPanel implements Disposable, BuildD
         for (Evidence e : d.getEvidence()) {
             sb.append("<li>");
             if (e.getFile() != null) {
-                String target = e.getFile() + (e.getLine() > 0 ? ":" + e.getLine() : "");
+                String target = Locations.of(e.getFile(), e.getLine());
                 sb.append(esc(e.getText())).append(" – <a href=\"").append(esc(target)).append("\">")
                         .append(esc(shortPath(target))).append("</a>");
             } else if (e.getKind() == Evidence.Kind.LOG_LINE) {
@@ -226,7 +236,8 @@ public final class BuildDoctorPanel extends JPanel implements Disposable, BuildD
         sb.append("<table cellpadding=\"3\"><tr><th></th><th align=\"left\">").append(esc(c.getLeft().getLabel()))
                 .append("</th><th align=\"left\">").append(esc(c.getRight().getLabel())).append("</th></tr>");
         for (SetupComparison.Row r : c.getRows()) {
-            String open = r.isDifferent() ? "<b>" : "";
+            // Abweichung nicht nur fett, sondern auch mit Zeichen – für Screenreader und ohne Farbe lesbar
+            String open = r.isDifferent() ? "<b>≠ " : "";
             String close = r.isDifferent() ? "</b>" : "";
             sb.append("<tr><td valign=\"top\">").append(open).append(esc(r.getAspect())).append(close)
                     .append("</td><td valign=\"top\">").append(esc(r.getLeft()))
@@ -264,11 +275,11 @@ public final class BuildDoctorPanel extends JPanel implements Disposable, BuildD
         }
         String[] all = log.replaceAll("\u001B\\[[0-9;]*[A-Za-z]", "").split("\\R");
         StringBuilder sb = new StringBuilder();
-        int shown = 0;
-        for (int i = all.length - 1; i >= 0 && shown < lines; i--) {
+        int count = 0;
+        for (int i = all.length - 1; i >= 0 && count < lines; i--) {
             if (!all[i].isBlank()) {
                 sb.insert(0, all[i] + "\n");
-                shown++;
+                count++;
             }
         }
         return sb.toString();
@@ -277,18 +288,5 @@ public final class BuildDoctorPanel extends JPanel implements Disposable, BuildD
     private static String shortPath(String path) {
         int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
         return slash >= 0 ? path.substring(slash + 1) : path;
-    }
-
-    private static String html(String body) {
-        return "<html><body>" + body + "</body></html>";
-    }
-
-    private static String esc(String s) {
-        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
-    }
-
-    @Override
-    public void dispose() {
-        // Abmelden beim Service erledigt Disposer (addListener mit diesem Panel als Parent)
     }
 }

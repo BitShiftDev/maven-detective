@@ -46,10 +46,13 @@
     <depends>com.intellij.modules.xml</depends>
     <depends>com.intellij.java</depends>
 
+    <!-- Texte von Aktionen (action.<id>.text/.description) und Oberfläche -->
+    <resource-bundle>messages.MavenDetectiveBundle</resource-bundle>
+
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Maven Detective"
                     anchor="bottom"
-                    icon="AllIcons.Toolwindows.ToolWindowProblems"
+                    icon="/icons/mavenDetective.svg"
                     factoryClass="io.github.bitshiftdev.mavendetective.idea.BuildDoctorToolWindowFactory"/>
         <notificationGroup id="Maven Detective" displayType="BALLOON"/>
         <!-- Modul A4: Beschreibung in inspectionDescriptions/MavenDetectiveStaleExclusion.html -->
@@ -71,18 +74,41 @@
     </extensions>
 
     <actions>
+        <!-- Texte im Bundle messages/MavenDetectiveBundle.properties -->
         <action id="MavenDetective.WhyThisVersion"
-                class="io.github.bitshiftdev.mavendetective.idea.WhyThisVersionAction"
-                text="Warum diese Version?"
-                description="Zeigt, woher die Version dieser Dependency kommt (Maven Detective)">
+                class="io.github.bitshiftdev.mavendetective.idea.WhyThisVersionAction">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
         <action id="MavenDetective.SimulateUpgrade"
-                class="io.github.bitshiftdev.mavendetective.idea.SimulateUpgradeAction"
-                text="Upgrade simulieren…"
-                description="Zeigt, was sich im Dependency-Baum ändert, wenn diese Dependency oder dieser Parent gehoben wird (Maven Detective)">
+                class="io.github.bitshiftdev.mavendetective.idea.SimulateUpgradeAction">
             <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="MavenDetective.WhyThisVersion"/>
         </action>
+
+        <!-- Toolbar-Aktionen des Tool-Windows; wirken auf die Seite im Kontext (DetectivePanel.KEY) -->
+        <action id="MavenDetective.Refresh"
+                class="io.github.bitshiftdev.mavendetective.idea.ui.DetectiveActions$Refresh"
+                icon="AllIcons.Actions.Refresh"/>
+        <action id="MavenDetective.Stop"
+                class="io.github.bitshiftdev.mavendetective.idea.ui.DetectiveActions$Stop"
+                icon="AllIcons.Actions.Suspend"/>
+        <action id="MavenDetective.CopyMarkdown"
+                class="io.github.bitshiftdev.mavendetective.idea.ui.DetectiveActions$CopyMarkdown"
+                icon="AllIcons.Actions.Copy"/>
+        <action id="MavenDetective.AnalyzeClipboard"
+                class="io.github.bitshiftdev.mavendetective.idea.BuildDoctorActions$AnalyzeClipboard"
+                icon="AllIcons.Actions.MenuPaste"/>
+        <action id="MavenDetective.CompareSetup"
+                class="io.github.bitshiftdev.mavendetective.idea.BuildDoctorActions$CompareSetup"
+                icon="AllIcons.Actions.Diff"/>
+        <action id="MavenDetective.ReportMisdiagnosis"
+                class="io.github.bitshiftdev.mavendetective.idea.BuildDoctorActions$ReportMisdiagnosis"
+                icon="AllIcons.Ide.Dislike"/>
+
+        <!-- Kontextmenü auf Zeilen in Tabellen und Listen des Tool-Windows -->
+        <group id="MavenDetective.RowPopup">
+            <reference ref="EditSource"/>
+            <reference ref="$Copy"/>
+        </group>
     </actions>
 
     <projectListeners>

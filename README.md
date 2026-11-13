@@ -313,7 +313,10 @@ intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies
                    Upgrade-Simulator), Listener auf Maven-Läufe, Quick-Fixes, Editor-Aktionen „Warum diese Version?“ und
                    „Upgrade simulieren…“, Inspections „Veraltete Exclusion“
                    und „Import aus nicht deklarierter Dependency“ (IdeUsages löst Referenzen über den Code-Index auf);
-                   IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht)
+                   IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht);
+                   ui/: DetectivePanel (Basis aller Seiten: Toolbar aus Aktionen, Ladeanzeige, Statuszeile,
+                   Hintergrund mit Abbruch, F4/Strg+C/Kontextmenü auf Zeilen), DetectiveActions, HtmlView, FixBar;
+                   Texte in messages/MavenDetectiveBundle.properties
 fixtures/          Je Fehlerkategorie ein Projekt, das den Fehler absichtlich auslöst (fixtures.txt),
                    dazu 09-changed-since-green für den Schnappschuss-Diff
 ```
