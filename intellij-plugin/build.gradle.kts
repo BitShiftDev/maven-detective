@@ -58,12 +58,19 @@ intellijPlatform {
             untilBuild = provider { null }
         }
     }
-    // Gate 2: Plugin Verifier gegen die letzten drei IntelliJ-IDEA-Versionen
+    // Gate 2: Plugin Verifier gegen alle IntelliJ-IDEA-Releases ab sinceBuild (je Linie die neueste).
+    // Alle auf einmal sprengen die Platte eines CI-Runners (IDEs plus nachgeladene Plugins wie
+    // Android/Rust). Die CI prüft deshalb je Release-Linie in einem eigenen Job:
+    //   -PverifySince=261 -PverifyUntil=261.*   → nur 2026.1
+    //   -PverifySince=263                       → 2026.3 und alles Neuere
+    val verifySince = providers.gradleProperty("verifySince").orElse(pluginSinceBuild)
+    val verifyUntil = providers.gradleProperty("verifyUntil")
     pluginVerification {
         ides {
             select {
                 types = listOf(IntelliJPlatformType.IntellijIdea)
-                sinceBuild = pluginSinceBuild
+                sinceBuild = verifySince
+                untilBuild = verifyUntil
             }
         }
     }
