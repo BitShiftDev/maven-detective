@@ -41,14 +41,12 @@ import java.util.Map;
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
- * Tab „Ungenutzt/undeklariert“ (Modul A5): je Modul Dependencies, die der Code nennt, aber nur
+ * Seite „Nutzung“ im Tab „Dependencies“ (Modul A5): je Modul Dependencies, die der Code nennt, aber nur
  * transitiv bekommt, deklarierte, die er nicht nennt, und compile-Dependencies, die nur Tests
  * nennen. Die Namen kommen über den Code-Index ({@link IdeUsages}); unten Belege mit Sprung zur
  * Zeile. „Beheben“ wendet die Vorschläge aller markierten Zeilen in einem Undo-Schritt an.
  */
 public final class DependencyUsagePanel extends DetectivePanel {
-
-    static final String TAB_NAME = MavenDetectiveBundle.message("tab.usage");
 
     private boolean withBundles;
     private boolean withUncertain = true;
@@ -108,6 +106,19 @@ public final class DependencyUsagePanel extends DetectivePanel {
         splitter.setSecondComponent(bottom);
         setBody(splitter);
         show(null, 0);
+        AnalysisResults.getInstance(project).addListener(new AnalysisResults.Listener() {
+            @Override
+            public void changed(@NotNull AnalysisResults.Analysis analysis, @NotNull AnalysisResults.Summary summary) {
+            }
+
+            /** Teuer: nicht von selbst neu prüfen, aber sichtbar als veraltet markieren. */
+            @Override
+            public void mavenImported() {
+                if (result != null) {
+                    setStale(true);
+                }
+            }
+        }, this);
     }
 
     @Override
@@ -143,10 +154,19 @@ public final class DependencyUsagePanel extends DetectivePanel {
     private void reload() {
         DependenciesPanel.saveUnsavedPoms();
         setStatus(null);
+        AnalysisResults results = AnalysisResults.getInstance(project);
+        results.running(AnalysisResults.Analysis.USAGE);
         checker.run(c -> compute(project, c), r -> {
             result = r;
+            setStale(false);
             applyFilter();
+            results.set(AnalysisResults.Analysis.USAGE, summary(r));
         });
+    }
+
+    @Override
+    protected void aborted() {
+        AnalysisResults.getInstance(project).aborted(AnalysisResults.Analysis.USAGE);
     }
 
     @Override
@@ -156,6 +176,28 @@ public final class DependencyUsagePanel extends DetectivePanel {
             emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                     MavenDetectiveBundle.message("empty.check.now"), this::reload);
         }
+    }
+
+    /** Zahl = Befunde, die mit Standardfilter sichtbar sind (ohne „über Starter“). */
+    private static AnalysisResults.Summary summary(@Nullable DependencyUsage r) {
+        if (r == null) {
+            return AnalysisResults.Summary.NOT_CHECKED;
+        }
+        int undeclared = 0;
+        int unused = 0;
+        int testOnly = 0;
+        for (DependencyUsage.Finding f : r.findings()) {
+            if (f.isViaBundle()) {
+                continue;
+            }
+            switch (f.getKind()) {
+                case UNDECLARED -> undeclared++;
+                case UNUSED -> unused++;
+                default -> testOnly++;
+            }
+        }
+        return AnalysisResults.Summary.done(undeclared + unused + testOnly,
+                MavenDetectiveBundle.message("summary.usage", undeclared, unused, testOnly));
     }
 
     /** F4: Deklaration in der POM, sonst die erste Fundstelle im Code. */
@@ -376,8 +418,8 @@ public final class DependencyUsagePanel extends DetectivePanel {
         }
         int n = FixRunner.editPoms(project, pomFixes, "Dependencies bereinigen (Maven Detective)");
         if (n > 0) {
-            showText("<p>" + n + (n == 1 ? " Änderung" : " Änderungen") + " an der POM. Nach dem Maven-Import „Prüfen“ klicken, "
-                    + "um neu zu prüfen.</p>");
+            showText("<p>" + n + (n == 1 ? " Änderung" : " Änderungen") + " an der POM. Nach dem Maven-Import ist die Liste "
+                    + "veraltet – dann oben „Neu prüfen“.</p>");
             apply.setEnabled(false);
         }
     }

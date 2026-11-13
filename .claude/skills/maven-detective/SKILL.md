@@ -119,11 +119,12 @@ Extension-Properties: `-Dmaven.ext.class.path=<jar>`, `-DmavenDetective.eventsFi
 
 - Jede Seite des Tool-Windows erbt `idea/ui/DetectivePanel` (`SimpleToolWindowPanel`): `installToolbar(leading, ActionGroup, trailing)`, `setBody`, `setStatus`, `background(text).run(c -> …, ergebnis -> …)` (Generation, Abbruch via `Cancellation`, Ladeanzeige, Fehler → `failed`), `rows(table, ort, text)` (Kontextmenü `MavenDetective.RowPopup`, F4 über `pfad:zeile`, Strg+C), `emptyText`, `toggle`/`filterGroup`/`searchField`. Hooks für gemeinsame Aktionen: `supportsRefresh/refresh/refreshText/refreshIcon`, `canCopyMarkdown/markdown`.
 - Keine `JButton`s in `FlowLayout`-Leisten: Befehle = `AnAction` (in `plugin.xml` registriert, Text im Bundle `action.<id>.text`), Hauptaktion zur Auswahl = `FixBar.primary(button)`. Detail-HTML über `HtmlView` + `Html.esc/fileLink/pomLink`, Farben aus `DetectiveColors`.
+- Struktur (U2): drei Tabs – `OverviewPanel` (Kacheln `ui/Tile`), `BuildDoctorPanel`, `DependencyAnalysisView` (Navigation links, Seiten A1/A2/A3/A5/A6 rechts). Sprünge nur über `Navigator.open(project, PanelKlasse.class, p -> …)` / `buildDoctor` / `find` (ohne Umschalten), nie über Tab-Namen. Stand je Analyse in `AnalysisResults` (`running`/`set`/`aborted`, `Summary.done(n, text)`; nach Maven-Import fertig → `STALE`, Listener `mavenImported()`): günstige Seiten rechnen neu, teure rufen `setStale(true)` (Balken „Neu prüfen“ → `refresh()`). Neue Seite ⇒ in `DependencyAnalysisView.pages` eintragen, Stand melden, `aborted()` überschreiben. Letzter Lauf/Badge: `BuildDoctorService.getLastRun()`, `Listener.runFinished`.
 - Texte: `MavenDetectiveBundle.message(key)`; `MavenDetectiveBundleTest` prüft, dass jeder Schlüssel aus Code und `plugin.xml` existiert.
 
 ## Offene Punkte (Stand README)
 
-Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1–A6 fertig (alle nicht in `runIde` geklickt); Plugin Verifier braucht Netz (in der Sandbox nicht lauffähig). Vor größeren Features README „Nächste Schritte“ prüfen.
+Gate 1 (30 echte Logs mit `evaluate` messen) steht aus; Plugin (inkl. A1) in `runIde` noch nicht durchgeklickt; Extension nicht veröffentlicht (`.mvn/extensions.xml` in CI geht noch nicht); Modul A: A1–A6 fertig, UI-Plan U1+U2 umgesetzt (alles nicht in `runIde` geklickt); Plugin Verifier braucht Netz (in der Sandbox nicht lauffähig). Vor größeren Features README „Nächste Schritte“ prüfen.
 
 ## Git
 

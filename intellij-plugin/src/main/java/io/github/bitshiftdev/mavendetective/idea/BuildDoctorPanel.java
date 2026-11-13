@@ -2,9 +2,6 @@ package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowManager;
-import com.intellij.ui.content.Content;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
@@ -22,7 +19,6 @@ import javax.swing.JButton;
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
 import java.util.List;
-import java.util.function.Consumer;
 
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
@@ -32,8 +28,6 @@ import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
  * IDE und Kommandozeile und Quick-Fix-Knöpfe (der erste als Hauptaktion).
  */
 public final class BuildDoctorPanel extends DetectivePanel implements BuildDoctorService.Listener {
-
-    static final String TAB_NAME = MavenDetectiveBundle.message("tab.build.doctor");
 
     private static final String LINK_SETUP = "md:setup";
     private static final String LINK_BACK = "md:back";
@@ -82,21 +76,6 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         } else {
             showEmpty();
         }
-    }
-
-    /** Tool-Window öffnen, Seite wählen und dann {@code action} auf ihr ausführen. */
-    static void open(@NotNull Project project, @NotNull Consumer<BuildDoctorPanel> action) {
-        ToolWindow window = ToolWindowManager.getInstance(project).getToolWindow(BuildDoctorService.TOOL_WINDOW_ID);
-        if (window == null) {
-            return;
-        }
-        window.activate(() -> {
-            Content content = window.getContentManager().findContent(TAB_NAME);
-            if (content != null && content.getComponent() instanceof BuildDoctorPanel panel) {
-                window.getContentManager().setSelectedContent(content);
-                action.accept(panel);
-            }
-        });
     }
 
     @Override

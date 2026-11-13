@@ -9,9 +9,6 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowManager;
-import com.intellij.ui.content.Content;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -21,7 +18,7 @@ import java.util.regex.Pattern;
 
 /**
  * Rechtsklick in einer {@code pom.xml} auf eine {@code <dependency>}: „Warum diese Version?“ öffnet
- * den Tab „Dependencies“ mit der Entscheidungskette.
+ * die Seite „Warum diese Version?“ (Tab „Dependencies“) mit der Entscheidungskette.
  */
 public final class WhyThisVersionAction extends AnAction implements DumbAware {
 
@@ -70,19 +67,9 @@ public final class WhyThisVersionAction extends AnAction implements DumbAware {
                 }
             }
         }
-        ToolWindow window = ToolWindowManager.getInstance(project).getToolWindow("Maven Detective");
-        if (window == null) {
-            return;
-        }
         String groupId = ga[0];
         String artifactId = ga[1];
-        window.activate(() -> {
-            Content content = window.getContentManager().findContent(DependenciesPanel.TAB_NAME);
-            if (content != null && content.getComponent() instanceof DependenciesPanel panel) {
-                window.getContentManager().setSelectedContent(content);
-                panel.show(pom, groupId, artifactId);
-            }
-        });
+        Navigator.open(project, DependenciesPanel.class, panel -> panel.show(pom, groupId, artifactId));
     }
 
     /**

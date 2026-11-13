@@ -11,7 +11,8 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.ui.BadgeIconSupplier;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveIcons;
 import io.github.bitshiftdev.mavendetective.core.BuildDoctor;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
@@ -59,7 +60,22 @@ public final class BuildDoctorService {
 
     public interface Listener {
         void resultChanged(Result result);
+
+        /** Ein Maven-Lauf aus der IDE ist zu Ende (grün oder rot); siehe {@link #getLastRun()}. */
+        default void runFinished(@NotNull LastRun run) {
+        }
     }
+
+    /**
+     * Letzter Maven-Lauf aus der IDE in dieser Sitzung (Logs aus der Zwischenablage zählen nicht).
+     *
+     * @param at     Ende des Laufs, Millisekunden seit 1970
+     * @param result Diagnose bei rotem Lauf
+     */
+    public record LastRun(boolean green, long at, @Nullable Result result) {
+    }
+
+    private static final BadgeIconSupplier BADGE = new BadgeIconSupplier(DetectiveIcons.TOOL_WINDOW);
 
     private final Project project;
     private static final Logger LOG = Logger.getInstance(BuildDoctorService.class);
@@ -68,6 +84,7 @@ public final class BuildDoctorService {
     private final SnapshotStore store = SnapshotStore.defaultStore();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private volatile Result last;
+    private volatile LastRun lastRun;
 
     public BuildDoctorService(Project project) {
         this.project = project;
@@ -79,6 +96,10 @@ public final class BuildDoctorService {
 
     public @Nullable Result getLast() {
         return last;
+    }
+
+    public @Nullable LastRun getLastRun() {
+        return lastRun;
     }
 
     /** Meldet sich ab, sobald {@code parent} entsorgt wird – kein Panel bleibt am Service hängen. */
@@ -119,6 +140,8 @@ public final class BuildDoctorService {
 
     /** Ein Lauf aus der IDE war grün: Schnappschuss wird die neue Referenz für „Was hat sich geändert?“. */
     public void recordGreen(@Nullable ExecutionEnvironment env) {
+        long at = System.currentTimeMillis();
+        ApplicationManager.getApplication().invokeLater(() -> finished(new LastRun(true, at, null)), project.getDisposed());
         Path dir = projectDir();
         if (dir == null) {
             return;
@@ -134,6 +157,17 @@ public final class BuildDoctorService {
                 LOG.warn("Maven Detective: grüner Schnappschuss nicht gespeichert", e);
             }
         });
+    }
+
+    /** Grüne Referenz für „Was hat sich geändert?“ ({@code null}: keine); liest Dateien, nicht auf dem EDT aufrufen. */
+    public @Nullable BuildSnapshot loadGreen() {
+        Path dir = projectDir();
+        try {
+            return dir == null ? null : store.loadGreen(dir, BuildSnapshot.ORIGIN_IDE);
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: grüner Schnappschuss nicht lesbar", e);
+            return null;
+        }
     }
 
     /** IDE gegen Kommandozeile, im Hintergrund ermittelt; {@code callback} läuft auf dem EDT. */
@@ -163,7 +197,8 @@ public final class BuildDoctorService {
         }
     }
 
-    private @Nullable SetupComparison compareSetups(@Nullable MavenRunConfiguration cfg) {
+    /** IDE gegen Kommandozeile ({@code null}: nicht ermittelbar); liest Dateien, nicht auf dem EDT aufrufen. */
+    public @Nullable SetupComparison compareSetups(@Nullable MavenRunConfiguration cfg) {
         try {
             return SetupComparison.compare(IdeMaven.ideSetup(project, cfg), IdeMaven.cliSetup(project));
         } catch (RuntimeException e) {
@@ -177,19 +212,31 @@ public final class BuildDoctorService {
         for (Listener l : listeners) {
             l.resultChanged(result);
         }
-        if (notify && !result.diagnoses().isEmpty()) {
+        if (result.environment() != null) {
+            finished(new LastRun(false, System.currentTimeMillis(), result));
+        }
+        // Sprechblase nur, wenn das Tool-Window nicht ohnehin zu sehen ist – sonst genügt das Badge
+        ToolWindow window = Navigator.window(project);
+        if (notify && !result.diagnoses().isEmpty() && (window == null || !window.isVisible())) {
             Diagnosis d = result.diagnoses().get(0);
             NotificationGroupManager.getInstance().getNotificationGroup(TOOL_WINDOW_ID)
-                    .createNotification("Maven-Build gescheitert: " + d.getCategory(), d.getCause(), NotificationType.WARNING)
-                    .addAction(NotificationAction.createSimple("Diagnose anzeigen", this::showToolWindow))
+                    .createNotification(MavenDetectiveBundle.message("notification.build.failed", d.getCategory()), d.getCause(),
+                            NotificationType.WARNING)
+                    .addAction(NotificationAction.createSimple(MavenDetectiveBundle.message("notification.show.diagnosis"),
+                            () -> Navigator.buildDoctor(project, null)))
                     .notify(project);
         }
     }
 
-    public void showToolWindow() {
-        ToolWindow tw = ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID);
-        if (tw != null) {
-            tw.show();
+    /** Letzten Lauf merken, Badge an der Tool-Window-Leiste setzen (rot) oder entfernen (grün), melden (EDT). */
+    private void finished(LastRun run) {
+        lastRun = run;
+        ToolWindow window = Navigator.window(project);
+        if (window != null) {
+            window.setIcon(run.green() ? DetectiveIcons.TOOL_WINDOW : BADGE.getErrorIcon(true));
+        }
+        for (Listener l : listeners) {
+            l.runFinished(run);
         }
     }
 

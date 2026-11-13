@@ -35,7 +35,7 @@ public final class BuildDoctorActions {
             if (e.getData(DetectivePanel.KEY) instanceof BuildDoctorPanel panel) {
                 action.accept(panel);
             } else if (e.getProject() != null) {
-                BuildDoctorPanel.open(e.getProject(), action);
+                Navigator.buildDoctor(e.getProject(), action);
             }
         }
     }

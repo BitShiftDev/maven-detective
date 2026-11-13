@@ -3,15 +3,12 @@ package io.github.bitshiftdev.mavendetective.idea;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
-import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.ColoredTableCellRenderer;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.TableSpeedSearch;
 import com.intellij.ui.components.JBLabel;
-import com.intellij.ui.content.Content;
 import com.intellij.ui.table.JBTable;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 import io.github.bitshiftdev.mavendetective.core.deps.ConflictMatrix;
@@ -45,14 +42,12 @@ import java.util.Map;
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
- * Tab „Konflikt-Matrix“ (Modul A2): Zeile = Artifact, Spalte = Modul, Zelle = aufgelöste Version.
+ * Seite „Konflikte“ im Tab „Dependencies“ (Modul A2): Zeile = Artifact, Spalte = Modul, Zelle = aufgelöste Version.
  * Abweichende Zellen sind markiert. Unten der Vorschlag, die Version im gemeinsamen Parent unter
  * {@code dependencyManagement} festzulegen, samt den Stellen, die das überstimmen würden.
  * Doppelklick auf eine Zelle öffnet „Warum diese Version?“ für Modul und Artifact.
  */
 public final class ConflictMatrixPanel extends DetectivePanel {
-
-    static final String TAB_NAME = MavenDetectiveBundle.message("tab.matrix");
 
     private boolean onlyDivergent = true;
     private final SearchTextField search;
@@ -114,6 +109,17 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         splitter.setSecondComponent(bottom);
         setBody(splitter);
 
+        AnalysisResults.getInstance(project).addListener(new AnalysisResults.Listener() {
+            @Override
+            public void changed(@NotNull AnalysisResults.Analysis analysis, @NotNull AnalysisResults.Summary summary) {
+            }
+
+            /** Günstig: nach jedem Import von selbst neu rechnen, statt alte Zahlen stehen zu lassen. */
+            @Override
+            public void mavenImported() {
+                reload();
+            }
+        }, this);
         reload();
     }
 
@@ -139,10 +145,27 @@ public final class ConflictMatrixPanel extends DetectivePanel {
 
     private void reload() {
         DependenciesPanel.saveUnsavedPoms();
+        AnalysisResults results = AnalysisResults.getInstance(project);
+        results.running(AnalysisResults.Analysis.CONFLICTS);
         loader.run(c -> compute(project), m -> {
             matrix = m;
             applyFilter();
+            results.set(AnalysisResults.Analysis.CONFLICTS, summary(m));
         });
+    }
+
+    @Override
+    protected void aborted() {
+        AnalysisResults.getInstance(project).aborted(AnalysisResults.Analysis.CONFLICTS);
+    }
+
+    private static AnalysisResults.Summary summary(@Nullable ConflictMatrix m) {
+        if (m == null) {
+            return AnalysisResults.Summary.NOT_CHECKED;
+        }
+        int n = m.divergent().size();
+        return AnalysisResults.Summary.done(n, MavenDetectiveBundle.message(m.isPartial() ? "summary.conflicts.partial" : "summary.conflicts",
+                n, m.getModules().size()));
     }
 
     /** Matrix aus dem IDE-Modell berechnen (Hintergrund-Thread; liest nur Dateien). */
@@ -301,7 +324,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         }
         FixRunner.pinVersion(project, row.getPin().fix(row.getGroupId(), row.getArtifactId(), version));
         showText("<p>Version " + esc(version) + " für " + esc(row.ga()) + " eingetragen. Nach dem Maven-Import "
-                + "„Aktualisieren“ klicken, um die Matrix neu zu berechnen.</p>");
+                + "rechnet die Matrix von selbst neu.</p>");
         pin.setEnabled(false);
     }
 
@@ -309,15 +332,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         if (row.cell(module) == null) {
             return;
         }
-        ToolWindow window = ToolWindowManager.getInstance(project).getToolWindow(BuildDoctorService.TOOL_WINDOW_ID);
-        if (window == null) {
-            return;
-        }
-        Content content = window.getContentManager().findContent(DependenciesPanel.TAB_NAME);
-        if (content != null && content.getComponent() instanceof DependenciesPanel panel) {
-            window.getContentManager().setSelectedContent(content);
-            panel.show(module.getPom().getFile(), row.getGroupId(), row.getArtifactId());
-        }
+        Navigator.open(project, DependenciesPanel.class, panel -> panel.show(module.getPom().getFile(), row.getGroupId(), row.getArtifactId()));
     }
 
     private void showText(String body) {

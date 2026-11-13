@@ -51,7 +51,7 @@ import java.util.TreeSet;
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
- * Tab „Upgrade-Simulator“ (Modul A6): Artifact, BOM, Parent oder Property und Zielversion wählen,
+ * Seite „Upgrade-Simulator“ im Tab „Dependencies“ (Modul A6): Artifact, BOM, Parent oder Property und Zielversion wählen,
  * „Simulieren“ zeigt je Modul, was sich im Baum ändert – bevor die POM angefasst wird. Oben die
  * Stellen, die geändert würden (mit Sprung), in der Tabelle die Unterschiede, darunter Pfade,
  * Hinweise und neue Konflikte. „Übernehmen“ schreibt genau diese Änderungen (ein Undo-Schritt),
@@ -59,8 +59,6 @@ import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
  * Netzzugriff in Modul A und nur auf Klick.
  */
 public final class UpgradeSimulatorPanel extends DetectivePanel {
-
-    static final String TAB_NAME = MavenDetectiveBundle.message("tab.upgrade");
 
     private final ComboBox<String> artifact = new ComboBox<>();
     private final ComboBox<String> version = new ComboBox<>();
@@ -139,6 +137,20 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                 + "wählen, dann „Simulieren“. Die POMs bleiben unverändert, bis „Übernehmen“ geklickt wird.</p>"
                 + "<p>Im Editor: Rechtsklick auf eine <code>&lt;dependency&gt;</code> oder den <code>&lt;parent&gt;</code> in der "
                 + "<code>pom.xml</code> → „Upgrade simulieren…“.</p>");
+        AnalysisResults.getInstance(project).addListener(new AnalysisResults.Listener() {
+            @Override
+            public void changed(@NotNull AnalysisResults.Analysis analysis, @NotNull AnalysisResults.Summary summary) {
+            }
+
+            /** Simulation beruht auf den alten Bäumen: als veraltet markieren; Vorschläge sind günstig, die neu. */
+            @Override
+            public void mavenImported() {
+                if (result != null) {
+                    setStale(true);
+                }
+                loadSuggestions();
+            }
+        }, this);
         loadSuggestions();
     }
 
@@ -293,7 +305,13 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         }
         DependenciesPanel.saveUnsavedPoms();
         setStatus(null);
+        AnalysisResults.getInstance(project).running(AnalysisResults.Analysis.UPGRADE);
         simulation.run(c -> compute(project, r), res -> display(res, null));
+    }
+
+    @Override
+    protected void aborted() {
+        AnalysisResults.getInstance(project).aborted(AnalysisResults.Analysis.UPGRADE);
     }
 
     /** Simulation über alle Module (Hintergrund-Thread; liest nur Dateien). */
@@ -431,6 +449,10 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                     + (res.isComplete() ? "" : " – unvollständig, POMs fehlen lokal"));
         }
         this.fetchError = error;
+        setStale(false);
+        AnalysisResults.getInstance(project).set(AnalysisResults.Analysis.UPGRADE, res == null ? AnalysisResults.Summary.NOT_CHECKED
+                : AnalysisResults.Summary.done(-1, MavenDetectiveBundle.message("summary.upgrade", res.getRequest().label() + " " + res.getRequest().getVersion(),
+                res.changed().size())));
         render();
     }
 

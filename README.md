@@ -22,14 +22,14 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 | Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
 | „Was hat sich geändert?“ (Schnappschuss-Diff) | fertig in Kern, Extension, CLI (`changes`) und IDE |
 | IDE gegen Kommandozeile | fertig: Vergleich im Tool-Window, Hinweis auf der Karte |
-| IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option. **In `runIde` noch nicht durchgeklickt** |
+| IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Tool-Window mit drei Tabs (Übersicht mit Kacheln, Build Doctor, Dependencies mit Navigation), Badge an der Leiste bei rotem Build, Ergebnisse veralten sichtbar nach jedem Maven-Import; Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option. **In `runIde` noch nicht durchgeklickt** |
 | Gate 1 (30 eigene Logs) | **offen** – braucht deine Logs, siehe unten |
-| A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Tab „Dependencies“, Rechtsklick in der `pom.xml`). **In `runIde` noch nicht durchgeklickt** |
-| A2 Konflikt-Matrix | fertig in Kern, CLI (`matrix`, `--pin`) und IDE (Tab „Konflikt-Matrix“ mit Quick-Fix „im Parent festlegen“). **In `runIde` noch nicht durchgeklickt** |
+| A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Tab „Dependencies“ → „Warum diese Version?“, Rechtsklick in der `pom.xml`). **In `runIde` noch nicht durchgeklickt** |
+| A2 Konflikt-Matrix | fertig in Kern, CLI (`matrix`, `--pin`) und IDE (Tab „Dependencies“ → „Konflikte“ mit Quick-Fix „im Parent festlegen“). **In `runIde` noch nicht durchgeklickt** |
 | A4 Exclusion-Hygiene | fertig in Kern, CLI (`exclusions`, `--remove`) und IDE (Inspection „Veraltete Exclusion“ in der `pom.xml` mit Quick-Fix). **In `runIde` noch nicht durchgeklickt** |
-| A3 Doppelte Klassen | fertig in Kern, CLI (`duplicates`, `--exclude`) und IDE (Tab „Doppelte Klassen“ mit Quick-Fix „Exclusion einfügen“). **In `runIde` noch nicht durchgeklickt** |
-| A5 Ungenutzte/undeklarierte Dependencies | fertig in Kern, CLI (`analyze`, `--declare`, `--remove`) und IDE (Tab „Ungenutzt/undeklariert“, Inspection „Import aus nicht deklarierter Dependency“ live im Editor). **In `runIde` noch nicht durchgeklickt** |
-| A6 Upgrade-Simulator | fertig in Kern, CLI (`upgrade`, `--manage`, `--fetch`, `--apply`) und IDE (Tab „Upgrade-Simulator“, Rechtsklick in der `pom.xml` „Upgrade simulieren…“). **In `runIde` noch nicht durchgeklickt** |
+| A3 Doppelte Klassen | fertig in Kern, CLI (`duplicates`, `--exclude`) und IDE (Tab „Dependencies“ → „Doppelte Klassen“ mit Quick-Fix „Exclusion einfügen“). **In `runIde` noch nicht durchgeklickt** |
+| A5 Ungenutzte/undeklarierte Dependencies | fertig in Kern, CLI (`analyze`, `--declare`, `--remove`) und IDE (Tab „Dependencies“ → „Nutzung“, Inspection „Import aus nicht deklarierter Dependency“ live im Editor). **In `runIde` noch nicht durchgeklickt** |
+| A6 Upgrade-Simulator | fertig in Kern, CLI (`upgrade`, `--manage`, `--fetch`, `--apply`) und IDE (Tab „Dependencies“ → „Upgrade-Simulator“, Rechtsklick in der `pom.xml` „Upgrade simulieren…“). **In `runIde` noch nicht durchgeklickt** |
 
 ## Schnellstart
 
@@ -126,7 +126,7 @@ Hinweise:
 - **Regeln wie Mavens Model-Builder:** Erst erben (Kind gewinnt), dann im Kontext des Kindes interpolieren, dann BOMs importieren (erster Import gewinnt; ein BOM löst seine Properties im eigenen Kontext auf). Deshalb wirkt `jackson-bom.version` unter `spring-boot-starter-parent`, aber nicht bei importiertem `spring-boot-dependencies` – genau darauf weist die Erklärung hin.
 - **Quellen:** POMs aus dem Projekt und dem lokalen Repository, nie das Netz. Fehlt ein BOM lokal, nennt die Erklärung das wahrscheinlich zuständige. Profile werden nicht ausgewertet; setzt eines Properties oder `dependencyManagement`, steht das als Hinweis da.
 - **Baum:** Die IDE nimmt ihren aufgelösten Baum (Stand des letzten Imports). Auf der Kommandozeile: `mvn dependency:tree -Dverbose > tree.txt`, dann `why g:a --tree tree.txt` (oder `--tree -` aus der Pipe). Weicht der Baum von den POMs ab, sagt die Erklärung das.
-- **In der IDE:** Rechtsklick auf eine `<dependency>` in der `pom.xml` → „Warum diese Version?“, oder im Tab „Dependencies“ ein Modul und eine Dependency wählen (mit Suche und Markierung „× verdrängt“). „Als Markdown kopieren“ für Ticket oder Chat.
+- **In der IDE:** Rechtsklick auf eine `<dependency>` in der `pom.xml` → „Warum diese Version?“, oder im Tab „Dependencies“ unter „Warum diese Version?“ ein Modul und eine Dependency wählen (mit Suche und Markierung „× verdrängt“). „Als Markdown kopieren“ für Ticket oder Chat.
 
 ## IDE gegen Kommandozeile
 
@@ -201,7 +201,7 @@ com.google.guava:guava  – 2 Versionen
 - **Was den Pin überstimmt**, steht dabei: direkte `<version>`-Angaben in Modulen und `dependencyManagement` in Modulen oder Zwischen-Parents – jeweils mit Datei und Zeile.
 - **Quick-Fix `pin-version`** ändert genau eine Stelle und lässt Formatierung und Kommentare stehen: vorhandenen Eintrag anpassen (steht dort `${prop}` aus derselben POM, die Property), sonst Eintrag ergänzen, sonst `<dependencyManagement>` anlegen. Haben die Module keinen gemeinsamen Parent im Projekt, sagt die Matrix das statt zu raten.
 - **Ohne Baum** (CLI ohne `--tree`, IDE vor dem ersten Import) enthält die Matrix nur direkt deklarierte Dependencies und sagt das.
-- **In der IDE:** Tab „Konflikt-Matrix“ mit Suche und „Nur Abweichungen“; abweichende Zellen sind hinterlegt. Unten Herkunft (klickbar), Versionsauswahl und „In <parent> festlegen“ – als ein Undo-Schritt, danach lädt IntelliJ das Maven-Projekt neu. Doppelklick auf eine Zelle öffnet „Warum diese Version?“ für dieses Modul.
+- **In der IDE:** Tab „Dependencies“ → „Konflikte“ mit Suche und „Nur Abweichungen“; abweichende Zellen sind hinterlegt. Unten Herkunft (klickbar), Versionsauswahl und „In <parent> festlegen“ – als ein Undo-Schritt, danach lädt IntelliJ das Maven-Projekt neu. Doppelklick auf eine Zelle öffnet „Warum diese Version?“ für dieses Modul. Nach jedem Maven-Import rechnet die Matrix von selbst neu.
 
 ## Exclusion-Hygiene
 
@@ -240,7 +240,7 @@ Modul app (84 Einträge)
 - **Vergleich:** Klassennamen und CRC32 aus dem Zentralverzeichnis der JARs (nichts wird entpackt; gecacht nach Änderungszeit und Größe). Innere Klassen, `module-info`, `package-info` und `META-INF/` zählen nicht. Funde sind nach JAR-Gruppe zusammengefasst, mit Anzahl gleicher und verschiedener Klassen; *nur Tests*, wenn höchstens ein beteiligtes JAR zur Laufzeit dabei ist.
 - **Empfehlung:** zuerst eine Tabelle bekannter Paare (`commons-logging`/`jcl-over-slf4j`/`spring-jcl`, `log4j`/`log4j-over-slf4j`, `javax.xml.bind`/`jakarta.xml.bind-api` 2.x, `javax.activation`, `javax.annotation`, `javax.validation`, `servlet-api`, `jsr311-api`, `google-collections`/`guava`, `asm:asm`, `hamcrest-core`, `bcprov-jdk15on`, `stax-api`). Sonst: ein JAR, dessen Klassen alle auch in anderen liegen, kann ohne Verlust weg – bei gleichem Umfang das, das heute verliert (die Laufzeit ändert sich nicht). Bringen beide eigene Klassen mit, bleibt es eine Entscheidung; angezeigt wird, welches heute gewinnt.
 - **Quick-Fix `add-exclusion`** fügt die Exclusion bei jeder direkten Dependency ein, über die das JAR kommt (auch über verdrängte Pfade, sonst käme es dort wieder hoch) – in vorhandene `<exclusions>` oder neu vor `</dependency>`, Einrückung wie in der Datei. Steht die Dependency im Parent, kommt die Exclusion dorthin (gilt dann für alle erbenden Module). Ist das JAR direkt deklariert, springt der Fix zur Deklaration.
-- **In der IDE:** Tab „Doppelte Klassen“ – prüft erst auf Klick „Prüfen“ (öffnet alle JARs). Filter für nur-Test und inhaltsgleiche Funde, Suche auch nach Klassennamen; unten Reihenfolge, Pfade, Klassen und „Aus dem Classpath nehmen“ mit freier Wahl des JARs (vorbelegt mit der Empfehlung). Alle Exclusions eines Klicks sind ein Undo-Schritt, danach Maven-Import.
+- **In der IDE:** Tab „Dependencies“ → „Doppelte Klassen“ – prüft erst auf Klick „Prüfen“ (öffnet alle JARs); nach einem Maven-Import steht oben „veraltet – Neu prüfen“. Filter für nur-Test und inhaltsgleiche Funde, Suche auch nach Klassennamen; unten Reihenfolge, Pfade, Klassen und „Aus dem Classpath nehmen“ mit freier Wahl des JARs (vorbelegt mit der Empfehlung). Alle Exclusions eines Klicks sind ein Undo-Schritt, danach Maven-Import.
 
 ## Ungenutzte und undeklarierte Dependencies
 
@@ -267,7 +267,7 @@ Modul app (42 Quell-, 17 Testdateien)
 - **nur in Tests:** Scope `compile`/`provided`, aber nur Testquellen nennen sie. Quick-Fix `set-scope` setzt `test`.
 - **Was „genannt“ heißt:** Imports (auch statische und `import a.b.*` samt der Namen der Datei), voll qualifizierte Namen, in der IDE jede aufgelöste Typ-Referenz. Nicht gezählt: Kommentare, Zeichenketten, Reflection, Klassen, die nur über Typinferenz vorkommen. Reactor-Module, die noch nicht gebaut sind, werden aus ihren Quelldateien erschlossen. Ohne Quelldateien wird „ungenutzt“ nicht geprüft.
 - **Kommandozeile:** Text-Scanner über `src/{main,test}/{java,kotlin,groovy}` und `target/generated(-test)-sources` – ohne Compiler. `--declare` deklariert die undeklarierten (ohne Starter-Fälle), `--remove` entfernt sicher ungenutzte aus dem eigenen POM; ein Durchgang, danach neu prüfen.
-- **In der IDE:** Tab „Ungenutzt/undeklariert“ – prüft auf Klick, löst die Referenzen über den Code-Index auf (Java über die PSI, Kotlin/Groovy über den Text-Scanner), Belege mit Sprung zur Zeile, Mehrfachauswahl, „Beheben“ als ein Undo-Schritt mit anschließendem Maven-Import. Live im Editor markiert die Inspection „Import aus nicht deklarierter Dependency“ (Gruppe Maven Detective) solche Imports, Alt+Enter deklariert die Dependency; Starter-Fälle per Option.
+- **In der IDE:** Tab „Dependencies“ → „Nutzung“ – prüft auf Klick (nach einem Maven-Import als veraltet markiert), löst die Referenzen über den Code-Index auf (Java über die PSI, Kotlin/Groovy über den Text-Scanner), Belege mit Sprung zur Zeile, Mehrfachauswahl, „Beheben“ als ein Undo-Schritt mit anschließendem Maven-Import. Live im Editor markiert die Inspection „Import aus nicht deklarierter Dependency“ (Gruppe Maven Detective) solche Imports, Alt+Enter deklariert die Dependency; Starter-Fälle per Option.
 
 ## Upgrade-Simulator
 
@@ -296,7 +296,7 @@ Unvollständig – lokal fehlen 2 POMs: org.codehaus.plexus:plexus-utils:3.0.20,
 - **Was gezeigt wird:** je Modul gehobene (`↑`), gesenkte (`↓`), neue (`+`), wegfallende (`−`) Artifacts und geänderte Scopes, jeweils mit Pfad; dazu **neue Konflikte**, bei denen eine verlangte höhere Version verliert (Gefahr von `NoSuchMethodError`). Bleibt das Artifact in einem Modul trotzdem alt (etwa weil dort eine direkte `<version>` steht), sagt ein Hinweis warum. Liegt der echte Baum vor (IDE-Modell oder `--tree`), meldet der Simulator, wo er schon heute davon abweicht (Profile, Versionsbereiche).
 - **Fehlende POMs:** Die neue Version liegt oft noch nicht im lokalen Repository. Dann ist das Ergebnis als unvollständig markiert und nennt die Koordinaten. `--fetch` bzw. „Fehlende POMs laden“ ruft Maven (`./mvnw` oder die Maven-Installation der IDE) mit `dependency:collect` auf einer temporären POM auf – lädt nur POMs, übernimmt die `<repositories>` des Projekts – und simuliert erneut, bis nichts mehr fehlt (höchstens vier Runden). Das ist der einzige Netzzugriff in Modul A und passiert nur auf ausdrücklichen Wunsch.
 - **Übernehmen:** `--apply` bzw. „Übernehmen“ schreibt genau die simulierte Änderung (Quick-Fix `set-version` bzw. `pin-version`); in der IDE als ein Undo-Schritt mit anschließendem Maven-Import.
-- **In der IDE:** Tab „Upgrade-Simulator“ – Artifact aus dem Projekt wählen (Vorschläge aus den Bäumen, Parents und BOM-Importen), Zielversion aus den lokal vorhandenen oder eintippen. Rechtsklick in der `pom.xml` auf eine `<dependency>` oder den `<parent>` → „Upgrade simulieren…“ belegt beides vor und simuliert gleich, wenn lokal eine neuere Version liegt.
+- **In der IDE:** Tab „Dependencies“ → „Upgrade-Simulator“ – Artifact aus dem Projekt wählen (Vorschläge aus den Bäumen, Parents und BOM-Importen), Zielversion aus den lokal vorhandenen oder eintippen. Rechtsklick in der `pom.xml` auf eine `<dependency>` oder den `<parent>` → „Upgrade simulieren…“ belegt beides vor und simuliert gleich, wenn lokal eine neuere Version liegt.
 - **Grenzen:** Profile, Versionsbereiche und Relocations werden nicht ausgewertet; `${revision}` als Parent-Version und zusammengesetzte Versionen (`${a}.${b}`) ändert der Simulator nicht selbst, er meldet die Stelle.
 
 ## Aufbau
@@ -309,8 +309,9 @@ core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, 
                    ClassUsages, SourceScanner, DependencyUsage, DependencyResolver, UpgradeSimulator, PomFetcher,
                    PomEditor für textgenaue POM-Änderungen, MavenVersion, PomCache)
 maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
-intellij-plugin/   Tool-Window „Maven Detective“ (Build Doctor, Dependencies, Konflikt-Matrix, Doppelte Klassen, Ungenutzt/undeklariert,
-                   Upgrade-Simulator), Listener auf Maven-Läufe, Quick-Fixes, Editor-Aktionen „Warum diese Version?“ und
+intellij-plugin/   Tool-Window „Maven Detective“ mit drei Tabs: Übersicht (Kacheln, „Alles prüfen“), Build Doctor,
+                   Dependencies (Navigation: Warum diese Version?, Konflikte, Doppelte Klassen, Nutzung,
+                   Upgrade-Simulator; AnalysisResults hält den Stand, Navigator springt), Listener auf Maven-Läufe, Quick-Fixes, Editor-Aktionen „Warum diese Version?“ und
                    „Upgrade simulieren…“, Inspections „Veraltete Exclusion“
                    und „Import aus nicht deklarierter Dependency“ (IdeUsages löst Referenzen über den Code-Index auf);
                    IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht);

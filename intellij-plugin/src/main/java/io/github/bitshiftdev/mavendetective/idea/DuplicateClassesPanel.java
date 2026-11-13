@@ -43,13 +43,11 @@ import java.util.Map;
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
- * Tab „Doppelte Klassen“ (Modul A3): je Modul die JARs, die dieselben Klassen mitbringen. Unten
+ * Seite „Doppelte Klassen“ im Tab „Dependencies“ (Modul A3): je Modul die JARs, die dieselben Klassen mitbringen. Unten
  * Klassen, Pfade und die Empfehlung; der Knopf fügt die Exclusion bei jeder direkten Dependency
  * ein, über die das gewählte JAR kommt (ist es direkt deklariert, springt er zur Deklaration).
  */
 public final class DuplicateClassesPanel extends DetectivePanel {
-
-    static final String TAB_NAME = MavenDetectiveBundle.message("tab.duplicates");
 
     private static final int MAX_CLASSES_SHOWN = 200;
 
@@ -108,6 +106,19 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         splitter.setSecondComponent(bottom);
         setBody(splitter);
         show(null);
+        AnalysisResults.getInstance(project).addListener(new AnalysisResults.Listener() {
+            @Override
+            public void changed(@NotNull AnalysisResults.Analysis analysis, @NotNull AnalysisResults.Summary summary) {
+            }
+
+            /** Teuer: nicht von selbst neu prüfen, aber sichtbar als veraltet markieren. */
+            @Override
+            public void mavenImported() {
+                if (result != null) {
+                    setStale(true);
+                }
+            }
+        }, this);
     }
 
     @Override
@@ -143,10 +154,19 @@ public final class DuplicateClassesPanel extends DetectivePanel {
     private void reload() {
         DependenciesPanel.saveUnsavedPoms();
         setStatus(null);
+        AnalysisResults results = AnalysisResults.getInstance(project);
+        results.running(AnalysisResults.Analysis.DUPLICATES);
         checker.run(c -> compute(project, c), r -> {
             result = r;
+            setStale(false);
             applyFilter();
+            results.set(AnalysisResults.Analysis.DUPLICATES, summary(r));
         });
+    }
+
+    @Override
+    protected void aborted() {
+        AnalysisResults.getInstance(project).aborted(AnalysisResults.Analysis.DUPLICATES);
     }
 
     @Override
@@ -156,6 +176,24 @@ public final class DuplicateClassesPanel extends DetectivePanel {
             emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                     MavenDetectiveBundle.message("empty.check.now"), this::reload);
         }
+    }
+
+    /** Zahl = Funde im Laufzeit-Classpath (wie mit Standardfilter sichtbar). */
+    private static AnalysisResults.Summary summary(@Nullable DuplicateClasses r) {
+        if (r == null) {
+            return AnalysisResults.Summary.NOT_CHECKED;
+        }
+        int main = 0;
+        int differing = 0;
+        for (DuplicateClasses.Clash c : r.clashes()) {
+            if (c.isMain()) {
+                main++;
+                if (!c.isIdentical()) {
+                    differing++;
+                }
+            }
+        }
+        return AnalysisResults.Summary.done(main, MavenDetectiveBundle.message("summary.duplicates", main, differing));
     }
 
     private static String jars(DuplicateClasses.Clash c) {
@@ -378,7 +416,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         int n = FixRunner.addExclusions(project, fixes);
         if (n > 0) {
             showText("<p>" + esc(e.ga()) + " ausgeschlossen (" + n + (n == 1 ? " Exclusion" : " Exclusions") + "). Nach dem Maven-Import "
-                    + "„Prüfen“ klicken, um neu zu prüfen.</p>");
+                    + "ist die Liste veraltet – dann oben „Neu prüfen“.</p>");
             apply.setEnabled(false);
         }
     }

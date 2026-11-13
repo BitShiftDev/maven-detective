@@ -9,9 +9,6 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowManager;
-import com.intellij.ui.content.Content;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -21,7 +18,7 @@ import java.util.regex.Pattern;
 
 /**
  * Rechtsklick in einer {@code pom.xml} auf eine {@code <dependency>} (auch BOM-Import) oder den
- * {@code <parent>}: „Upgrade simulieren…“ öffnet den Tab „Upgrade-Simulator“ mit diesem Artifact.
+ * {@code <parent>}: „Upgrade simulieren…“ öffnet die Seite „Upgrade-Simulator“ (Tab „Dependencies“) mit diesem Artifact.
  */
 public final class SimulateUpgradeAction extends AnAction implements DumbAware {
 
@@ -65,19 +62,9 @@ public final class SimulateUpgradeAction extends AnAction implements DumbAware {
                 }
             }
         }
-        ToolWindow window = ToolWindowManager.getInstance(project).getToolWindow(BuildDoctorService.TOOL_WINDOW_ID);
-        if (window == null) {
-            return;
-        }
         String groupId = ga[0];
         String artifactId = ga[1];
-        window.activate(() -> {
-            Content content = window.getContentManager().findContent(UpgradeSimulatorPanel.TAB_NAME);
-            if (content != null && content.getComponent() instanceof UpgradeSimulatorPanel panel) {
-                window.getContentManager().setSelectedContent(content);
-                panel.show(groupId, artifactId);
-            }
-        });
+        Navigator.open(project, UpgradeSimulatorPanel.class, panel -> panel.show(groupId, artifactId));
     }
 
     /** {@code groupId}/{@code artifactId} des {@code <parent>}, wenn der Cursor darin steht; sonst {@code null}. */

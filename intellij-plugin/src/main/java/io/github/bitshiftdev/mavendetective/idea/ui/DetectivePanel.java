@@ -27,6 +27,7 @@ import com.intellij.openapi.project.DumbAwareToggleAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.SimpleToolWindowPanel;
 import com.intellij.ui.DocumentAdapter;
+import com.intellij.ui.EditorNotificationPanel;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.PopupHandler;
 import com.intellij.ui.SearchTextField;
@@ -73,6 +74,7 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
     protected final Project project;
     private final JBLoadingPanel loading;
     private final JBLabel status = new JBLabel();
+    private final EditorNotificationPanel staleBanner = new EditorNotificationPanel(EditorNotificationPanel.Status.Warning);
     private final List<Background> backgrounds = new ArrayList<>();
     /** Laufende Aufgaben mit Ladeanzeige (nur EDT). */
     private int overlays;
@@ -85,7 +87,15 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
         status.setForeground(NamedColorUtil.getInactiveTextColor());
         status.setBorder(JBUI.Borders.compound(JBUI.Borders.customLineTop(JBColor.border()), JBUI.Borders.empty(3, 8)));
         status.setVisible(false);
+        staleBanner.setText(MavenDetectiveBundle.message("stale.banner"));
+        staleBanner.createActionLabel(MavenDetectiveBundle.message("stale.recheck"), () -> {
+            if (supportsRefresh() && canRefresh()) {
+                refresh();
+            }
+        });
+        staleBanner.setVisible(false);
         JPanel content = new JPanel(new BorderLayout());
+        content.add(staleBanner, BorderLayout.NORTH);
         content.add(loading, BorderLayout.CENTER);
         content.add(status, BorderLayout.SOUTH);
         setContent(content);
@@ -207,6 +217,18 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
         status.setVisible(has);
     }
 
+    /**
+     * Ergebnis passt nicht mehr zum Maven-Modell (nach einem Import): Hinweisbalken über dem Inhalt
+     * mit „Neu prüfen“. Seiten, die selbst neu rechnen, brauchen ihn nicht.
+     */
+    protected final void setStale(boolean stale) {
+        staleBanner.setVisible(stale);
+    }
+
+    public final boolean isStale() {
+        return staleBanner.isVisible();
+    }
+
     // ---- Haken für die gemeinsamen Aktionen -----------------------------------------------
 
     /** Zeigt die Aktion „Aktualisieren/Prüfen“ in dieser Seite. */
@@ -257,7 +279,7 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
         return b;
     }
 
-    public final boolean isRunning() {
+    public boolean isRunning() {
         for (Background b : backgrounds) {
             if (b.isRunning()) {
                 return true;
@@ -267,7 +289,7 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
     }
 
     /** Laufende Aufgaben verwerfen; die Rechnung bricht am nächsten Abbruchpunkt ab. */
-    public final void cancelRunning() {
+    public void cancelRunning() {
         boolean any = false;
         for (Background b : backgrounds) {
             if (b.isRunning()) {
@@ -277,12 +299,17 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
         }
         if (any) {
             cancelled();
+            aborted();
         }
     }
 
     /** Nach „Abbrechen“; Standard: Hinweis in der Statuszeile. */
     protected void cancelled() {
         setStatus(MavenDetectiveBundle.message("status.cancelled"));
+    }
+
+    /** Nach Abbruch oder Fehler – die Rechnung liefert kein Ergebnis (z. B. Zustand zurücksetzen). */
+    protected void aborted() {
     }
 
     /** Rechnung mit Ausnahme beendet; Standard: protokollieren und in der Statuszeile nennen. */
@@ -362,6 +389,7 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
                     }
                     if (err != null) {
                         failed(err);
+                        aborted();
                     } else {
                         done.accept(r);
                     }

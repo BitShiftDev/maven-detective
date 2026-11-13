@@ -1,6 +1,7 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.execution.ExecutionException;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
@@ -24,6 +25,7 @@ import org.jetbrains.idea.maven.model.MavenId;
 import org.jetbrains.idea.maven.model.MavenPlugin;
 import org.jetbrains.idea.maven.project.MavenGeneralSettings;
 import org.jetbrains.idea.maven.project.MavenHomeType;
+import org.jetbrains.idea.maven.project.MavenImportListener;
 import org.jetbrains.idea.maven.project.MavenProject;
 import org.jetbrains.idea.maven.project.MavenProjectsManager;
 import org.jetbrains.idea.maven.project.MavenWrapper;
@@ -359,6 +361,23 @@ final class IdeMaven {
             LOG.warn("Maven Detective: Dependency-Bäume nicht lesbar", e);
         }
         return out;
+    }
+
+    /**
+     * {@code onFinished} läuft nach jedem fertigen Maven-Import (auch nach einem Quick-Fix), bis
+     * {@code parent} entsorgt wird. Der Thread ist nicht festgelegt – der Aufrufer wechselt selbst auf den EDT.
+     */
+    static void onImport(@NotNull Project project, @NotNull Disposable parent, @NotNull Runnable onFinished) {
+        try {
+            project.getMessageBus().connect(parent).subscribe(MavenImportListener.TOPIC, new MavenImportListener() {
+                @Override
+                public void importFinished(@NotNull Collection<MavenProject> importedProjects, @NotNull List<Module> newModules) {
+                    onFinished.run();
+                }
+            });
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("Maven Detective: Maven-Import nicht beobachtbar – Ergebnisse veralten still", e);
+        }
     }
 
     /** Maven-Projekte neu importieren, z. B. nach einer Änderung an der POM durch einen Quick-Fix. */

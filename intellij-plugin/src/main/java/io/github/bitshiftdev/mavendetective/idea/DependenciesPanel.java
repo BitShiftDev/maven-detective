@@ -41,12 +41,10 @@ import java.util.Map;
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
- * Tab „Dependencies“ (Modul A): links die aufgelösten Dependencies eines Moduls, rechts die
+ * Seite „Warum diese Version?“ im Tab „Dependencies“ (Modul A1): links die aufgelösten Dependencies eines Moduls, rechts die
  * Antwort auf „Warum diese Version?“ mit klickbaren Stationen bis in Parent-POMs und BOMs.
  */
 public final class DependenciesPanel extends DetectivePanel {
-
-    static final String TAB_NAME = MavenDetectiveBundle.message("tab.dependencies");
 
     /** Ein Eintrag der Liste: die Dependency, die im Classpath landet, und wie viele Versionen sie verdrängt hat. */
     private record Entry(DepNode node, int conflicts) {
@@ -118,6 +116,23 @@ public final class DependenciesPanel extends DetectivePanel {
         splitter.setSecondComponent(details.component());
         setBody(splitter);
 
+        AnalysisResults.getInstance(project).addListener(new AnalysisResults.Listener() {
+            @Override
+            public void changed(@NotNull AnalysisResults.Analysis analysis, @NotNull AnalysisResults.Summary summary) {
+            }
+
+            /** Günstig: Baum und gezeigte Erklärung nach jedem Import neu, damit keine alte Version stehen bleibt. */
+            @Override
+            public void mavenImported() {
+                IdeMaven.ModuleRef module = (IdeMaven.ModuleRef) modules.getSelectedItem();
+                VersionExplanation x = shown;
+                if (module != null && x != null) {
+                    show(module.pom(), x.getGroupId(), x.getArtifactId());
+                } else {
+                    reloadModules(null);
+                }
+            }
+        }, this);
         reloadModules(null);
     }
 
