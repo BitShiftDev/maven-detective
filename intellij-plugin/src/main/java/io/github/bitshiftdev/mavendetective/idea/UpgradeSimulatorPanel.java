@@ -1,6 +1,15 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.icons.AllIcons;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.ui.ColoredListCellRenderer;
+import com.intellij.ui.TextFieldWithAutoCompletion;
+import javax.swing.JList;
+import java.util.concurrent.CopyOnWriteArrayList;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.Task;
@@ -51,20 +60,26 @@ import java.util.TreeSet;
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
- * Seite „Upgrade-Simulator“ im Tab „Dependencies“ (Modul A6): Artifact, BOM, Parent oder Property und Zielversion wählen,
+ * Seite „Upgrade-Simulator“ im Tab „Dependencies“ (Modul A6): Artifact, BOM, Parent oder Property (mit Autovervollständigung)
+ * und Zielversion (Vorschläge aus dem lokalen Repository mit Markern neuer/älter/Major-Sprung) wählen,
  * „Simulieren“ zeigt je Modul, was sich im Baum ändert – bevor die POM angefasst wird. Oben die
  * Stellen, die geändert würden (mit Sprung), in der Tabelle die Unterschiede, darunter Pfade,
  * Hinweise und neue Konflikte. „Übernehmen“ schreibt genau diese Änderungen (ein Undo-Schritt),
  * „Fehlende POMs laden“ holt mit Maven, was für die neue Version lokal fehlt – der einzige
- * Netzzugriff in Modul A und nur auf Klick.
+ * Netzzugriff in Modul A und nur auf Klick. Das Ergebnis öffnet zusätzlich als Editor-Tab ({@link UpgradeResultEditor}):
+ * POM-Änderung im Diff-Viewer, Baum-Unterschied darunter.
  */
 public final class UpgradeSimulatorPanel extends DetectivePanel {
 
-    private final ComboBox<String> artifact = new ComboBox<>();
+    private final TextFieldWithAutoCompletion<String> artifact;
     private final ComboBox<String> version = new ComboBox<>();
     private final JBCheckBox manage = new JBCheckBox(MavenDetectiveBundle.message("upgrade.manage"));
     private final JButton fetch = new JButton(MavenDetectiveBundle.message("upgrade.fetch"), AllIcons.Actions.Download);
     private final JButton apply = FixBar.primary(new JButton(MavenDetectiveBundle.message("upgrade.apply")));
+    private final JButton openEditor = new JButton(MavenDetectiveBundle.message("upgrade.open.editor"), AllIcons.Actions.Diff);
+    private final List<Runnable> resultListeners = new CopyOnWriteArrayList<>();
+    /** Editor-Tab mit dem Ergebnis (einer je Seite; neuer Titel = neue Datei). */
+    private @Nullable UpgradeResultEditor.ResultFile editorFile;
     private final DeltaModel model = new DeltaModel();
     private final JBTable table = new JBTable(model);
     private final HtmlView details;
@@ -82,15 +97,38 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
     public UpgradeSimulatorPanel(@NotNull Project project) {
         super(project);
 
-        artifact.setEditable(true);
-        artifact.setPrototypeDisplayValue("com.fasterxml.jackson.core:jackson-databind");
+        // Eingabe mit Autovervollständigung aus den Artifacts, Parents und BOM-Importen des Projekts
+        artifact = TextFieldWithAutoCompletion.create(project, List.of(), true, null);
+        artifact.setPreferredWidth(JBUI.scale(320));
         artifact.setToolTipText(MavenDetectiveBundle.message("upgrade.artifact.tooltip"));
-        artifact.addActionListener(e -> {
-            if ("comboBoxChanged".equals(e.getActionCommand())) {
+        artifact.setPlaceholder(MavenDetectiveBundle.message("upgrade.artifact.placeholder"));
+        artifact.addDocumentListener(new DocumentListener() {
+            @Override
+            public void documentChanged(@NotNull DocumentEvent event) {
                 loadVersions(null);
             }
         });
         version.setEditable(true);
+        version.setRenderer(new ColoredListCellRenderer<>() {
+            @Override
+            protected void customizeCellRenderer(@NotNull JList<? extends String> list, @Nullable String value, int index, boolean selected,
+                                                 boolean focus) {
+                if (value == null) {
+                    return;
+                }
+                append(value);
+                // Vorschläge stammen aus dem lokalen Repository; dazu die Einordnung gegenüber heute
+                append("  " + MavenDetectiveBundle.message("upgrade.marker.local"), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+                for (UpgradeLabels.Marker m : UpgradeLabels.markers(value, current.get(text(artifact)))) {
+                    append("  " + UpgradeLabels.markerText(m), switch (m) {
+                        case MAJOR -> new SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, DetectiveColors.DELTA_SCOPE);
+                        case NEWER -> new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, DetectiveColors.DELTA_UP);
+                        case OLDER -> new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, DetectiveColors.DELTA_DOWN);
+                        case CURRENT -> SimpleTextAttributes.GRAYED_BOLD_ATTRIBUTES;
+                    });
+                }
+            }
+        });
         version.setPrototypeDisplayValue("2.17.10-SNAPSHOT");
         version.setToolTipText(MavenDetectiveBundle.message("upgrade.version.tooltip"));
         manage.setToolTipText(MavenDetectiveBundle.message("upgrade.manage.tooltip"));
@@ -99,6 +137,9 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         apply.addActionListener(e -> applyResult());
         fetch.setEnabled(false);
         apply.setEnabled(false);
+        openEditor.setEnabled(false);
+        openEditor.setToolTipText(MavenDetectiveBundle.message("upgrade.open.editor.tooltip"));
+        openEditor.addActionListener(e -> openEditor(true));
         fetch.setToolTipText(MavenDetectiveBundle.message("upgrade.fetch.tooltip"));
 
         JPanel form = new JPanel(new HorizontalLayout(JBUI.scale(6)));
@@ -127,7 +168,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         details = new HtmlView(project);
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.add(details.component(), BorderLayout.CENTER);
-        bottom.add(new FixBar(apply, fetch), BorderLayout.SOUTH);
+        bottom.add(new FixBar(apply, openEditor, fetch), BorderLayout.SOUTH);
 
         JBSplitter splitter = new JBSplitter(true, "MavenDetective.Upgrade.split", 0.5f);
         splitter.setFirstComponent(rows(table, this::selectedLocation, this::selectedText));
@@ -147,6 +188,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             public void mavenImported() {
                 if (result != null) {
                     setStale(true);
+                    fireResult();
                 }
                 loadSuggestions();
             }
@@ -209,8 +251,61 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
 
     /** Von der Editor-Aktion: Artifact vorbelegen, Versionen laden, bei lokal vorhandener neuerer Version gleich simulieren. */
     void show(@NotNull String groupId, @NotNull String artifactId) {
-        artifact.setSelectedItem(groupId + ":" + artifactId);
+        artifact.setText(groupId + ":" + artifactId);
         loadVersions(groupId + ":" + artifactId);
+    }
+
+    // ---- Zustand für den Editor-Tab ------------------------------------------------------------
+
+    @Nullable UpgradeSimulator.Result result() {
+        return result;
+    }
+
+    @Nullable String fetchError() {
+        return fetchError;
+    }
+
+    /** Simulation oder Laden fehlender POMs läuft. */
+    boolean isBusy() {
+        return fetching || simulation.isRunning();
+    }
+
+    /** Meldet jede Änderung an Ergebnis, Zustand oder „läuft“ (EDT); ab mit {@code parent}. */
+    void addResultListener(@NotNull Runnable listener, @NotNull Disposable parent) {
+        resultListeners.add(listener);
+        Disposer.register(parent, () -> resultListeners.remove(listener));
+    }
+
+    private void fireResult() {
+        for (Runnable r : resultListeners) {
+            r.run();
+        }
+    }
+
+    /** Ergebnis im Editor-Tab zeigen (Vorher/Nachher braucht Breite); öffnet ihn bei Bedarf, ohne den Fokus zu nehmen. */
+    private void openEditor(boolean focus) {
+        UpgradeSimulator.Result res = result;
+        if (res == null || isGone()) {
+            return;
+        }
+        String name = MavenDetectiveBundle.message("upgrade.editor.title", res.getRequest().label(), res.getRequest().getVersion());
+        FileEditorManager fem = FileEditorManager.getInstance(project);
+        if (editorFile != null && !editorFile.getName().equals(name)) {
+            fem.closeFile(editorFile);
+            editorFile = null;
+        }
+        if (editorFile == null) {
+            editorFile = new UpgradeResultEditor.ResultFile(name, this);
+        }
+        fem.openFile(editorFile, focus, true);
+    }
+
+    /** „Übernehmen“ im Editor-Tab: genau den gezeigten Diff schreiben (kein zweiter Dialog). */
+    void applyFromEditor(@NotNull PomChanges.Plan shown) {
+        if (result == null || result.getSteps().isEmpty()) {
+            return;
+        }
+        applied(FixRunner.editPoms(project, result.fixes(), "Upgrade übernehmen (Maven Detective)", shown));
     }
 
     private void loadSuggestions() {
@@ -232,12 +327,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             return found;
         }, found -> {
             current = found;
-            Object typed = artifact.getEditor().getItem();
-            artifact.removeAllItems();
-            for (String ga : found.keySet()) {
-                artifact.addItem(ga);
-            }
-            artifact.setSelectedItem(typed == null || typed.toString().isBlank() ? null : typed.toString());
+            artifact.setVariants(found.keySet());
         });
     }
 
@@ -254,7 +344,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
     private void loadVersions(@Nullable String autoSimulateFor) {
         String ga = text(artifact);
         String[] p = ga.split(":");
-        if (p.length != 2) {
+        if (p.length != 2 || p[0].isEmpty() || p[1].isEmpty()) {
             return;
         }
         String now = current.get(ga);
@@ -307,6 +397,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         setStatus(null);
         AnalysisResults.getInstance(project).running(AnalysisResults.Analysis.UPGRADE);
         simulation.run(c -> compute(project, r), res -> display(res, null));
+        fireResult();
     }
 
     @Override
@@ -345,7 +436,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
     }
 
     /** Lädt fehlende POMs in bis zu vier Runden (die neue Version bringt oft weitere neue Versionen mit). */
-    private void fetchMissing() {
+    void fetchMissing() {
         UpgradeSimulator.Result start = result;
         if (start == null || start.isComplete()) {
             return;
@@ -353,6 +444,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         UpgradeSimulator.Request r = start.getRequest();
         fetch.setEnabled(false);
         fetching = true;
+        fireResult();
         int gen = simulation.next();
         new Task.Backgroundable(project, MavenDetectiveBundle.message("upgrade.fetch.task"), true) {
             private UpgradeSimulator.Result last = start;
@@ -401,6 +493,8 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                 fetching = false;
                 if (simulation.isCurrent(gen) && !isGone()) {
                     display(last, error);
+                } else {
+                    fireResult();
                 }
             }
         }.queue();
@@ -410,9 +504,14 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         if (result == null || result.getSteps().isEmpty()) {
             return;
         }
-        int n = FixRunner.editPoms(project, result.fixes(), "Upgrade übernehmen (Maven Detective)");
-        apply.setEnabled(false);
-        fetch.setEnabled(false);
+        applied(FixRunner.editPoms(project, result.fixes(), "Upgrade übernehmen (Maven Detective)"));
+    }
+
+    private void applied(int n) {
+        if (n > 0) {
+            apply.setEnabled(false);
+            fetch.setEnabled(false);
+        }
         setStatus(MavenDetectiveBundle.message(n == 0 ? "upgrade.applied.none" : "upgrade.applied"));
     }
 
@@ -437,6 +536,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             table.getColumnModel().getColumn(5).setPreferredWidth(420);
         }
         apply.setEnabled(res != null && !res.getSteps().isEmpty());
+        openEditor.setEnabled(res != null);
         fetch.setEnabled(res != null && !PomFetcher.coordinates(res.getMissing()).isEmpty());
         if (res == null) {
             setStatus(null);
@@ -454,6 +554,10 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                 : AnalysisResults.Summary.done(-1, MavenDetectiveBundle.message("summary.upgrade", res.getRequest().label() + " " + res.getRequest().getVersion(),
                 res.changed().size())));
         render();
+        fireResult();
+        if (res != null && (!res.getSteps().isEmpty() || !res.changed().isEmpty())) {
+            openEditor(false);
+        }
     }
 
     private void render() {
@@ -545,6 +649,10 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         return item == null ? "" : item.toString().trim();
     }
 
+    private static String text(TextFieldWithAutoCompletion<String> field) {
+        return field.getText().trim();
+    }
+
     /** Eine Tabellenzeile: Änderung im Baum oder neuer Konflikt. */
     private record Row(UpgradeSimulator.ModuleResult module, UpgradeSimulator.@Nullable Delta delta, UpgradeSimulator.@Nullable Risk risk) {
     }
@@ -621,9 +729,10 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             if (risky && !selected) {
                 setBackground(DetectiveColors.ERROR_BACKGROUND);
             }
-            SimpleTextAttributes attrs = r.delta != null && r.delta.getKind() == UpgradeSimulator.Kind.REMOVED
-                    ? SimpleTextAttributes.GRAYED_ATTRIBUTES
-                    : risky && column == 1 ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : SimpleTextAttributes.REGULAR_ATTRIBUTES;
+            SimpleTextAttributes attrs = column == 1
+                    ? r.delta != null ? UpgradeLabels.symbolAttributes(r.delta.getKind()) : UpgradeLabels.riskAttributes()
+                    : r.delta != null && r.delta.getKind() == UpgradeSimulator.Kind.REMOVED ? SimpleTextAttributes.GRAYED_ATTRIBUTES
+                    : SimpleTextAttributes.REGULAR_ATTRIBUTES;
             append(value == null ? "" : value.toString(), attrs);
             if (r.delta != null) {
                 setToolTipText(r.delta.message());

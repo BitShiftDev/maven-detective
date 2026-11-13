@@ -12,6 +12,8 @@ import com.intellij.ui.ListSpeedSearch;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.JBList;
+import com.intellij.ui.components.JBScrollPane;
+import com.intellij.util.ui.JBUI;
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.PomCache;
@@ -21,8 +23,6 @@ import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplanation;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
-import io.github.bitshiftdev.mavendetective.idea.ui.Html;
-import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,11 +38,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
-
 /**
  * Seite „Warum diese Version?“ im Tab „Dependencies“ (Modul A1): links die aufgelösten Dependencies eines Moduls, rechts die
- * Antwort auf „Warum diese Version?“ mit klickbaren Stationen bis in Parent-POMs und BOMs.
+ * Antwort als Zeitleiste ({@link VersionTimeline}) mit klickbaren Stationen bis in Parent-POMs und BOMs und dem Pfad im
+ * Baum als Breadcrumb.
  */
 public final class DependenciesPanel extends DetectivePanel {
 
@@ -58,7 +57,7 @@ public final class DependenciesPanel extends DetectivePanel {
     private final SearchTextField search;
     private final DefaultListModel<Entry> listModel = new DefaultListModel<>();
     private final JBList<Entry> list = new JBList<>(listModel);
-    private final HtmlView details;
+    private final VersionTimeline details;
     private final Background trees = background(MavenDetectiveBundle.message("loading.tree"));
     private final Background explanations = background(null);
     private List<Entry> all = new ArrayList<>();
@@ -107,13 +106,14 @@ public final class DependenciesPanel extends DetectivePanel {
         });
         ListSpeedSearch.installOn(list, e -> e.node().ga());
 
-        details = new HtmlView(project);
-        details.show("<p>Dependency links auswählen oder in einer <code>pom.xml</code> per Rechtsklick "
-                + "„Warum diese Version?“ aufrufen.</p>");
+        details = new VersionTimeline(project);
+        details.showMessage(MavenDetectiveBundle.message("why.start"));
+        JBScrollPane detailScroll = new JBScrollPane(details);
+        detailScroll.setBorder(JBUI.Borders.empty());
 
         JBSplitter splitter = new JBSplitter(false, "MavenDetective.Dependencies.split", 0.35f);
         splitter.setFirstComponent(rows(list, () -> null, () -> list.getSelectedValue() == null ? null : list.getSelectedValue().node().gav()));
-        splitter.setSecondComponent(details.component());
+        splitter.setSecondComponent(detailScroll);
         setBody(splitter);
 
         AnalysisResults.getInstance(project).addListener(new AnalysisResults.Listener() {
@@ -274,10 +274,17 @@ public final class DependenciesPanel extends DetectivePanel {
         // Ungespeicherte Änderungen an POMs sollen in die Erklärung eingehen
         saveUnsavedPoms();
         DepNode t = tree;
-        details.show("<p>Ermittle, woher die Version von " + esc(groupId + ":" + artifactId) + " kommt …</p>");
+        details.showMessage(MavenDetectiveBundle.message("why.loading", groupId + ":" + artifactId));
         explanations.run(c -> explainNow(project, module.pom(), groupId, artifactId, t), x -> {
             shown = x;
-            details.show(x == null ? "<p>Die POM des Moduls ist nicht lesbar.</p>" : render(x));
+            if (x == null) {
+                details.showMessage(MavenDetectiveBundle.message("popup.why.unreadable"));
+            } else {
+                details.show(x, t, n -> {
+                    selectInList(n.getGroupId(), n.getArtifactId());
+                    explain(n.getGroupId(), n.getArtifactId());
+                });
+            }
         });
     }
 
@@ -323,61 +330,5 @@ public final class DependenciesPanel extends DetectivePanel {
                     .env(System.getenv()).build().getLocalRepository();
         }
         return new PomLocator(root, repo, cache, cancellation);
-    }
-
-    private static String render(VersionExplanation x) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<h3>Warum ").append(esc(x.getGroupId() + ":" + x.getArtifactId()));
-        if (x.getVersion() != null) {
-            sb.append(" ").append(esc(x.getVersion()));
-        }
-        sb.append("?</h3>");
-        sb.append("<p><b>").append(esc(x.getSummary())).append("</b></p>");
-        sb.append("<ol>");
-        boolean openSub = false;
-        boolean openItem = false;
-        for (VersionExplanation.Station s : x.getStations()) {
-            if (s.getKind() == VersionExplanation.Station.Kind.HINT) {
-                continue;
-            }
-            if (s.getLevel() == 0) {
-                if (openSub) {
-                    sb.append("</ul>");
-                    openSub = false;
-                }
-                if (openItem) {
-                    sb.append("</li>");
-                }
-                sb.append("<li>").append(station(s));
-                openItem = true;
-            } else {
-                if (!openSub) {
-                    sb.append("<ul>");
-                    openSub = true;
-                }
-                sb.append("<li>").append(station(s)).append("</li>");
-            }
-        }
-        if (openSub) {
-            sb.append("</ul>");
-        }
-        if (openItem) {
-            sb.append("</li>");
-        }
-        sb.append("</ol>");
-        List<VersionExplanation.Station> hints = x.hints();
-        if (!hints.isEmpty()) {
-            sb.append("<p><b>Hinweise</b></p><ul>");
-            for (VersionExplanation.Station h : hints) {
-                sb.append("<li>").append(station(h)).append("</li>");
-            }
-            sb.append("</ul>");
-        }
-        return sb.toString();
-    }
-
-    private static String station(VersionExplanation.Station s) {
-        String text = esc(s.getText());
-        return s.getFile() == null ? text : text + " – " + Html.fileLink(s.getFile(), s.getLine());
     }
 }

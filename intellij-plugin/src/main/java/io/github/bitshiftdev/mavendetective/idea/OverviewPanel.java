@@ -7,10 +7,6 @@ import com.intellij.ui.AnimatedIcon;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.WrapLayout;
-import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
-import io.github.bitshiftdev.mavendetective.core.deps.ExclusionAudit;
-import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
-import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.env.SetupComparison;
 import io.github.bitshiftdev.mavendetective.core.snapshot.BuildSnapshot;
@@ -19,7 +15,6 @@ import io.github.bitshiftdev.mavendetective.idea.AnalysisResults.Analysis;
 import io.github.bitshiftdev.mavendetective.idea.AnalysisResults.State;
 import io.github.bitshiftdev.mavendetective.idea.AnalysisResults.Summary;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
-import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
 import io.github.bitshiftdev.mavendetective.idea.ui.Tile;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
@@ -29,14 +24,12 @@ import javax.swing.Icon;
 import javax.swing.JPanel;
 import javax.swing.ScrollPaneConstants;
 import java.awt.FlowLayout;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Tab „Übersicht“: der Zustand des Projekts auf einen Blick, je Thema eine Kachel mit Zustand und
@@ -57,7 +50,6 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
     private final Tile duplicates;
     private final Tile usage;
     private final Tile exclusions;
-    private final Background exclusionCheck = background(null);
     private final Background reference = background(null);
     private final Background setupCheck = background(null);
     /** Zeitpunkt der grünen Referenz ({@code null}: keine oder noch nicht gelesen). */
@@ -101,7 +93,6 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         }
         loadReference();
         loadSetup();
-        checkExclusions();
     }
 
     // ---- Alles prüfen ------------------------------------------------------------------------
@@ -132,7 +123,7 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         check(ConflictMatrixPanel.class);
         check(DuplicateClassesPanel.class);
         check(DependencyUsagePanel.class);
-        checkExclusions();
+        check(ExclusionsPanel.class);
         loadSetup();
     }
 
@@ -141,7 +132,7 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         if (super.isRunning()) {
             return true;
         }
-        for (Analysis a : List.of(Analysis.CONFLICTS, Analysis.DUPLICATES, Analysis.USAGE)) {
+        for (Analysis a : List.of(Analysis.CONFLICTS, Analysis.DUPLICATES, Analysis.USAGE, Analysis.EXCLUSIONS)) {
             if (results.get(a).state() == State.RUNNING) {
                 return true;
             }
@@ -152,18 +143,12 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
     @Override
     public void cancelRunning() {
         super.cancelRunning();
-        for (Class<? extends DetectivePanel> type : List.of(ConflictMatrixPanel.class, DuplicateClassesPanel.class, DependencyUsagePanel.class)) {
+        for (Class<? extends DetectivePanel> type : List.of(ConflictMatrixPanel.class, DuplicateClassesPanel.class, DependencyUsagePanel.class,
+                ExclusionsPanel.class)) {
             DetectivePanel page = Navigator.find(project, type);
             if (page != null) {
                 page.cancelRunning();
             }
-        }
-    }
-
-    @Override
-    protected void aborted() {
-        if (!exclusionCheck.isRunning()) {
-            results.aborted(Analysis.EXCLUSIONS);
         }
     }
 
@@ -203,16 +188,11 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
             case DUPLICATES -> showAnalysis(duplicates, s, () -> check(DuplicateClassesPanel.class), "tile.duplicates.none",
                     "tile.duplicates.detail");
             case USAGE -> showAnalysis(usage, s, () -> check(DependencyUsagePanel.class), "tile.usage.none", "tile.usage.detail");
-            case EXCLUSIONS -> showAnalysis(exclusions, s, this::checkExclusions, "tile.exclusions.none", "tile.exclusions.detail");
+            case EXCLUSIONS -> showAnalysis(exclusions, s, () -> check(ExclusionsPanel.class), "tile.exclusions.none",
+                    "tile.exclusions.detail");
             default -> {
             }
         }
-    }
-
-    /** Exclusions prüfen nur POMs – günstig genug, um nach jedem Import neu zu rechnen. */
-    @Override
-    public void mavenImported() {
-        checkExclusions();
     }
 
     // ---- Kacheln ------------------------------------------------------------------------------
@@ -311,44 +291,16 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         showSetup();
     }
 
-    private void checkExclusions() {
-        if (exclusionCheck.isRunning()) {
-            return;
-        }
-        results.running(Analysis.EXCLUSIONS);
-        exclusionCheck.run(c -> {
-            Path root = IdeMaven.reactorRoot(project);
-            PomLocator locator = DependenciesPanel.locator(project, root);
-            List<PomFile> poms = DuplicateClassesPanel.projectPoms(project, locator, root);
-            if (poms.isEmpty()) {
-                return null;
-            }
-            Map<String, DepNode> trees = IdeMaven.dependencyTrees(project);
-            return ExclusionAudit.build(locator, poms, trees);
-        }, audit -> {
-            if (audit == null) {
-                results.set(Analysis.EXCLUSIONS, AnalysisResults.Summary.NOT_CHECKED);
-                return;
-            }
-            List<ExclusionAudit.Finding> removable = audit.removable();
-            int stale = audit.count(ExclusionAudit.Status.STALE);
-            int redundant = audit.count(ExclusionAudit.Status.REDUNDANT);
-            Summary s = Summary.done(removable.size(), MavenDetectiveBundle.message("tile.exclusions.summary", stale, redundant));
-            if (!removable.isEmpty()) {
-                s = s.at(Locations.of(removable.get(0).getFile(), removable.get(0).getLine()));
-            }
-            results.set(Analysis.EXCLUSIONS, s);
-        });
-    }
-
-    /** Exclusions haben (bis U5) keine eigene Seite: Sprung zur ersten, die Inspection markiert sie dort. */
+    /** Seite „Exclusions“ öffnen, bei Befunden mit dem ersten gewählt. */
     private void openExclusions() {
         Summary s = results.get(Analysis.EXCLUSIONS);
-        if (s.location() != null) {
-            Locations.open(project, s.location());
-        } else if (s.state() != State.RUNNING) {
-            checkExclusions();
-        }
+        Navigator.open(project, ExclusionsPanel.class, page -> {
+            String loc = s.location();
+            int colon = loc == null ? -1 : loc.lastIndexOf(':');
+            if (colon > 1) {
+                page.select(loc.substring(0, colon), Integer.parseInt(loc.substring(colon + 1)));
+            }
+        });
     }
 
     /** Uhrzeit, bei älteren Tagen mit Datum davor. */

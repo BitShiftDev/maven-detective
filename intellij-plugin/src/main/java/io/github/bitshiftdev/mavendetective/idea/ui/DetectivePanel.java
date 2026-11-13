@@ -47,6 +47,7 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.event.DocumentEvent;
 import java.awt.BorderLayout;
 import java.awt.datatransfer.StringSelection;
@@ -189,6 +190,38 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
         PopupHandler.installPopupMenu(view, ROW_POPUP, ROW_POPUP);
         JBScrollPane scroll = new JBScrollPane(view);
         scroll.setBorder(JBUI.Borders.empty());
+        return withData(scroll, location, text);
+    }
+
+    /**
+     * Wie oben, mit eigenem Scroll-Bereich (z. B. fixierte erste Spalte) und Aktionen zur Auswahl vorn im
+     * Kontextmenü ({@code extra} wird beim Öffnen erfragt). Das Menü hängt an allen {@code popupOn}.
+     */
+    protected final @NotNull JComponent rows(@NotNull JScrollPane scroll, @NotNull List<? extends JComponent> popupOn,
+                                             @NotNull Supplier<List<AnAction>> extra, @NotNull Supplier<@Nullable String> location,
+                                             @NotNull Supplier<@Nullable String> text) {
+        DefaultActionGroup group = new DefaultActionGroup();
+        group.add(new ActionGroup() {
+            @Override
+            public AnAction @NotNull [] getChildren(@Nullable AnActionEvent e) {
+                return extra.get().toArray(AnAction.EMPTY_ARRAY);
+            }
+
+            @Override
+            public @NotNull ActionUpdateThread getActionUpdateThread() {
+                return ActionUpdateThread.EDT;   // liest die Auswahl der Tabelle
+            }
+        });
+        group.addSeparator();
+        group.add(ActionManager.getInstance().getAction(ROW_POPUP));
+        for (JComponent c : popupOn) {
+            PopupHandler.installPopupMenu(c, group, ROW_POPUP);
+        }
+        return withData(scroll, location, text);
+    }
+
+    private @NotNull JComponent withData(@NotNull JScrollPane scroll, @NotNull Supplier<@Nullable String> location,
+                                         @NotNull Supplier<@Nullable String> text) {
         return UiDataProvider.wrapComponent(scroll, sink -> {
             String loc = location.get();
             if (loc != null) {

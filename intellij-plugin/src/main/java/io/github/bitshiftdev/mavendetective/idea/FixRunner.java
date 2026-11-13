@@ -38,6 +38,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 /** Führt Quick-Fixes in der IDE aus. */
 final class FixRunner {
@@ -269,17 +270,18 @@ final class FixRunner {
                     + "Bitte Version " + version + " selbst eintragen.", NotificationType.WARNING);
             return;
         }
-        int lineNo = doc.getLineNumber(at);
-        int lineStart = doc.getLineStartOffset(lineNo);
-        String indent = text.subSequence(lineStart, at).toString().replaceAll("\\S.*", "");
         int insertAt = at + tag.length();
-        String insertion = "\n" + indent + "<version>" + version + "</version>";
-        WriteCommandAction.runWriteCommandAction(project, "Plugin-Version einfügen", null,
-                () -> doc.insertString(insertAt, insertion));
-        FileDocumentManager.getInstance().saveDocument(doc);
-        openLocation(project, file + ":" + (lineNo + 2));
-        notify(project, "Version " + version + " für " + plugin + " eingetragen.", NotificationType.INFORMATION);
-        rebuild(project, result, null, fix.getLabel());
+        Path pom = Paths.get(file);
+        String description = "Version " + version + " für " + plugin + " eintragen";
+        Supplier<PomChanges.Plan> plan = () -> {
+            int lineNo = doc.getLineNumber(at);
+            String indent = doc.getCharsSequence().subSequence(doc.getLineStartOffset(lineNo), at).toString().replaceAll("\\S.*", "");
+            PomChanges.Edit edit = new PomChanges.Edit(insertAt, 0, "\n" + indent + "<version>" + version + "</version>", lineNo + 2);
+            return new PomChanges.Plan(List.of(PomChanges.FileChange.single(pom, doc.getText(), edit, description)), List.of(), null);
+        };
+        if (apply(project, plan.get(), plan, "Plugin-Version einfügen (Maven Detective)", false) > 0) {
+            rebuild(project, result, null, fix.getLabel());
+        }
     }
 
     /**
@@ -302,40 +304,15 @@ final class FixRunner {
     }
 
     /**
-     * Modul A2: Version unter {@code dependencyManagement} der POM aus {@code file} festlegen – als ein
-     * Undo-Schritt im Dokument, danach Maven-Import anstoßen. {@code false}, wenn nichts geändert wurde.
+     * Modul A2: Version unter {@code dependencyManagement} der POM aus {@code file} festlegen – mit
+     * Vorschau, als ein Undo-Schritt, danach Maven-Import. {@code false}, wenn nichts geändert wurde.
      */
     static boolean pinVersion(Project project, FixAction fix) {
-        String file = fix.param("file");
-        String artifact = fix.param("artifact");
-        String version = fix.param("version");
-        int colon = artifact == null ? -1 : artifact.indexOf(':');
-        if (file == null || colon < 0 || version == null) {
+        if (fix.param("file") == null || fix.param("artifact") == null || fix.param("version") == null) {
             notify(project, fix.getLabel(), NotificationType.INFORMATION);
             return false;
         }
-        VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Paths.get(file));
-        Document doc = vf == null ? null : FileDocumentManager.getInstance().getDocument(vf);
-        if (doc == null) {
-            notify(project, "Datei nicht gefunden: " + file, NotificationType.WARNING);
-            return false;
-        }
-        PomEditor.Edit edit;
-        try {
-            edit = PomEditor.pinManagedVersion(doc.getText(), artifact.substring(0, colon), artifact.substring(colon + 1), version);
-        } catch (IllegalArgumentException e) {
-            openLocation(project, file);
-            notify(project, vf.getName() + " lässt sich nicht automatisch bearbeiten (" + e.getMessage() + "). Bitte "
-                    + artifact + ":" + version + " selbst unter dependencyManagement eintragen.", NotificationType.WARNING);
-            return false;
-        }
-        WriteCommandAction.runWriteCommandAction(project, "Version festlegen (Maven Detective)", null,
-                () -> doc.replaceString(edit.offset, edit.offset + edit.length, edit.text));
-        FileDocumentManager.getInstance().saveDocument(doc);
-        openLocation(project, file + ":" + edit.line);
-        notify(project, edit.description + " (" + vf.getName() + "). Maven-Projekt wird neu geladen.", NotificationType.INFORMATION);
-        IdeMaven.reimport(project);
-        return true;
+        return editPoms(project, List.of(fix), "Version festlegen (Maven Detective)") > 0;
     }
 
     /**
@@ -349,61 +326,112 @@ final class FixRunner {
     }
 
     /**
-     * POM-Quick-Fixes ({@link PomEditor#isPomFix}) über die Dokumente anwenden – alle in einem
-     * Undo-Schritt, offene Editoren sehen die Änderung sofort. Danach Maven-Import.
+     * POM-Quick-Fixes ({@link PomEditor#isPomFix}) über die Dokumente anwenden. Vorher zeigt ein
+     * Diff-Dialog alle betroffenen POMs (abschaltbar, {@link PomChanges#isPreviewEnabled()}); dann alle
+     * in einem Undo-Schritt, offene Editoren sehen die Änderung sofort. Danach Maven-Import.
      *
-     * @return wie viele Fixes angewendet werden sollten
+     * @return wie viele Änderungen geschrieben wurden (0: abgebrochen oder nichts anwendbar)
      */
     static int editPoms(Project project, List<FixAction> fixes, String command) {
-        List<Runnable> edits = new ArrayList<>();
-        List<Document> docs = new ArrayList<>();
-        List<String> done = new ArrayList<>();
-        String[] jump = {null};
-        for (FixAction fix : fixes) {
-            String file = fix.param("file");
-            if (file == null || !PomEditor.isPomFix(fix.getType())) {
-                continue;
-            }
-            VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Paths.get(file));
-            Document doc = vf == null ? null : FileDocumentManager.getInstance().getDocument(vf);
-            if (doc == null) {
-                notify(project, "Datei nicht gefunden: " + file, NotificationType.WARNING);
-                continue;
-            }
-            edits.add(() -> {
-                // erst hier zerlegen: mehrere Fixes können dieselbe Datei nacheinander ändern
-                try {
-                    PomEditor.Edit edit = PomEditor.forFix(doc.getText(), fix);
-                    doc.replaceString(edit.offset, edit.offset + edit.length, edit.text);
-                    done.add(edit.description + " (" + vf.getName() + ")");
-                    if (jump[0] == null) {
-                        jump[0] = file + ":" + edit.line;
-                    }
-                } catch (IllegalArgumentException e) {
-                    done.add(vf.getName() + ": " + e.getMessage());
+        return editPoms(project, fixes, command, false, null);
+    }
+
+    /**
+     * Wie oben, aber der Nutzer hat {@code shown} schon als Diff gesehen (Upgrade-Ergebnis im Editor-Tab):
+     * kein zweiter Dialog; geschrieben wird nur, wenn die Dokumente noch genau so aussehen.
+     */
+    static int editPoms(Project project, List<FixAction> fixes, String command, PomChanges.Plan shown) {
+        return editPoms(project, fixes, command, true, shown);
+    }
+
+    private static int editPoms(Project project, List<FixAction> fixes, String command, boolean previewed,
+                                @Nullable PomChanges.Plan shown) {
+        return apply(project, shown != null ? shown : plan(fixes), () -> plan(fixes), command, previewed);
+    }
+
+    /**
+     * Geplante Änderungen schreiben: erst Vorschau (außer {@code previewed} oder abgeschaltet), dann prüfen,
+     * ob {@code replan} noch genau dasselbe ergibt, dann alles in einem Undo-Schritt, speichern, Maven-Import.
+     */
+    private static int apply(Project project, PomChanges.Plan plan, Supplier<PomChanges.Plan> replan, String command,
+                             boolean previewed) {
+        if (plan.isEmpty()) {
+            if (!plan.problems().isEmpty()) {
+                if (plan.failed() != null) {
+                    openLocation(project, plan.failed().toString());
                 }
-            });
-            if (!docs.contains(doc)) {
-                docs.add(doc);
+                notify(project, escape(String.join("\n", plan.problems())).replace("\n", "<br>")
+                        + "<br>Bitte von Hand ändern.", NotificationType.WARNING);
             }
-        }
-        if (edits.isEmpty()) {
             return 0;
         }
-        WriteCommandAction.runWriteCommandAction(project, command, null, () -> edits.forEach(Runnable::run));
+        if (!previewed && PomChanges.isPreviewEnabled() && !PomChangePreviewDialog.confirm(project, plan, command)) {
+            return 0;
+        }
+        // Hat sich ein Dokument seit der Vorschau geändert (Editor-Tab ist nicht modal), nichts schreiben
+        PomChanges.Plan now = replan.get();
+        if (!sameTexts(plan, now)) {
+            notify(project, "Die POM hat sich seit der Vorschau geändert – bitte erneut prüfen.", NotificationType.WARNING);
+            return 0;
+        }
+        List<Document> docs = new ArrayList<>();
+        for (PomChanges.FileChange c : now.files()) {
+            docs.add(document(c.file()));
+        }
+        WriteCommandAction.runWriteCommandAction(project, command, null, () -> {
+            for (int i = 0; i < docs.size(); i++) {
+                Document doc = docs.get(i);
+                for (PomChanges.Edit edit : now.files().get(i).edits()) {
+                    doc.replaceString(edit.offset(), edit.offset() + edit.length(), edit.text());
+                }
+            }
+        });
         for (Document d : docs) {
             FileDocumentManager.getInstance().saveDocument(d);
         }
-        if (jump[0] != null) {
-            openLocation(project, jump[0]);
+        PomChanges.FileChange first = now.files().get(0);
+        openLocation(project, first.file() + ":" + first.firstLine());
+        List<String> done = new ArrayList<>();
+        for (PomChanges.FileChange c : now.files()) {
+            for (String d : c.descriptions()) {
+                done.add(escape(d + " (" + c.file().getFileName() + ")"));
+            }
         }
-        List<String> escaped = new ArrayList<>();
-        for (String d : done) {
-            escaped.add(d.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"));
+        for (String p : now.problems()) {
+            done.add(escape(p));
         }
-        notify(project, String.join("<br>", escaped) + "<br>Maven-Projekt wird neu geladen.", NotificationType.INFORMATION);
+        notify(project, String.join("<br>", done) + "<br>Maven-Projekt wird neu geladen.", NotificationType.INFORMATION);
         IdeMaven.reimport(project);
-        return edits.size();
+        return now.editCount();
+    }
+
+    /** Plan aus dem heutigen Inhalt der Dokumente (auch ungespeicherte Änderungen). EDT. */
+    static PomChanges.Plan plan(List<FixAction> fixes) {
+        return PomChanges.plan(fixes, path -> {
+            Document doc = document(path);
+            return doc == null ? null : doc.getText();
+        });
+    }
+
+    private static boolean sameTexts(PomChanges.Plan a, PomChanges.Plan b) {
+        if (a.files().size() != b.files().size()) {
+            return false;
+        }
+        for (int i = 0; i < a.files().size(); i++) {
+            if (!a.files().get(i).before().equals(b.files().get(i).before()) || !a.files().get(i).after().equals(b.files().get(i).after())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static @Nullable Document document(Path file) {
+        VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(file);
+        return vf == null ? null : FileDocumentManager.getInstance().getDocument(vf);
+    }
+
+    private static String escape(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private static int parseInt(String s) {

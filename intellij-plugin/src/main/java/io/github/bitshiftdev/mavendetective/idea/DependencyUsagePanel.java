@@ -3,12 +3,10 @@ package io.github.bitshiftdev.mavendetective.idea;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
-import com.intellij.ui.ColoredTableCellRenderer;
+import com.intellij.ui.ColoredTreeCellRenderer;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.SimpleTextAttributes;
-import com.intellij.ui.TableSpeedSearch;
-import com.intellij.ui.table.JBTable;
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.deps.ClassUsages;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
@@ -17,8 +15,8 @@ import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
-import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.FindingTree;
 import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
@@ -28,9 +26,6 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JPanel;
-import javax.swing.JTable;
-import javax.swing.ListSelectionModel;
-import javax.swing.table.AbstractTableModel;
 import java.awt.BorderLayout;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -44,7 +39,8 @@ import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
  * Seite „Nutzung“ im Tab „Dependencies“ (Modul A5): je Modul Dependencies, die der Code nennt, aber nur
  * transitiv bekommt, deklarierte, die er nicht nennt, und compile-Dependencies, die nur Tests
  * nennen. Die Namen kommen über den Code-Index ({@link IdeUsages}); unten Belege mit Sprung zur
- * Zeile. „Beheben“ wendet die Vorschläge aller markierten Zeilen in einem Undo-Schritt an.
+ * Zeile. Baum Modul → Befund; „Beheben“ wendet die Vorschläge aller angekreuzten (sonst der gewählten) Befunde in einem
+ * Undo-Schritt an, mit Vorschau.
  */
 public final class DependencyUsagePanel extends DetectivePanel {
 
@@ -52,8 +48,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
     private boolean withUncertain = true;
     private final SearchTextField search;
     private final JButton apply = FixBar.primary(new JButton(MavenDetectiveBundle.message("usage.apply")));
-    private final FindingModel model = new FindingModel();
-    private final JBTable table = new JBTable(model);
+    private final FindingTree<DependencyUsage.Finding> tree;
     private final HtmlView details;
     private final Background checker = background(MavenDetectiveBundle.message("loading.usage"));
     private DependencyUsage result;
@@ -75,25 +70,23 @@ public final class DependencyUsagePanel extends DetectivePanel {
                         () -> withUncertain, v -> {
                             withUncertain = v;
                             applyFilter();
-                        })));
+                        }), registered("MavenDetective.PreviewPomFixes")));
         actions.add(registered("MavenDetective.CopyMarkdown"));
         installToolbar(null, actions, search);
 
         apply.setEnabled(false);
         apply.addActionListener(e -> applySelected());
 
-        table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-        table.setDefaultRenderer(Object.class, new Renderer());
-        table.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) {
-                List<DependencyUsage.Finding> sel = selected();
-                show(sel.size() == 1 ? sel.get(0) : null, sel.size());
-                updateApply(sel);
-            }
+        tree = new FindingTree<>(DependencyUsage.Finding.class, DependencyUsagePanel::render, DependencyUsagePanel::hasPomFix,
+                f -> f.getModule().getName() + " " + f.getEntry().label());
+        tree.addSelectionListener(() -> {
+            List<DependencyUsage.Finding> sel = selected();
+            show(tree.single(), sel.size());
+            updateApply();
         });
-        TableSpeedSearch.installOn(table, (value, cell) -> value instanceof DependencyUsage.Finding f && cell.column == 2 ? f.getEntry().label() : null);
+        tree.addCheckListener(this::updateApply);
         // Nicht automatisch prüfen: das löst alle Referenzen aller Module auf – erst auf Klick
-        emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+        emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                 MavenDetectiveBundle.message("empty.check.now"), this::reload);
 
         details = new HtmlView(project);
@@ -102,7 +95,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
         bottom.add(new FixBar(apply), BorderLayout.SOUTH);
 
         JBSplitter splitter = new JBSplitter(true, "MavenDetective.Usage.split", 0.55f);
-        splitter.setFirstComponent(rows(table, this::selectedLocation, this::selectedText));
+        splitter.setFirstComponent(rows(tree.component(), this::selectedLocation, this::selectedText));
         splitter.setSecondComponent(bottom);
         setBody(splitter);
         show(null, 0);
@@ -173,7 +166,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
     protected void cancelled() {
         super.cancelled();
         if (result == null) {
-            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                     MavenDetectiveBundle.message("empty.check.now"), this::reload);
         }
     }
@@ -240,11 +233,10 @@ public final class DependencyUsagePanel extends DetectivePanel {
     }
 
     private void applyFilter() {
-        List<DependencyUsage.Finding> before = selected();
         List<DependencyUsage.Finding> rows = new ArrayList<>();
         if (result == null) {
-            model.set(rows);
-            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            tree.set(Map.of(), l -> null, f -> false);
+            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             show(null, 0);
             return;
@@ -262,14 +254,14 @@ public final class DependencyUsagePanel extends DetectivePanel {
                 hidden++;
             }
         }
-        model.set(rows);
+        tree.set(FindingTree.groupBy(rows, f -> f.getModule().getName()), DependencyUsagePanel::groupDetail, f -> false);
         int unchecked = 0;
         int files = 0;
         for (DependencyUsage.ModuleResult m : result.getModules()) {
             unchecked += m.getUnchecked().size();
             files += m.getUsages().getMainFiles() + m.getUsages().getTestFiles();
         }
-        emptyText(table.getEmptyText(), MavenDetectiveBundle.message(result.findings().isEmpty() ? "usage.empty.none" : "empty.all.filtered"),
+        emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message(result.findings().isEmpty() ? "usage.empty.none" : "empty.all.filtered"),
                 null, null);
         setStatus(result.getModules().size() + " Module, " + files + " Quelldateien – "
                 + result.findings(DependencyUsage.Kind.UNDECLARED).size() + " undeklariert, "
@@ -278,21 +270,9 @@ public final class DependencyUsagePanel extends DetectivePanel {
                 + (hidden > 0 ? " (" + hidden + " ausgeblendet)" : "")
                 + (unchecked > 0 ? ", " + unchecked + " JARs lokal nicht lesbar" : "")
                 + (result.isEstimated() ? " – ohne Baum aus den POMs nachgebaut (Maven-Projekt neu laden)" : ""));
-        table.clearSelection();
-        for (DependencyUsage.Finding f : before) {
-            int idx = rows.indexOf(f);
-            if (idx >= 0) {
-                table.getSelectionModel().addSelectionInterval(idx, idx);
-            }
-        }
-        if (table.getSelectedRowCount() == 0) {
-            if (!rows.isEmpty()) {
-                table.getSelectionModel().setSelectionInterval(0, 0);
-            } else {
-                show(null, 0);
-                updateApply(List.of());
-            }
-        }
+        tree.selectFirstIfNone();
+        show(tree.single(), selected().size());
+        updateApply();
     }
 
     private static boolean matches(DependencyUsage.Finding f, String q) {
@@ -313,19 +293,69 @@ public final class DependencyUsagePanel extends DetectivePanel {
     }
 
     private List<DependencyUsage.Finding> selected() {
-        List<DependencyUsage.Finding> out = new ArrayList<>();
-        for (int r : table.getSelectedRows()) {
-            int m = table.convertRowIndexToModel(r);
-            if (m >= 0 && m < model.rows.size()) {
-                out.add(model.rows.get(m));
+        return tree.selected();
+    }
+
+    /** Worauf „Beheben“ wirkt: die angekreuzten Befunde, sonst die ausgewählten. */
+    private List<DependencyUsage.Finding> targets() {
+        List<DependencyUsage.Finding> checked = tree.checked();
+        return checked.isEmpty() ? selected() : checked;
+    }
+
+    private static boolean hasPomFix(DependencyUsage.Finding f) {
+        for (FixAction fix : f.fixes()) {
+            if (PomEditor.isPomFix(fix.getType())) {
+                return true;
             }
         }
-        return out;
+        return false;
+    }
+
+    private static String groupDetail(List<DependencyUsage.Finding> items) {
+        int undeclared = 0;
+        int unused = 0;
+        int testOnly = 0;
+        for (DependencyUsage.Finding f : items) {
+            switch (f.getKind()) {
+                case UNDECLARED -> undeclared++;
+                case UNUSED -> unused++;
+                default -> testOnly++;
+            }
+        }
+        return MavenDetectiveBundle.message("summary.usage", undeclared, unused, testOnly);
+    }
+
+    /** Art als Icon + Wort (undeklariert / ungenutzt / nur in Tests, „?“ = unsicher), dann Dependency, Beleg, Vorschlag. */
+    private static void render(ColoredTreeCellRenderer r, DependencyUsage.Finding f, boolean selected) {
+        boolean strong = f.getKind() == DependencyUsage.Kind.UNDECLARED && f.getMainCount() > 0 && !f.isViaBundle();
+        r.setIcon(switch (f.getKind()) {
+            case UNDECLARED -> AllIcons.General.Warning;
+            case UNUSED -> AllIcons.Actions.Cancel;
+            default -> AllIcons.Nodes.Test;
+        });
+        SimpleTextAttributes plain = f.isCertain() && !f.isViaBundle() ? SimpleTextAttributes.REGULAR_ATTRIBUTES
+                : SimpleTextAttributes.GRAYED_ATTRIBUTES;
+        r.append(f.getKind().label() + (f.isCertain() ? "" : "?"), strong ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : plain);
+        r.append("  " + f.getEntry().label(), plain);
+        r.append("  " + f.getEntry().getScope(), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+        List<ClassUsages.Use> uses = !f.getMainUses().isEmpty() ? f.getMainUses() : f.getTestUses();
+        if (uses.isEmpty()) {
+            r.append("  · " + (f.getNote() != null ? f.getNote() : "keine Nennung"), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+        } else {
+            int n = f.getMainCount() + f.getTestCount();
+            r.append("  · " + uses.get(0).getClassName() + (n > 1 ? " +" + (n - 1) : ""), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+        }
+        List<FixAction> fixes = f.fixes();
+        if (!fixes.isEmpty()) {
+            r.append("  → " + fixes.get(0).getLabel(), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+        }
+        r.setToolTipText(f.message());
     }
 
     private void show(@Nullable DependencyUsage.Finding f, int count) {
         if (f == null) {
-            showText(count > 1 ? "<p>" + count + " Befunde markiert – „Beheben“ wendet alle Vorschläge in einem Undo-Schritt an.</p>"
+            showText(count > 1 ? "<p>" + count + " Befunde gewählt. „Beheben“ wendet die Vorschläge der angekreuzten (sonst der "
+                    + "gewählten) Befunde in einem Undo-Schritt an.</p>"
                     : result == null
                     ? "<p>Vergleicht, welche Klassen die Quellen jedes Moduls nennen (über den Code-Index aufgelöst), mit den "
                     + "Dependencies in der <code>pom.xml</code>:</p><ul>"
@@ -381,7 +411,8 @@ public final class DependencyUsagePanel extends DetectivePanel {
         sb.append("</ul>");
     }
 
-    private void updateApply(List<DependencyUsage.Finding> sel) {
+    private void updateApply() {
+        List<DependencyUsage.Finding> sel = targets();
         int pom = 0;
         for (DependencyUsage.Finding f : sel) {
             for (FixAction fix : f.fixes()) {
@@ -398,7 +429,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
     }
 
     private void applySelected() {
-        List<DependencyUsage.Finding> sel = selected();
+        List<DependencyUsage.Finding> sel = targets();
         List<FixAction> pomFixes = new ArrayList<>();
         FixAction open = null;
         for (DependencyUsage.Finding f : sel) {
@@ -430,76 +461,5 @@ public final class DependencyUsagePanel extends DetectivePanel {
 
     private void showText(String body) {
         details.show(body);
-    }
-
-    private static final class FindingModel extends AbstractTableModel {
-        private static final String[] COLUMNS = {"Modul", "Art", "Dependency", "Beleg", "Vorschlag"};
-        private List<DependencyUsage.Finding> rows = List.of();
-
-        void set(List<DependencyUsage.Finding> rows) {
-            this.rows = rows;
-            fireTableDataChanged();
-        }
-
-        @Override
-        public int getRowCount() {
-            return rows.size();
-        }
-
-        @Override
-        public int getColumnCount() {
-            return COLUMNS.length;
-        }
-
-        @Override
-        public String getColumnName(int column) {
-            return COLUMNS[column];
-        }
-
-        @Override
-        public Object getValueAt(int rowIndex, int columnIndex) {
-            return rows.get(rowIndex);
-        }
-    }
-
-    /** Undeklarierte in Hauptquellen hinterlegt; unsichere und Starter-Fälle grau. */
-    private final class Renderer extends ColoredTableCellRenderer {
-        @Override
-        protected void customizeCellRenderer(@NotNull JTable t, @Nullable Object value, boolean selected, boolean focus, int row, int column) {
-            if (!(value instanceof DependencyUsage.Finding f)) {
-                return;
-            }
-            boolean strong = f.getKind() == DependencyUsage.Kind.UNDECLARED && f.getMainCount() > 0 && !f.isViaBundle();
-            if (strong && !selected) {
-                setBackground(DetectiveColors.WARNING_BACKGROUND);
-            }
-            SimpleTextAttributes plain = f.isCertain() && !f.isViaBundle() ? SimpleTextAttributes.REGULAR_ATTRIBUTES
-                    : SimpleTextAttributes.GRAYED_ATTRIBUTES;
-            switch (column) {
-                case 0 -> append(f.getModule().getName(), plain);
-                case 1 -> append(f.getKind().label() + (f.isCertain() ? "" : "?"), strong ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : plain);
-                case 2 -> {
-                    append(f.getEntry().label(), plain);
-                    append("  " + f.getEntry().getScope(), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
-                }
-                case 3 -> {
-                    List<ClassUsages.Use> uses = !f.getMainUses().isEmpty() ? f.getMainUses() : f.getTestUses();
-                    if (uses.isEmpty()) {
-                        append(f.getNote() != null ? f.getNote() : "keine Nennung", SimpleTextAttributes.GRAYED_ATTRIBUTES);
-                    } else {
-                        int n = f.getMainCount() + f.getTestCount();
-                        append(uses.get(0).getClassName(), plain);
-                        if (n > 1) {
-                            append(" +" + (n - 1), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
-                        }
-                    }
-                }
-                default -> {
-                    List<FixAction> fixes = f.fixes();
-                    append(fixes.isEmpty() ? "–" : fixes.get(0).getLabel(), plain);
-                }
-            }
-            setToolTipText(f.message());
-        }
     }
 }

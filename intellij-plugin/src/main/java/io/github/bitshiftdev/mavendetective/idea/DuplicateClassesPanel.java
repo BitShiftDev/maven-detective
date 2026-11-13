@@ -4,14 +4,12 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
-import com.intellij.ui.ColoredTableCellRenderer;
+import com.intellij.ui.ColoredTreeCellRenderer;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.SimpleListCellRenderer;
 import com.intellij.ui.SimpleTextAttributes;
-import com.intellij.ui.TableSpeedSearch;
 import com.intellij.ui.components.JBLabel;
-import com.intellij.ui.table.JBTable;
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
@@ -20,8 +18,8 @@ import io.github.bitshiftdev.mavendetective.core.deps.ModuleClasspath;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
-import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.FindingTree;
 import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
 import org.jetbrains.annotations.NotNull;
@@ -30,20 +28,19 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JPanel;
-import javax.swing.JTable;
-import javax.swing.ListSelectionModel;
-import javax.swing.table.AbstractTableModel;
 import java.awt.BorderLayout;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
 /**
- * Seite „Doppelte Klassen“ im Tab „Dependencies“ (Modul A3): je Modul die JARs, die dieselben Klassen mitbringen. Unten
+ * Seite „Doppelte Klassen“ im Tab „Dependencies“ (Modul A3): Baum Modul → Fund (JARs, die dieselben Klassen mitbringen),
+ * Art als Icon und Wort; angekreuzte Funde setzt „Markierte bereinigen“ gemäß Empfehlung in einem Schritt um. Unten
  * Klassen, Pfade und die Empfehlung; der Knopf fügt die Exclusion bei jeder direkten Dependency
  * ein, über die das gewählte JAR kommt (ist es direkt deklariert, springt er zur Deklaration).
  */
@@ -54,11 +51,11 @@ public final class DuplicateClassesPanel extends DetectivePanel {
     private boolean withTests;
     private boolean withIdentical = true;
     private final SearchTextField search;
-    private final ClashModel model = new ClashModel();
-    private final JBTable table = new JBTable(model);
+    private final FindingTree<DuplicateClasses.Clash> tree;
     private final HtmlView details;
     private final ComboBox<ModuleClasspath.Entry> target = new ComboBox<>();
     private final JButton apply = FixBar.primary(new JButton(MavenDetectiveBundle.message("duplicates.exclude")));
+    private final JButton applyChecked = new JButton(MavenDetectiveBundle.message("duplicates.exclude.checked", 0));
     private final Background checker = background(MavenDetectiveBundle.message("loading.duplicates"));
     private DuplicateClasses result;
 
@@ -77,32 +74,31 @@ public final class DuplicateClassesPanel extends DetectivePanel {
                 toggle(MavenDetectiveBundle.message("duplicates.filter.identical"), null, () -> withIdentical, v -> {
                     withIdentical = v;
                     applyFilter();
-                })));
+                }), registered("MavenDetective.PreviewPomFixes")));
         actions.add(registered("MavenDetective.CopyMarkdown"));
         installToolbar(null, actions, search);
 
-        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setDefaultRenderer(Object.class, new Renderer());
-        table.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) {
-                show(selected());
-            }
-        });
-        TableSpeedSearch.installOn(table, (value, cell) -> value instanceof DuplicateClasses.Clash c && cell.column == 1 ? jars(c) : null);
+        tree = new FindingTree<>(DuplicateClasses.Clash.class, DuplicateClassesPanel::render, DuplicateClassesPanel::canExclude,
+                c -> c.getModule().getName() + " " + jars(c));
+        tree.addSelectionListener(() -> show(selected()));
+        tree.addCheckListener(this::updateApplyChecked);
         // Nicht automatisch prüfen: das öffnet alle JARs aller Module – erst auf Klick
-        emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+        emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                 MavenDetectiveBundle.message("empty.check.now"), this::reload);
 
         details = new HtmlView(project);
         target.setRenderer(SimpleListCellRenderer.create("", ModuleClasspath.Entry::label));
         target.addActionListener(e -> updateApply());
         apply.addActionListener(e -> applySelected());
+        applyChecked.addActionListener(e -> applyChecked());
+        applyChecked.setEnabled(false);
+        applyChecked.setToolTipText(MavenDetectiveBundle.message("duplicates.exclude.checked.tooltip"));
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.add(details.component(), BorderLayout.CENTER);
-        bottom.add(new FixBar(new JBLabel(MavenDetectiveBundle.message("duplicates.target")), target, apply), BorderLayout.SOUTH);
+        bottom.add(new FixBar(new JBLabel(MavenDetectiveBundle.message("duplicates.target")), target, apply, applyChecked), BorderLayout.SOUTH);
 
         JBSplitter splitter = new JBSplitter(true, "MavenDetective.Duplicates.split", 0.5f);
-        splitter.setFirstComponent(rows(table, this::selectedLocation, () -> selected() == null ? null : selected().message()));
+        splitter.setFirstComponent(rows(tree.component(), this::selectedLocation, () -> selected() == null ? null : selected().message()));
         splitter.setSecondComponent(bottom);
         setBody(splitter);
         show(null);
@@ -176,12 +172,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
             search.setText("");
         }
         applyFilter();
-        int idx = model.rows.indexOf(clash);
-        if (idx >= 0) {
-            int view = table.convertRowIndexToView(idx);
-            table.getSelectionModel().setSelectionInterval(view, view);
-            table.scrollRectToVisible(table.getCellRect(view, 0, true));
-        }
+        tree.select(clash);
     }
 
     @Override
@@ -193,7 +184,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
     protected void cancelled() {
         super.cancelled();
         if (result == null) {
-            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
                     MavenDetectiveBundle.message("empty.check.now"), this::reload);
         }
     }
@@ -272,11 +263,10 @@ public final class DuplicateClassesPanel extends DetectivePanel {
     }
 
     private void applyFilter() {
-        DuplicateClasses.Clash before = selected();
         List<DuplicateClasses.Clash> rows = new ArrayList<>();
         if (result == null) {
-            model.set(rows);
-            emptyText(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            tree.set(Map.of(), l -> null, c -> false);
+            emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             show(null);
             return;
@@ -294,25 +284,20 @@ public final class DuplicateClassesPanel extends DetectivePanel {
                 hidden++;
             }
         }
-        model.set(rows);
+        tree.set(FindingTree.groupBy(rows, c -> c.getModule().getName()), DuplicateClassesPanel::groupDetail, c -> false);
         int unreadable = 0;
         for (DuplicateClasses.ModuleResult m : result.getModules()) {
             unreadable += m.getUnreadable().size();
         }
         int n = result.clashes().size();
-        emptyText(table.getEmptyText(), MavenDetectiveBundle.message(n == 0 ? "duplicates.empty.none" : "empty.all.filtered"), null, null);
+        emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message(n == 0 ? "duplicates.empty.none" : "empty.all.filtered"), null, null);
         setStatus(result.getModules().size() + " Module, " + n + (n == 1 ? " Fund" : " Funde")
                 + (hidden > 0 ? " (" + hidden + " ausgeblendet)" : "")
                 + (unreadable > 0 ? ", " + unreadable + " JARs lokal nicht lesbar" : "")
                 + (result.isEstimated() ? " – ohne Baum aus den POMs nachgebaut (Maven-Projekt neu laden)" : ""));
-        int idx = before == null ? -1 : rows.indexOf(before);
-        if (idx >= 0) {
-            table.getSelectionModel().setSelectionInterval(idx, idx);
-        } else if (!rows.isEmpty()) {
-            table.getSelectionModel().setSelectionInterval(0, 0);
-        } else {
-            show(null);
-        }
+        tree.selectFirstIfNone();
+        show(selected());
+        updateApplyChecked();
     }
 
     private static boolean matches(DuplicateClasses.Clash c, String q) {
@@ -333,8 +318,93 @@ public final class DuplicateClassesPanel extends DetectivePanel {
     }
 
     private @Nullable DuplicateClasses.Clash selected() {
-        int r = table.getSelectedRow();
-        return r < 0 || r >= model.rows.size() ? null : model.rows.get(table.convertRowIndexToModel(r));
+        return tree.single();
+    }
+
+    /** Ankreuzbar = es gibt eine Empfehlung, die sich per Exclusion umsetzen lässt. */
+    private static boolean canExclude(DuplicateClasses.Clash c) {
+        return !exclusionsFor(c).isEmpty();
+    }
+
+    /** Exclusions, die die Empfehlung umsetzen ({@code drop} raus); leer, wenn es keine gibt. */
+    private static List<FixAction> exclusionsFor(DuplicateClasses.Clash c) {
+        List<FixAction> out = new ArrayList<>();
+        if (c.getDrop() != null) {
+            for (FixAction f : c.fixesFor(c.getDrop())) {
+                if (FixAction.ADD_EXCLUSION.equals(f.getType())) {
+                    out.add(f);
+                }
+            }
+        }
+        return out;
+    }
+
+    private static String groupDetail(List<DuplicateClasses.Clash> items) {
+        int differing = 0;
+        for (DuplicateClasses.Clash c : items) {
+            if (c.isMain() && !c.isIdentical()) {
+                differing++;
+            }
+        }
+        return MavenDetectiveBundle.message("duplicates.group", items.size(), differing);
+    }
+
+    /** Art als Icon + Wort (verschieden / inhaltsgleich / nur Tests), dann JARs, Klassen und Empfehlung. */
+    private static void render(ColoredTreeCellRenderer r, DuplicateClasses.Clash c, boolean selected) {
+        boolean risky = c.isMain() && !c.isIdentical();
+        r.setIcon(!c.isMain() ? AllIcons.Nodes.Test : risky ? AllIcons.General.Error : AllIcons.General.Warning);
+        String kind = MavenDetectiveBundle.message(!c.isMain() ? "duplicates.kind.test" : risky ? "duplicates.kind.differing"
+                : "duplicates.kind.identical");
+        SimpleTextAttributes plain = c.isMain() ? SimpleTextAttributes.REGULAR_ATTRIBUTES : SimpleTextAttributes.GRAYED_ATTRIBUTES;
+        r.append(kind, risky ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : plain);
+        r.append("  " + jars(c), plain);
+        List<String> p = c.packages();
+        r.append("  " + MavenDetectiveBundle.message("duplicates.classes", c.getClasses().size()) + " · " + p.get(0)
+                + (p.size() > 1 ? " +" + (p.size() - 1) : ""), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+        r.append("  → " + (c.getDrop() == null ? MavenDetectiveBundle.message("duplicates.decide") : c.getDrop().label() + " raus"),
+                SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
+        r.setToolTipText(c.message());
+    }
+
+    private void updateApplyChecked() {
+        int n = 0;
+        for (DuplicateClasses.Clash c : tree.checked()) {
+            n += exclusionsFor(c).size();
+        }
+        applyChecked.setEnabled(n > 0);
+        applyChecked.setText(MavenDetectiveBundle.message("duplicates.exclude.checked", n));
+    }
+
+    /** Für alle angekreuzten Funde die Empfehlung umsetzen – ein Undo-Schritt, mit Vorschau. */
+    private void applyChecked() {
+        List<FixAction> fixes = new ArrayList<>();
+        for (DuplicateClasses.Clash c : tree.checked()) {
+            for (FixAction f : exclusionsFor(c)) {
+                if (!containsSame(fixes, f)) {
+                    fixes.add(f);
+                }
+            }
+        }
+        if (fixes.isEmpty()) {
+            return;
+        }
+        int n = FixRunner.addExclusions(project, fixes);
+        if (n > 0) {
+            showText("<p>" + n + (n == 1 ? " Exclusion" : " Exclusions") + " eingefügt. Nach dem Maven-Import ist die Liste veraltet – "
+                    + "dann oben „Neu prüfen“.</p>");
+            applyChecked.setEnabled(false);
+        }
+    }
+
+    /** Dieselbe Exclusion bei derselben Dependency derselben POM nur einmal einfügen (PomEditor lehnt Duplikate ab). */
+    private static boolean containsSame(List<FixAction> fixes, FixAction f) {
+        for (FixAction g : fixes) {
+            if (Objects.equals(g.param("file"), f.param("file")) && Objects.equals(g.param("artifact"), f.param("artifact"))
+                    && Objects.equals(g.param("exclusion"), f.param("exclusion"))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void show(@Nullable DuplicateClasses.Clash c) {
@@ -443,66 +513,5 @@ public final class DuplicateClassesPanel extends DetectivePanel {
 
     private void showText(String body) {
         details.show(body);
-    }
-
-    private static final class ClashModel extends AbstractTableModel {
-        private static final String[] COLUMNS = {"Modul", "JARs (1. gewinnt)", "Klassen", "Inhalt", "Empfehlung"};
-        private List<DuplicateClasses.Clash> rows = List.of();
-
-        void set(List<DuplicateClasses.Clash> rows) {
-            this.rows = rows;
-            fireTableDataChanged();
-        }
-
-        @Override
-        public int getRowCount() {
-            return rows.size();
-        }
-
-        @Override
-        public int getColumnCount() {
-            return COLUMNS.length;
-        }
-
-        @Override
-        public String getColumnName(int column) {
-            return COLUMNS[column];
-        }
-
-        @Override
-        public Object getValueAt(int rowIndex, int columnIndex) {
-            return rows.get(rowIndex);
-        }
-    }
-
-    /** Verschiedene Fassungen im Laufzeit-Classpath hinterlegt; nur-Test grau. */
-    private final class Renderer extends ColoredTableCellRenderer {
-        @Override
-        protected void customizeCellRenderer(@NotNull JTable t, @Nullable Object value, boolean selected, boolean focus, int row, int column) {
-            if (!(value instanceof DuplicateClasses.Clash c)) {
-                return;
-            }
-            boolean risky = c.isMain() && !c.isIdentical();
-            if (risky && !selected) {
-                setBackground(DetectiveColors.ERROR_BACKGROUND);
-            }
-            SimpleTextAttributes plain = c.isMain() ? SimpleTextAttributes.REGULAR_ATTRIBUTES : SimpleTextAttributes.GRAYED_ATTRIBUTES;
-            switch (column) {
-                case 0 -> append(c.getModule().getName(), plain);
-                case 1 -> append(jars(c), risky ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : plain);
-                case 2 -> {
-                    append(String.valueOf(c.getClasses().size()), plain);
-                    List<String> p = c.packages();
-                    append("  " + p.get(0) + (p.size() > 1 ? " +" + (p.size() - 1) : ""), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
-                }
-                case 3 -> append(c.isIdentical() ? "gleich" : c.getDiffering() + " verschieden", plain);
-                default -> append(c.getDrop() == null ? "Entscheidung nötig" : c.getDrop().label() + " raus",
-                        c.getDrop() == null ? SimpleTextAttributes.GRAYED_ATTRIBUTES : plain);
-            }
-            if (!c.isMain()) {
-                append(column == 0 ? "  nur Tests" : "", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
-            }
-            setToolTipText(c.message());
-        }
     }
 }

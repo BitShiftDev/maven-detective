@@ -52,6 +52,8 @@ final class DependencyAnalysisView extends JPanel implements Disposable {
                         new ConflictMatrixPanel(project)),
                 new Page("duplicates", MavenDetectiveBundle.message("nav.duplicates"), AllIcons.Actions.Copy, Analysis.DUPLICATES,
                         new DuplicateClassesPanel(project)),
+                new Page("exclusions", MavenDetectiveBundle.message("nav.exclusions"), AllIcons.General.Filter, Analysis.EXCLUSIONS,
+                        new ExclusionsPanel(project)),
                 new Page("usage", MavenDetectiveBundle.message("nav.usage"), AllIcons.Actions.Find, Analysis.USAGE,
                         new DependencyUsagePanel(project)),
                 new Page("upgrade", MavenDetectiveBundle.message("nav.upgrade"), AllIcons.Actions.Upload, Analysis.UPGRADE,

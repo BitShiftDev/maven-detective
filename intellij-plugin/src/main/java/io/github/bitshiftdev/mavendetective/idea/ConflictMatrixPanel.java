@@ -1,6 +1,23 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.project.DumbAwareAction;
+import com.intellij.ui.components.JBScrollPane;
+import com.intellij.util.ui.JBUI;
+import javax.swing.AbstractAction;
+import javax.swing.JComponent;
+import javax.swing.KeyStroke;
+import javax.swing.ScrollPaneConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.TableColumnModelEvent;
+import javax.swing.event.TableColumnModelListener;
+import java.awt.Dimension;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.ui.ColoredTableCellRenderer;
@@ -45,14 +62,37 @@ import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
  * Seite „Konflikte“ im Tab „Dependencies“ (Modul A2): Zeile = Artifact, Spalte = Modul, Zelle = aufgelöste Version.
  * Abweichende Zellen sind markiert. Unten der Vorschlag, die Version im gemeinsamen Parent unter
  * {@code dependencyManagement} festzulegen, samt den Stellen, die das überstimmen würden.
- * Doppelklick auf eine Zelle öffnet „Warum diese Version?“ für Modul und Artifact.
+ * Doppelklick (oder Enter) auf eine Zelle öffnet „Warum diese Version?“ für Modul und Artifact, das Kontextmenü legt
+ * die Version der Zelle fest. Die Artifact-Spalte bleibt beim waagrechten Scrollen stehen; je Version hat eine Zeile
+ * eine eigene Farbe, damit Gruppen auffallen (die Version steht immer als Text da).
  */
 public final class ConflictMatrixPanel extends DetectivePanel {
+
+    private static final int HEADER_WIDTH = 320;
 
     private boolean onlyDivergent = true;
     private final SearchTextField search;
     private final MatrixModel model = new MatrixModel();
-    private final JBTable table = new JBTable(model);
+    /** Module als Spalten; die Artifact-Spalte steht fixiert im {@link #header}. */
+    private final JBTable table = new JBTable(model) {
+        @Override
+        public void createDefaultColumnsFromModel() {
+            super.createDefaultColumnsFromModel();
+            if (getColumnModel().getColumnCount() > 0) {
+                removeColumn(getColumnModel().getColumn(0));
+            }
+        }
+    };
+    /** Erste Spalte (Artifact) als Zeilenkopf: bleibt beim waagrechten Scrollen stehen. */
+    private final JBTable header = new JBTable(model) {
+        @Override
+        public void createDefaultColumnsFromModel() {
+            super.createDefaultColumnsFromModel();
+            while (getColumnModel().getColumnCount() > 1) {
+                removeColumn(getColumnModel().getColumn(1));
+            }
+        }
+    };
     private final HtmlView details;
     private final ComboBox<String> versions = new ComboBox<>();
     private final JButton pin = FixBar.primary(new JButton(MavenDetectiveBundle.message("matrix.pin")));
@@ -76,8 +116,15 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         installToolbar(null, actions, search);
 
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        table.setCellSelectionEnabled(true);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         table.setDefaultRenderer(Object.class, new CellRenderer());
+        header.setSelectionModel(table.getSelectionModel());
+        header.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        header.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        header.setDefaultRenderer(Object.class, new CellRenderer());
+        header.setPreferredScrollableViewportSize(new Dimension(JBUI.scale(HEADER_WIDTH), 1));
+        header.getAccessibleContext().setAccessibleName(MavenDetectiveBundle.message("matrix.column.artifact"));
         table.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 showRow(selectedRow());
@@ -85,18 +132,43 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         });
         table.addMouseListener(new MouseAdapter() {
             @Override
+            public void mousePressed(MouseEvent e) {
+                selectUnderMouse(table, e);
+            }
+
+            @Override
             public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
+                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) {
                     int r = table.rowAtPoint(e.getPoint());
                     int c = table.columnAtPoint(e.getPoint());
-                    if (r >= 0 && c >= 1) {
+                    if (r >= 0 && c >= 0) {
                         whyThisVersion(model.rows.get(table.convertRowIndexToModel(r)), model.modules.get(table.convertColumnIndexToModel(c) - 1));
                     }
                 }
             }
         });
-        TableSpeedSearch.installOn(table, (value, cell) -> value instanceof ConflictMatrix.Row r ? r.ga()
-                : value instanceof ConflictMatrix.Cell c ? c.getVersion() : null);
+        header.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                selectUnderMouse(header, e);
+                // Klick auf den Artifact-Namen: keine Modul-Spalte gemeint
+                table.getColumnModel().getSelectionModel().clearSelection();
+            }
+        });
+        // Enter auf einer Zelle: „Warum diese Version?“ für dieses Modul (Doppelklick per Tastatur)
+        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "md.why");
+        table.getActionMap().put("md.why", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                ConflictMatrix.Row row = selectedRow();
+                ConflictMatrix.Module m = selectedModule();
+                if (row != null && m != null) {
+                    whyThisVersion(row, m);
+                }
+            }
+        });
+        TableSpeedSearch.installOn(header, (value, cell) -> value instanceof ConflictMatrix.Row r ? r.ga() : null);
+        TableSpeedSearch.installOn(table, (value, cell) -> value instanceof ConflictMatrix.Cell c ? c.getVersion() : null);
         emptyText(table.getEmptyText(), MavenDetectiveBundle.message("loading.modules"), null, null);
 
         details = new HtmlView(project);
@@ -107,7 +179,35 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         showRow(null);
 
         JBSplitter splitter = new JBSplitter(true, "MavenDetective.Matrix.split", 0.6f);
-        splitter.setFirstComponent(rows(table, this::selectedLocation, this::selectedText));
+        JBScrollPane scroll = new JBScrollPane(table);
+        scroll.setBorder(JBUI.Borders.empty());
+        scroll.setRowHeaderView(header);
+        scroll.setCorner(ScrollPaneConstants.UPPER_LEFT_CORNER, header.getTableHeader());
+        // Artifact-Spalte breiter ziehen: der fixierte Bereich wächst mit
+        header.getColumnModel().addColumnModelListener(new TableColumnModelListener() {
+            @Override
+            public void columnMarginChanged(ChangeEvent e) {
+                header.setPreferredScrollableViewportSize(new Dimension(header.getColumnModel().getTotalColumnWidth(), 1));
+                scroll.revalidate();
+            }
+
+            @Override
+            public void columnAdded(TableColumnModelEvent e) {
+            }
+
+            @Override
+            public void columnRemoved(TableColumnModelEvent e) {
+            }
+
+            @Override
+            public void columnMoved(TableColumnModelEvent e) {
+            }
+
+            @Override
+            public void columnSelectionChanged(ListSelectionEvent e) {
+            }
+        });
+        splitter.setFirstComponent(rows(scroll, List.of(table, header), this::cellActions, this::selectedLocation, this::selectedText));
         splitter.setSecondComponent(bottom);
         setBody(splitter);
 
@@ -234,9 +334,11 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             }
         }
         model.set(matrix.getModules(), rows);
-        table.getColumnModel().getColumn(0).setPreferredWidth(320);
-        for (int i = 1; i < table.getColumnCount(); i++) {
-            table.getColumnModel().getColumn(i).setPreferredWidth(130);
+        if (header.getColumnCount() > 0) {
+            header.getColumnModel().getColumn(0).setPreferredWidth(JBUI.scale(HEADER_WIDTH));
+        }
+        for (int i = 0; i < table.getColumnCount(); i++) {
+            table.getColumnModel().getColumn(i).setPreferredWidth(JBUI.scale(130));
         }
         int divergent = matrix.divergent().size();
         if (onlyDivergent && matrix.divergent().isEmpty()) {
@@ -340,13 +442,72 @@ public final class ConflictMatrixPanel extends DetectivePanel {
     private void pinSelected() {
         ConflictMatrix.Row row = selectedRow();
         String version = (String) versions.getSelectedItem();
-        if (row == null || row.getPin() == null || version == null) {
+        if (row != null && version != null) {
+            pin(row, version);
+        }
+    }
+
+    /** Version im gemeinsamen Parent festlegen (mit Vorschau). */
+    private void pin(ConflictMatrix.Row row, String version) {
+        if (row.getPin() == null) {
             return;
         }
-        FixRunner.pinVersion(project, row.getPin().fix(row.getGroupId(), row.getArtifactId(), version));
-        showText("<p>Version " + esc(version) + " für " + esc(row.ga()) + " eingetragen. Nach dem Maven-Import "
-                + "rechnet die Matrix von selbst neu.</p>");
-        pin.setEnabled(false);
+        if (FixRunner.pinVersion(project, row.getPin().fix(row.getGroupId(), row.getArtifactId(), version))) {
+            showText("<p>Version " + esc(version) + " für " + esc(row.ga()) + " eingetragen. Nach dem Maven-Import "
+                    + "rechnet die Matrix von selbst neu.</p>");
+            pin.setEnabled(false);
+        }
+    }
+
+    /** Kontextmenü auf einer Zelle: diese Version (und den Vorschlag) festlegen, „Warum diese Version?“ für das Modul. */
+    private List<AnAction> cellActions() {
+        ConflictMatrix.Row row = selectedRow();
+        if (row == null) {
+            return List.of();
+        }
+        List<AnAction> out = new ArrayList<>();
+        ConflictMatrix.Module m = selectedModule();
+        ConflictMatrix.Cell c = m == null ? null : row.cell(m);
+        ConflictMatrix.Pin p = row.getPin();
+        if (p != null) {
+            String target = p.getTarget().getArtifactId();
+            if (c != null) {
+                String v = c.getVersion();
+                out.add(DumbAwareAction.create(MavenDetectiveBundle.message("matrix.pin.version", v, target), AllIcons.General.Pin_tab,
+                        e -> pin(row, v)));
+            }
+            if (c == null || !c.getVersion().equals(p.getVersion())) {
+                out.add(DumbAwareAction.create(MavenDetectiveBundle.message("matrix.pin.suggested", p.getVersion(), target),
+                        AllIcons.General.Pin_tab, e -> pin(row, p.getVersion())));
+            }
+        }
+        if (c != null) {
+            out.add(DumbAwareAction.create(MavenDetectiveBundle.message("matrix.why.module", m.getName()), AllIcons.Actions.Help,
+                    e -> whyThisVersion(row, m)));
+        }
+        return out;
+    }
+
+    /** Rechtsklick wählt die Zelle unter der Maus, damit das Kontextmenü zu ihr passt. */
+    private static void selectUnderMouse(JTable t, MouseEvent e) {
+        if (!SwingUtilities.isRightMouseButton(e)) {
+            return;
+        }
+        int r = t.rowAtPoint(e.getPoint());
+        int c = t.columnAtPoint(e.getPoint());
+        if (r >= 0 && c >= 0) {
+            t.changeSelection(r, c, false, false);
+        }
+    }
+
+    /** Modul der gewählten Zelle; {@code null}, wenn nur die Zeile (Artifact) gewählt ist. */
+    private @Nullable ConflictMatrix.Module selectedModule() {
+        int col = table.getSelectedColumn();
+        if (col < 0 || table.getColumnModel().getSelectionModel().isSelectionEmpty()) {
+            return null;
+        }
+        int m = table.convertColumnIndexToModel(col) - 1;
+        return m >= 0 && m < model.modules.size() ? model.modules.get(m) : null;
     }
 
     private void whyThisVersion(ConflictMatrix.Row row, ConflictMatrix.Module module) {
@@ -366,12 +527,10 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         if (row == null) {
             return null;
         }
-        int col = table.getSelectedColumn();
-        if (col >= 1) {
-            ConflictMatrix.Cell c = row.cell(model.modules.get(table.convertColumnIndexToModel(col) - 1));
-            if (c != null && c.getFile() != null) {
-                return Locations.of(c.getFile(), c.getLine());
-            }
+        ConflictMatrix.Module m = selectedModule();
+        ConflictMatrix.Cell c = m == null ? null : row.cell(m);
+        if (c != null && c.getFile() != null) {
+            return Locations.of(c.getFile(), c.getLine());
         }
         return row.getPin() == null ? null : row.getPin().getTarget().getFile().toString();
     }
@@ -437,13 +596,18 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             }
             String suggested = r.getPin() != null ? r.getPin().getVersion() : MavenVersion.max(r.versions());
             boolean deviates = r.isDivergent() && !c.getVersion().equals(suggested);
-            if (deviates && !selected) {
-                setBackground(DetectiveColors.WARNING_BACKGROUND);
+            List<String> vs = r.versions();
+            int group = vs.indexOf(c.getVersion());
+            if (r.isDivergent() && !selected) {
+                // Gleiche Version, gleiche Farbe: Gruppen auf einen Blick; die Zahl steht trotzdem da
+                setBackground(DetectiveColors.versionBackground(group));
             }
             append(c.getVersion(), deviates ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES : SimpleTextAttributes.REGULAR_ATTRIBUTES);
             append("  " + shortSource(c), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
-            setToolTipText(c.sourceLabel() + (c.getScope() != null && !"compile".equals(c.getScope()) ? ", " + c.getScope() : "")
-                    + (c.getFile() == null ? "" : " – " + c.getFile() + ":" + c.getLine()) + " · Doppelklick: Warum diese Version?");
+            setToolTipText((r.isDivergent() ? MavenDetectiveBundle.message("matrix.cell.group", group + 1, vs.size()) + " · " : "")
+                    + c.sourceLabel() + (c.getScope() != null && !"compile".equals(c.getScope()) ? ", " + c.getScope() : "")
+                    + (c.getFile() == null ? "" : " – " + c.getFile() + ":" + c.getLine()) + " · "
+                    + MavenDetectiveBundle.message("matrix.cell.hint"));
         }
 
         private static String shortSource(ConflictMatrix.Cell c) {
