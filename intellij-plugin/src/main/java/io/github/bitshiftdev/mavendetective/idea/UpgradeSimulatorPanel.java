@@ -394,24 +394,25 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         DependenciesPanel.saveUnsavedPoms();
         setStatus(null);
         AnalysisResults.getInstance(project).running(AnalysisResults.Analysis.UPGRADE);
-        simulation.run(c -> compute(project, r), res -> display(res, null));
+        simulation.run(c -> compute(project, r, c), res -> display(res, null));
         fireResult();
     }
 
     @Override
     protected void aborted() {
         AnalysisResults.getInstance(project).aborted(AnalysisResults.Analysis.UPGRADE);
+        fireResult();   // Editor-Tab: „Übernehmen“/„Erneut simulieren“ wieder freigeben
     }
 
     /** Simulation über alle Module (Hintergrund-Thread; liest nur Dateien). */
-    static @Nullable UpgradeSimulator.Result compute(Project project, UpgradeSimulator.Request request) {
+    static @Nullable UpgradeSimulator.Result compute(Project project, UpgradeSimulator.Request request, Cancellation cancel) {
         Path root = IdeMaven.reactorRoot(project);
-        PomLocator locator = DependenciesPanel.locator(project, root);
+        PomLocator locator = DependenciesPanel.locator(project, root, null, cancel);
         List<PomFile> poms = poms(project, locator, root);
         if (poms.isEmpty()) {
             return null;
         }
-        return UpgradeSimulator.simulate(locator, poms, request, IdeMaven.dependencyTrees(project), Cancellation.NONE);
+        return UpgradeSimulator.simulate(locator, poms, request, IdeMaven.dependencyTrees(project), cancel);
     }
 
     private static List<PomFile> poms(Project project, PomLocator locator, @Nullable Path root) {
@@ -477,7 +478,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                         break;
                     }
                     indicator.setText(MavenDetectiveBundle.message("upgrade.fetch.again"));
-                    UpgradeSimulator.Result next = compute(project, r);
+                    UpgradeSimulator.Result next = compute(project, r, indicator::checkCanceled);
                     boolean progress = next != null && !next.getMissing().equals(last.getMissing());
                     last = next;
                     if (!progress) {

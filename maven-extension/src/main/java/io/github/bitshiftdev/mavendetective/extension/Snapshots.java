@@ -32,13 +32,14 @@ final class Snapshots {
      * kommt der Vergleich mit dem letzten grünen zurück, sonst {@code null}. Wirft nie.
      */
     static SnapshotDiff record(SnapshotStore store, MavenExecutionRequest request, MavenExecutionResult result,
-                               String mavenVersion, String projectDirectory, Logger log) {
+                               String mavenVersion, String projectDirectory, Map<String, ? extends Set<String>> resolvedScopes,
+                               Logger log) {
         try {
             if (projectDirectory == null) {
                 return null;
             }
             Path project = Paths.get(projectDirectory);
-            BuildSnapshot current = build(request, result, mavenVersion, projectDirectory)
+            BuildSnapshot current = build(request, result, mavenVersion, projectDirectory, resolvedScopes)
                     .setSuccessful(!result.hasExceptions());
             store.saveLatest(project, current);
             if (!result.hasExceptions()) {
@@ -53,8 +54,12 @@ final class Snapshots {
         }
     }
 
+    /**
+     * @param resolvedScopes groupId:artifactId → Scopes, die die gelaufenen Mojos auflösen ließen; fehlt ein Modul,
+     *                       gilt „unbekannt“ (wie bisher: alles)
+     */
     static BuildSnapshot build(MavenExecutionRequest request, MavenExecutionResult result,
-                               String mavenVersion, String projectDirectory) {
+                               String mavenVersion, String projectDirectory, Map<String, ? extends Set<String>> resolvedScopes) {
         BuildSnapshot s = new BuildSnapshot()
                 .setOrigin(BuildSnapshot.ORIGIN_EXTENSION)
                 .setCreatedAt(SnapshotStore.now())
@@ -101,8 +106,19 @@ final class Snapshots {
             Set<Artifact> artifacts = p.getArtifacts();
             if (artifacts != null && !artifacts.isEmpty()) {
                 m.setDependenciesResolved(true);
+                Set<String> scopes = resolvedScopes == null ? null : resolvedScopes.get(p.getGroupId() + ":" + p.getArtifactId());
+                if (scopes != null) {
+                    m.getResolvedScopes().addAll(scopes);
+                }
                 for (Artifact a : artifacts) {
-                    m.getDependencies().put(key(a.getGroupId(), a.getArtifactId(), a.getClassifier()), a.getBaseVersion());
+                    String k = key(a.getGroupId(), a.getArtifactId(), a.getClassifier());
+                    m.getDependencies().put(k, a.getBaseVersion());
+                    if (a.getScope() != null) {
+                        m.getDependencyScopes().put(k, a.getScope());
+                        if (scopes != null) {
+                            m.getResolvedScopes().add(a.getScope());
+                        }
+                    }
                 }
             } else if (p.getDependencies() != null) {
                 for (Dependency d : p.getDependencies()) {

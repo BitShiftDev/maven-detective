@@ -130,6 +130,54 @@ class SnapshotTest {
         assertEquals(BuildSnapshot.ORIGIN_IDE, store.loadGreen(other, BuildSnapshot.ORIGIN_EXTENSION).getOrigin());
     }
 
+    /** Wie {@link #springBoot}, aufgelöst wie {@code mvn verify} (mit test) bzw. {@code mvn compile} (ohne). */
+    private static BuildSnapshot resolved(String goal) {
+        BuildSnapshot s = springBoot("3.4.1", "21.0.4", "2.18.2");
+        boolean test = "verify".equals(goal);
+        for (BuildSnapshot.Module m : s.getModules().values()) {
+            m.getResolvedScopes().addAll(BuildSnapshot.scopesResolvedBy(test ? "test" : "compile"));
+            m.getDependencyScopes().put("com.fasterxml.jackson.core:jackson-databind", "compile");
+            m.getDependencyScopes().put("org.slf4j:slf4j-api", "compile");
+            if (test) {
+                m.getDependencies().put("org.junit.jupiter:junit-jupiter", "5.10.0");
+                m.getDependencyScopes().put("org.junit.jupiter:junit-jupiter", "test");
+            }
+        }
+        return s;
+    }
+
+    @Test
+    void gruenesCompileNachGruenemVerifyDuenntDieReferenzNichtAus(@TempDir Path tmp) throws Exception {
+        SnapshotStore store = new SnapshotStore(tmp);
+        Path project = Files.createDirectories(tmp.resolve("p"));
+        store.saveGreen(project, resolved("verify"));
+        store.saveGreen(project, resolved("compile"));
+
+        BuildSnapshot green = store.loadGreen(project, BuildSnapshot.ORIGIN_EXTENSION);
+        BuildSnapshot.Module web = green.getModules().get("com.example:web");
+        assertEquals("5.10.0", web.getDependencies().get("org.junit.jupiter:junit-jupiter"));
+        assertTrue(web.covers("test"));
+        assertTrue(SnapshotDiff.compare(green, resolved("verify")).isEmpty(),
+                SnapshotDiff.compare(green, resolved("verify")).lines(5).toString());
+    }
+
+    @Test
+    void nurGemeinsamAufgeloesteScopesWerdenVerglichen() {
+        // Referenz aus einem grünen compile, roter Lauf mit verify: test-Dependencies sind nicht „neu“
+        assertTrue(SnapshotDiff.compare(resolved("compile"), resolved("verify")).isEmpty());
+        // ... und umgekehrt nicht „entfernt“
+        assertTrue(SnapshotDiff.compare(resolved("verify"), resolved("compile")).isEmpty());
+        // echte Änderung im gemeinsamen Scope zählt weiter
+        BuildSnapshot now = resolved("verify");
+        now.getModules().get("com.example:web").getDependencies().put("commons-logging:commons-logging", "1.2");
+        now.getModules().get("com.example:web").getDependencyScopes().put("commons-logging:commons-logging", "compile");
+        assertEquals("Dependency neu: commons-logging:commons-logging 1.2", SnapshotDiff.compare(resolved("compile"), now).lines(5).get(0));
+        // Rundreise über JSON behält die Scopes
+        BuildSnapshot back = BuildSnapshot.fromJson(resolved("compile").toJson());
+        assertFalse(back.getModules().get("com.example:web").covers("test"));
+        assertEquals("compile", back.getModules().get("com.example:web").getDependencyScopes().get("org.slf4j:slf4j-api"));
+    }
+
     @Test
     void shortGreenRunDoesNotThinOutReference(@TempDir Path tmp) throws Exception {
         SnapshotStore store = new SnapshotStore(tmp);

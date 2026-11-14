@@ -7,6 +7,7 @@ import com.intellij.ui.ColoredTreeCellRenderer;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.SearchTextField;
 import com.intellij.ui.SimpleTextAttributes;
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.ExclusionAudit;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
@@ -129,7 +130,7 @@ public final class ExclusionsPanel extends DetectivePanel {
         DependenciesPanel.saveUnsavedPoms();
         AnalysisResults results = AnalysisResults.getInstance(project);
         results.running(AnalysisResults.Analysis.EXCLUSIONS);
-        checker.run(c -> compute(project), audit -> {
+        checker.run(c -> compute(project, c), audit -> {
             result = audit;
             applyFilter();
             results.set(AnalysisResults.Analysis.EXCLUSIONS, summary(audit));
@@ -142,15 +143,15 @@ public final class ExclusionsPanel extends DetectivePanel {
     }
 
     /** Hintergrund-Thread; liest nur POMs. */
-    static @Nullable ExclusionAudit compute(Project project) {
+    static @Nullable ExclusionAudit compute(Project project, Cancellation cancel) {
         Path root = IdeMaven.reactorRoot(project);
-        PomLocator locator = DependenciesPanel.locator(project, root);
+        PomLocator locator = DependenciesPanel.locator(project, root, null, cancel);
         List<PomFile> poms = DuplicateClassesPanel.projectPoms(project, locator, root);
         if (poms.isEmpty()) {
             return null;
         }
         Map<String, DepNode> trees = IdeMaven.dependencyTrees(project);
-        return ExclusionAudit.build(locator, poms, trees);
+        return ExclusionAudit.build(locator, poms, trees, cancel);
     }
 
     static @NotNull AnalysisResults.Summary summary(@Nullable ExclusionAudit audit) {

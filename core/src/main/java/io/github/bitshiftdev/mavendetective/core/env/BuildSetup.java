@@ -174,8 +174,10 @@ public final class BuildSetup {
     }
 
     /**
-     * Vom Wrapper schon entpacktes Maven ({@code ~/.m2/wrapper/dists/apache-maven-X-bin/<hash>/apache-maven-X});
-     * {@code null}, solange der Wrapper es noch nicht geladen hat.
+     * Vom Wrapper schon entpacktes Maven: Wrapper bis 3.2 entpackt nach
+     * {@code ~/.m2/wrapper/dists/apache-maven-X-bin/<hash>/apache-maven-X}, das Skript von 3.3.x
+     * ({@code only-script}, Standard von {@code mvn wrapper:wrapper}) nach
+     * {@code ~/.m2/wrapper/dists/apache-maven-X/<hash>}. {@code null}, solange der Wrapper es noch nicht geladen hat.
      */
     static Path wrapperDistribution(String version, Path userHome, Map<String, String> env) {
         if (version == null) {
@@ -187,7 +189,17 @@ public final class BuildSetup {
         if (base == null) {
             return null;
         }
-        Path dists = base.resolve("wrapper").resolve("dists").resolve("apache-maven-" + version + "-bin");
+        Path root = base.resolve("wrapper").resolve("dists");
+        for (String name : new String[] {"apache-maven-" + version + "-bin", "apache-maven-" + version}) {
+            Path found = unpacked(root.resolve(name), version);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static Path unpacked(Path dists, String version) {
         if (!Files.isDirectory(dists)) {
             return null;
         }

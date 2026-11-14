@@ -27,6 +27,7 @@ import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.TableSpeedSearch;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.table.JBTable;
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 import io.github.bitshiftdev.mavendetective.core.deps.ConflictMatrix;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
@@ -250,7 +251,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         DependenciesPanel.saveUnsavedPoms();
         AnalysisResults results = AnalysisResults.getInstance(project);
         results.running(AnalysisResults.Analysis.CONFLICTS);
-        loader.run(c -> compute(project), m -> {
+        loader.run(c -> compute(project, c), m -> {
             matrix = m;
             applyFilter();
             results.set(AnalysisResults.Analysis.CONFLICTS, summary(m));
@@ -274,8 +275,13 @@ public final class ConflictMatrixPanel extends DetectivePanel {
 
     /** Matrix aus dem IDE-Modell berechnen (Hintergrund-Thread; liest nur Dateien). */
     static @Nullable ConflictMatrix compute(Project project) {
+        return compute(project, Cancellation.NONE);
+    }
+
+    /** Wie oben; {@code cancel} bricht beim nächsten Modul bzw. der nächsten POM ab. */
+    static @Nullable ConflictMatrix compute(Project project, Cancellation cancel) {
         Path root = IdeMaven.reactorRoot(project);
-        PomLocator locator = DependenciesPanel.locator(project, root);
+        PomLocator locator = DependenciesPanel.locator(project, root, null, cancel);
         List<PomFile> poms = new ArrayList<>();
         for (IdeMaven.ModuleRef ref : IdeMaven.modules(project)) {
             PomFile p = locator.load(ref.pom());
@@ -296,7 +302,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             return null;
         }
         Map<String, DepNode> trees = IdeMaven.dependencyTrees(project);
-        return ConflictMatrix.build(locator, root, poms, trees);
+        return ConflictMatrix.build(locator, root, poms, trees, cancel);
     }
 
     /** Sprung aus dem Editor (Code Vision): Zeile {@code g:a} wählen, notfalls nach dem Laden. */

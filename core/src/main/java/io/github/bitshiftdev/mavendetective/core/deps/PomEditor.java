@@ -60,7 +60,7 @@ public final class PomEditor {
         String unit = s.indentUnit(xml);
 
         for (DepEntry e : s.managed) {
-            if (!groupId.equals(e.fields.get("groupId")) || !artifactId.equals(e.fields.get("artifactId"))) {
+            if (!s.is(e.fields, groupId, artifactId)) {
                 continue;
             }
             String type = e.fields.get("type");
@@ -141,11 +141,11 @@ public final class PomEditor {
         DepEntry found = null;
         ExclusionEntry target = null;
         for (DepEntry d : s.deps) {
-            if (d.managed != managed || !groupId.equals(d.fields.get("groupId")) || !artifactId.equals(d.fields.get("artifactId"))) {
+            if (d.managed != managed || !s.is(d.fields, groupId, artifactId)) {
                 continue;
             }
             for (ExclusionEntry e : d.exclusions) {
-                if (target == null && eg.equals(e.fields.get("groupId")) && ea.equals(e.fields.get("artifactId"))) {
+                if (target == null && s.is(e.fields, eg, ea)) {
                     found = d; // bei doppelter Angabe die erste – die zweite wirkt danach weiter
                     target = e;
                 }
@@ -196,12 +196,12 @@ public final class PomEditor {
         }
         String eg = exclusion.substring(0, colon);
         String ea = exclusion.substring(colon + 1);
-        DepEntry found = pick(s.deps, false, groupId, artifactId, classifier, type, false);
+        DepEntry found = pick(s, s.deps, false, groupId, artifactId, classifier, type, false);
         if (found == null || found.range == null) {
             throw new IllegalArgumentException(Texts.t("edit.dependency.not.found", groupId + ":" + artifactId));
         }
         for (ExclusionEntry e : found.exclusions) {
-            if (eg.equals(e.fields.get("groupId")) && ea.equals(e.fields.get("artifactId"))) {
+            if (s.is(e.fields, eg, ea)) {
                 throw new IllegalArgumentException(Texts.t("edit.exclusion.exists", exclusion, groupId + ":" + artifactId));
             }
         }
@@ -240,7 +240,7 @@ public final class PomEditor {
             throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
         for (DepEntry d : s.deps) {
-            if (!d.managed && groupId.equals(d.fields.get("groupId")) && artifactId.equals(d.fields.get("artifactId"))
+            if (!d.managed && s.is(d.fields, groupId, artifactId)
                     && same(classifier, d.fields.get("classifier"))
                     && typeOf(d).equals(type == null || type.isEmpty() ? "jar" : type)) {
                 throw new IllegalArgumentException(Texts.t("edit.dependency.exists", groupId + ":" + artifactId));
@@ -372,7 +372,7 @@ public final class PomEditor {
             what = "Parent " + artifactId;
         } else {
             boolean managed = "dependencyManagement".equals(section);
-            DepEntry found = pick(managed ? s.managed : s.deps, managed, groupId, artifactId, null, null, true);
+            DepEntry found = pick(s, managed ? s.managed : s.deps, managed, groupId, artifactId, null, null, true);
             if (found == null) {
                 throw new IllegalArgumentException(Texts.t("edit.version.not.found", groupId + ":" + artifactId, section));
             }
@@ -572,7 +572,7 @@ public final class PomEditor {
         if (s.projectEnd < 0) {
             throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
-        DepEntry found = pick(s.deps, false, groupId, artifactId, classifier, type, false);
+        DepEntry found = pick(s, s.deps, false, groupId, artifactId, classifier, type, false);
         if (found == null || found.range == null) {
             throw new IllegalArgumentException(Texts.t("edit.dependency.not.found", groupId + ":" + artifactId));
         }
@@ -585,14 +585,14 @@ public final class PomEditor {
      * sie, bevorzugt ohne Classifier und vom Typ {@code jar} – sonst würde bei {@code jar} +
      * {@code test-jar} der falsche Eintrag getroffen. {@code needsVersion}: nur Einträge mit {@code <version>}.
      */
-    private static DepEntry pick(List<DepEntry> entries, boolean managed, String groupId, String artifactId, String classifier,
+    private static DepEntry pick(Scan s, List<DepEntry> entries, boolean managed, String groupId, String artifactId, String classifier,
                                  String type, boolean needsVersion) {
         boolean wantClassifier = classifier != null && !classifier.isEmpty();
         boolean wantType = type != null && !type.isEmpty();
         DepEntry found = null;
         int foundRank = Integer.MAX_VALUE;
         for (DepEntry d : entries) {
-            if (d.managed != managed || !groupId.equals(d.fields.get("groupId")) || !artifactId.equals(d.fields.get("artifactId"))
+            if (d.managed != managed || !s.is(d.fields, groupId, artifactId)
                     || needsVersion && d.ranges.get("version") == null) {
                 continue;
             }
@@ -813,6 +813,7 @@ public final class PomEditor {
         Range range;
     }
 
+    private static final java.util.regex.Pattern EXPRESSION = java.util.regex.Pattern.compile("\\$\\{([^}$]+)}");
     private static final String DEPENDENCY = "project/dependencies/dependency";
     private static final String MANAGED_DEPENDENCY = "project/dependencyManagement/dependencies/dependency";
 
@@ -824,6 +825,10 @@ public final class PomEditor {
         final List<DepEntry> managed = new ArrayList<DepEntry>();
         final List<DepEntry> deps = new ArrayList<DepEntry>();
         final Map<String, Range> properties = new HashMap<String, Range>();
+        /** {@code project/groupId}, {@code artifactId}, {@code version} als Text. */
+        final Map<String, String> projectFields = new HashMap<String, String>();
+        /** Werte unter {@code project/properties} (bei doppelter Angabe die letzte). */
+        final Map<String, String> propertyValues = new HashMap<String, String>();
         /** Kinder von {@code project/parent}: Text bzw. Bereich. */
         final Map<String, String> parentFields = new HashMap<String, String>();
         final Map<String, Range> parentRanges = new HashMap<String, Range>();
@@ -947,6 +952,8 @@ public final class PomEditor {
         private void onClose(String path, String name, Range r, String xml, DepEntry entry, ExclusionEntry exclusion) {
             if ("project".equals(path)) {
                 projectEnd = r.contentEnd;
+            } else if (isChild(path, "project") && ("groupId".equals(name) || "artifactId".equals(name) || "version".equals(name))) {
+                projectFields.put(name, xml.substring(r.contentStart, r.contentEnd).trim());
             } else if (isChild(path, "project/parent")) {
                 parentFields.put(name, xml.substring(r.contentStart, r.contentEnd).trim());
                 parentRanges.put(name, r);
@@ -966,10 +973,77 @@ public final class PomEditor {
                 }
             } else if (exclusion != null && isChild(path, (entry.managed ? MANAGED_DEPENDENCY : DEPENDENCY) + "/exclusions/exclusion")) {
                 exclusion.fields.put(name, xml.substring(r.contentStart, r.contentEnd).trim());
-            } else if (path.startsWith("project/properties/") && path.indexOf('/', "project/properties/".length()) < 0
-                    && !properties.containsKey(name)) {
+            } else if (path.startsWith("project/properties/") && path.indexOf('/', "project/properties/".length()) < 0) {
+                // doppelt definiert: Maven nimmt die letzte, also wird auch die letzte geändert
                 properties.put(name, r);
+                propertyValues.put(name, xml.substring(r.contentStart, r.contentEnd).trim());
             }
+        }
+
+        /**
+         * Steht in {@code fields} dieses g:a? Ausdrücke wie {@code ${project.groupId}} werden mit dieser POM
+         * aufgelöst (Projekt, Parent, eigene Properties). Bleibt in der groupId ein Ausdruck offen (Property aus
+         * dem Parent), reicht die gleiche artifactId.
+         */
+        boolean is(Map<String, String> fields, String groupId, String artifactId) {
+            String a = fields.get("artifactId");
+            if (!artifactId.equals(a) && !artifactId.equals(resolve(a))) {
+                return false;
+            }
+            String g = fields.get("groupId");
+            if (groupId.equals(g)) {
+                return true;
+            }
+            String resolved = resolve(g);
+            return resolved != null && (groupId.equals(resolved) || resolved.contains("${"));
+        }
+
+        /** Setzt bekannte Ausdrücke ein; Unbekanntes bleibt stehen. */
+        String resolve(String value) {
+            if (value == null || !value.contains("${")) {
+                return value;
+            }
+            String v = value;
+            for (int round = 0; round < 5 && v.contains("${"); round++) {
+                java.util.regex.Matcher m = EXPRESSION.matcher(v);
+                StringBuffer sb = new StringBuffer();
+                boolean changed = false;
+                while (m.find()) {
+                    String known = lookup(m.group(1).trim());
+                    changed |= known != null;
+                    m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(known == null ? m.group() : known));
+                }
+                m.appendTail(sb);
+                v = sb.toString();
+                if (!changed) {
+                    break;
+                }
+            }
+            return v;
+        }
+
+        private String lookup(String name) {
+            String n = name.startsWith("pom.") ? "project." + name.substring(4) : name;
+            if ("project.groupId".equals(n) || "groupId".equals(n)) {
+                return first(projectFields.get("groupId"), parentFields.get("groupId"));
+            }
+            if ("project.artifactId".equals(n) || "artifactId".equals(n)) {
+                return projectFields.get("artifactId");
+            }
+            if ("project.version".equals(n) || "version".equals(n)) {
+                return first(projectFields.get("version"), parentFields.get("version"));
+            }
+            if ("project.parent.groupId".equals(n)) {
+                return parentFields.get("groupId");
+            }
+            if ("project.parent.version".equals(n)) {
+                return parentFields.get("version");
+            }
+            return propertyValues.get(name);
+        }
+
+        private static String first(String a, String b) {
+            return a != null && !a.isEmpty() ? a : b;
         }
 
         private static boolean isChild(String path, String parent) {

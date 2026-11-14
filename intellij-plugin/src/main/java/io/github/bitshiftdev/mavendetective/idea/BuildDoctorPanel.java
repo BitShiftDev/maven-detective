@@ -305,6 +305,7 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
             if (comparison != null) {
                 setupView.show(comparison);
             } else {
+                setupView.unavailable();
                 setStatus(MavenDetectiveBundle.message("doctor.setup.failed"));
             }
         });
@@ -327,6 +328,17 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
     @Override
     public void back() {
         showCardView();
+    }
+
+    /** Abbruch oder Fehler: Ansichten, die noch „lädt …“ zeigen, auf „kein Ergebnis“ setzen. */
+    @Override
+    protected void aborted() {
+        if (!setupCheck.isRunning()) {
+            setupView.unavailable();
+        }
+        if (!preflightCheck.isRunning()) {
+            preflightView.unavailable();
+        }
     }
 
     @Override

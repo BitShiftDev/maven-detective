@@ -122,6 +122,13 @@ final class PreflightView extends JPanel {
         repaint();
     }
 
+    /** Kein Ergebnis (Fehler oder Abbruch); ein schon gezeigtes bleibt stehen. */
+    void unavailable() {
+        if (model.isEmpty()) {
+            list.getEmptyText().setText(MavenDetectiveBundle.message("preflight.none"));
+        }
+    }
+
     void show(@NotNull Preflight.Report report) {
         shown = report;
         Preflight.Item keep = list.getSelectedValue();

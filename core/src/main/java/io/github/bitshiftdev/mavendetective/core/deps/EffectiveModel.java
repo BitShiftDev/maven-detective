@@ -4,6 +4,7 @@ import io.github.bitshiftdev.mavendetective.core.Texts;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -124,6 +125,9 @@ public final class EffectiveModel {
     private final List<ImportStep> missingImports = new ArrayList<ImportStep>();
     private final List<String> notes = new ArrayList<String>();
     private boolean building;
+    /** {@code groupId:artifactId} → verwaltete Einträge in Reihenfolge; nach dem Bau einmal angelegt. */
+    private Map<String, List<Managed>> managedByGa;
+    private Map<String, List<Declared>> declaredByGa;
 
     EffectiveModel(PomFile pom, PomLocator locator) {
         this.pom = pom;
@@ -232,12 +236,8 @@ public final class EffectiveModel {
         if (exact != null) {
             return exact;
         }
-        for (Managed m : managed.values()) {
-            if (groupId.equals(m.dep.getGroupId()) && artifactId.equals(m.dep.getArtifactId())) {
-                return m;
-            }
-        }
-        return null;
+        List<Managed> candidates = managedFor(groupId, artifactId);
+        return candidates.isEmpty() ? null : candidates.get(0);
     }
 
     /**
@@ -253,16 +253,41 @@ public final class EffectiveModel {
             return exact;
         }
         boolean open = t.contains("${") || c.contains("${");
-        for (Managed m : managed.values()) {
-            if (!groupId.equals(m.dep.getGroupId()) || !artifactId.equals(m.dep.getArtifactId())) {
-                continue;
-            }
+        for (Managed m : managedFor(groupId, artifactId)) {
             String mc = m.dep.getClassifier();
             if (open || m.dep.getType().contains("${") || mc != null && mc.contains("${")) {
                 return m;
             }
         }
         return null;
+    }
+
+    /** Einträge mit diesem g:a über einen Index statt einer Suche über alle (BOMs haben Tausende). */
+    private List<Managed> managedFor(String groupId, String artifactId) {
+        if (building) {
+            List<Managed> out = new ArrayList<Managed>();
+            for (Managed m : managed.values()) {
+                if (groupId.equals(m.dep.getGroupId()) && artifactId.equals(m.dep.getArtifactId())) {
+                    out.add(m);
+                }
+            }
+            return out;
+        }
+        if (managedByGa == null) {
+            Map<String, List<Managed>> index = new HashMap<String, List<Managed>>();
+            for (Managed m : managed.values()) {
+                String key = m.dep.getGroupId() + ":" + m.dep.getArtifactId();
+                List<Managed> list = index.get(key);
+                if (list == null) {
+                    list = new ArrayList<Managed>(1);
+                    index.put(key, list);
+                }
+                list.add(m);
+            }
+            managedByGa = index;
+        }
+        List<Managed> found = managedByGa.get(groupId + ":" + artifactId);
+        return found == null ? Collections.<Managed>emptyList() : found;
     }
 
     /** Verwalteter Eintrag für {@code dep} über den vollen Schlüssel, siehe {@link #managed(String, String, String, String)}. */
@@ -276,12 +301,25 @@ public final class EffectiveModel {
         if (exact != null) {
             return exact;
         }
-        for (Declared d : dependencies.values()) {
-            if (groupId.equals(d.dep.getGroupId()) && artifactId.equals(d.dep.getArtifactId())) {
-                return d;
+        if (declaredByGa == null || building) {
+            Map<String, List<Declared>> index = new HashMap<String, List<Declared>>();
+            for (Declared d : dependencies.values()) {
+                String key = d.dep.getGroupId() + ":" + d.dep.getArtifactId();
+                List<Declared> list = index.get(key);
+                if (list == null) {
+                    list = new ArrayList<Declared>(1);
+                    index.put(key, list);
+                }
+                list.add(d);
             }
+            if (building) {
+                List<Declared> l = index.get(groupId + ":" + artifactId);
+                return l == null ? null : l.get(0);
+            }
+            declaredByGa = index;
         }
-        return null;
+        List<Declared> found = declaredByGa.get(groupId + ":" + artifactId);
+        return found == null ? null : found.get(0);
     }
 
     /** Wo eine Property definiert ist (das Kind gewinnt), oder {@code null}. */

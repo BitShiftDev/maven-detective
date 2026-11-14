@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Managed;
@@ -235,10 +236,17 @@ public final class ConflictMatrix {
      * @param trees       aufgelöste Bäume je {@code groupId:artifactId} des Moduls (darf leer sein)
      */
     public static ConflictMatrix build(PomLocator locator, Path projectRoot, List<PomFile> poms, Map<String, DepNode> trees) {
+        return build(locator, projectRoot, poms, trees, Cancellation.NONE);
+    }
+
+    /** Wie oben; {@code cancel} wird je Modul und je Zeile geprüft (IDE: „Stop“). */
+    public static ConflictMatrix build(PomLocator locator, Path projectRoot, List<PomFile> poms, Map<String, DepNode> trees,
+                                       Cancellation cancel) {
         Path root = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
         List<Module> modules = new ArrayList<Module>();
         Map<String, Row> rows = new TreeMap<String, Row>();
         for (PomFile pom : poms) {
+            cancel.check();
             DepNode tree = trees == null ? null : trees.get(pom.getGroupId() + ":" + pom.getArtifactId());
             EffectiveModel model = locator.model(pom);
             Module module = new Module(pom, tree != null);
@@ -260,6 +268,7 @@ public final class ConflictMatrix {
         List<Row> out = new ArrayList<Row>(rows.values());
         for (Row row : out) {
             if (row.isDivergent()) {
+                cancel.check();
                 pin(locator, root, row);
             }
         }

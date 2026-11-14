@@ -1,17 +1,22 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import java.math.BigInteger;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
+import java.util.Deque;
+import java.util.Iterator;
 import java.util.Locale;
 
 /**
- * Versionsvergleich nach Mavens Regeln (vereinfachte {@code ComparableVersion}): Zahlen numerisch,
- * Qualifier in der Reihenfolge {@code alpha < beta < milestone < rc < snapshot < (final) < sp},
- * unbekannte Qualifier dahinter alphabetisch. {@code 1.0 == 1.0.0 == 1.0-final}.
+ * Versionsvergleich wie Mavens {@code ComparableVersion} (maven-artifact 3.9): {@code .} trennt Elemente,
+ * {@code -} und der Wechsel zwischen Ziffern und Buchstaben öffnen eine Unterliste, Zahlen werden beliebig groß
+ * numerisch verglichen, Qualifier in der Reihenfolge {@code alpha < beta < milestone < rc < snapshot < (final) < sp},
+ * unbekannte dahinter alphabetisch. Nullen und „final“ am Ende jeder (Unter-)Liste zählen nicht:
+ * {@code 1.0 == 1 == 1-final}, {@code 1.0.0-rc1 == 1-rc1}; {@code 1.0-1 < 1.0.1}.
  *
- * <p>Gebraucht, um bei der Konflikt-Matrix die höchste Version vorzuschlagen – Maven selbst wählt
- * nicht die höchste (nearest wins), der Vorschlag ist nur der übliche Ausweg.
+ * <p>Gebraucht, um bei der Konflikt-Matrix die höchste Version vorzuschlagen und im Upgrade-Simulator Auf- von
+ * Abwärts zu unterscheiden – Maven selbst wählt nicht die höchste (nearest wins).
  */
 public final class MavenVersion {
 
@@ -24,6 +29,12 @@ public final class MavenVersion {
     };
 
     private static final String[] QUALIFIERS = {"alpha", "beta", "milestone", "rc", "snapshot", "", "sp"};
+    private static final String RELEASE = "5";
+
+    /** Unterliste; leer zählt wie ein fehlendes Element. */
+    @SuppressWarnings("serial")
+    private static final class Items extends ArrayList<Object> {
+    }
 
     private MavenVersion() {
     }
@@ -32,18 +43,7 @@ public final class MavenVersion {
         if (a == null || b == null) {
             return a == null ? (b == null ? 0 : -1) : 1;
         }
-        List<Object> x = tokens(a);
-        List<Object> y = tokens(b);
-        int n = Math.max(x.size(), y.size());
-        for (int i = 0; i < n; i++) {
-            Object p = i < x.size() ? x.get(i) : null;
-            Object q = i < y.size() ? y.get(i) : null;
-            int c = compareItem(p, q);
-            if (c != 0) {
-                return c;
-            }
-        }
-        return 0;
+        return signum(compareItem(parse(a), parse(b)));
     }
 
     /** Die höchste der Versionen oder {@code null} bei leerer Eingabe. */
@@ -57,110 +57,173 @@ public final class MavenVersion {
         return best;
     }
 
-    /** Zahl ({@link Long}) oder Qualifier ({@link String}, kleingeschrieben und normalisiert). */
-    static List<Object> tokens(String version) {
-        List<Object> out = new ArrayList<Object>();
-        String v = version.trim().toLowerCase(Locale.ROOT);
-        StringBuilder cur = new StringBuilder();
-        boolean digits = false;
+    private static int signum(int c) {
+        return c < 0 ? -1 : c > 0 ? 1 : 0;
+    }
+
+    // ------------------------------------------------------------------ Zerlegen
+
+    /** Elemente: {@link BigInteger} (Zahl), {@link String} (Qualifier, normalisiert), {@link Items} (Unterliste). */
+    static Items parse(String version) {
+        String v = version.trim().toLowerCase(Locale.ENGLISH);
+        Items root = new Items();
+        Items list = root;
+        Deque<Items> stack = new ArrayDeque<Items>();
+        stack.push(list);
+        boolean digit = false;
+        int start = 0;
         for (int i = 0; i < v.length(); i++) {
             char c = v.charAt(i);
-            if (c == '.' || c == '-' || c == '_' || c == '+') {
-                flush(out, cur, digits);
-                continue;
-            }
-            boolean d = Character.isDigit(c);
-            if (cur.length() > 0 && d != digits) {
-                flush(out, cur, digits);
-            }
-            digits = d;
-            cur.append(c);
-        }
-        flush(out, cur, digits);
-        // Nullen und „final“ am Ende zählen nicht: 1.0 == 1 == 1-final
-        while (!out.isEmpty()) {
-            Object last = out.get(out.size() - 1);
-            if (Long.valueOf(0).equals(last) || "".equals(last)) {
-                out.remove(out.size() - 1);
+            if (c == '.' || c == '-') {
+                list.add(i == start ? BigInteger.ZERO : item(digit, v.substring(start, i)));
+                start = i + 1;
+                if (c == '-') {
+                    Items sub = new Items();
+                    list.add(sub);
+                    list = sub;
+                    stack.push(list);
+                }
+            } else if (Character.isDigit(c)) {
+                if (!digit && i > start) {
+                    // Buchstaben direkt vor Ziffern: "rc1" → [rc, [1]]
+                    if (!list.isEmpty()) {
+                        Items sub = new Items();
+                        list.add(sub);
+                        list = sub;
+                        stack.push(list);
+                    }
+                    list.add(qualifier(v.substring(start, i), true));
+                    start = i;
+                    Items sub = new Items();
+                    list.add(sub);
+                    list = sub;
+                    stack.push(list);
+                }
+                digit = true;
             } else {
-                break;
+                if (digit && i > start) {
+                    // Ziffern direkt vor Buchstaben: "1jre" → [1, [jre]]
+                    list.add(item(true, v.substring(start, i)));
+                    start = i;
+                    Items sub = new Items();
+                    list.add(sub);
+                    list = sub;
+                    stack.push(list);
+                }
+                digit = false;
             }
         }
-        return out;
-    }
-
-    private static void flush(List<Object> out, StringBuilder cur, boolean digits) {
-        if (cur.length() == 0) {
-            return;
-        }
-        String s = cur.toString();
-        cur.setLength(0);
-        if (digits) {
-            try {
-                out.add(Long.valueOf(s.length() > 18 ? s.substring(0, 18) : s));
-            } catch (NumberFormatException e) {
-                out.add(s);
+        if (v.length() > start) {
+            if (!digit && !list.isEmpty()) {
+                Items sub = new Items();
+                list.add(sub);
+                list = sub;
+                stack.push(list);
             }
-        } else {
-            out.add(normalize(s));
+            list.add(item(digit, v.substring(start)));
         }
+        while (!stack.isEmpty()) {
+            normalize(stack.pop());
+        }
+        return root;
     }
 
-    private static String normalize(String q) {
-        if ("a".equals(q)) {
-            return "alpha";
-        }
-        if ("b".equals(q)) {
-            return "beta";
-        }
-        if ("m".equals(q)) {
-            return "milestone";
-        }
-        if ("cr".equals(q)) {
-            return "rc";
+    private static Object item(boolean digit, String text) {
+        return digit ? new BigInteger(text) : qualifier(text, false);
+    }
+
+    /** Kurzformen {@code a/b/m} nur direkt vor einer Ziffer ({@code 1.0-a1}); Aliase wie Maven. */
+    private static String qualifier(String q, boolean followedByDigit) {
+        if (followedByDigit && q.length() == 1) {
+            switch (q.charAt(0)) {
+                case 'a': return "alpha";
+                case 'b': return "beta";
+                case 'm': return "milestone";
+                default: break;
+            }
         }
         if ("ga".equals(q) || "final".equals(q) || "release".equals(q)) {
             return "";
         }
-        return q;
+        return "cr".equals(q) ? "rc" : q;
     }
 
-    /** {@code null} steht für ein fehlendes Element (wie 0 bzw. Release). */
+    /** Nullen, „final“ und leere Listen am Ende entfernen; hört beim ersten echten Wert auf, der keine Liste ist. */
+    private static void normalize(Items list) {
+        for (int i = list.size() - 1; i >= 0; i--) {
+            Object last = list.get(i);
+            if (isNull(last)) {
+                list.remove(i);
+            } else if (!(last instanceof Items)) {
+                break;
+            }
+        }
+    }
+
+    private static boolean isNull(Object item) {
+        if (item instanceof BigInteger) {
+            return ((BigInteger) item).signum() == 0;
+        }
+        if (item instanceof String) {
+            return RELEASE.equals(comparable((String) item));
+        }
+        return ((Items) item).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ Vergleichen
+
+    /** {@code q == null} steht für ein fehlendes Element. */
     private static int compareItem(Object p, Object q) {
-        if (p == null && q == null) {
+        if (p instanceof BigInteger) {
+            BigInteger n = (BigInteger) p;
+            if (q == null) {
+                return n.signum() == 0 ? 0 : 1;
+            }
+            return q instanceof BigInteger ? n.compareTo((BigInteger) q) : 1;   // 1.1 > 1-sp, 1.1 > 1-1
+        }
+        if (p instanceof String) {
+            String s = comparable((String) p);
+            if (q == null) {
+                return s.compareTo(RELEASE);
+            }
+            return q instanceof String ? s.compareTo(comparable((String) q)) : -1;   // 1.any < 1.1, 1.any < 1-1
+        }
+        Items list = (Items) p;
+        if (q == null) {
+            for (Object item : list) {
+                int c = compareItem(item, null);
+                if (c != 0) {
+                    return c;
+                }
+            }
             return 0;
         }
-        if (p == null) {
-            return -compareItem(q, null);
+        if (q instanceof BigInteger) {
+            return -1;   // 1-1 < 1.0.x
         }
-        if (p instanceof Long) {
-            if (q == null) {
-                return ((Long) p) == 0L ? 0 : 1;
+        if (q instanceof String) {
+            return 1;    // 1-1 > 1-sp
+        }
+        Iterator<Object> left = list.iterator();
+        Iterator<Object> right = ((Items) q).iterator();
+        while (left.hasNext() || right.hasNext()) {
+            Object l = left.hasNext() ? left.next() : null;
+            Object r = right.hasNext() ? right.next() : null;
+            int c = l == null ? (r == null ? 0 : -compareItem(r, null)) : compareItem(l, r);
+            if (c != 0) {
+                return c;
             }
-            if (q instanceof Long) {
-                return ((Long) p).compareTo((Long) q);
-            }
-            return 1; // Zahl schlägt Qualifier: 1.1 > 1-rc
         }
-        String s = (String) p;
-        if (q instanceof Long) {
-            return -1;
-        }
-        String t = q == null ? "" : (String) q;
-        int i = rank(s);
-        int j = rank(t);
-        if (i != j) {
-            return i < j ? -1 : 1;
-        }
-        return i == QUALIFIERS.length ? s.compareTo(t) : 0;
+        return 0;
     }
 
-    private static int rank(String q) {
+    /** Bekannte Qualifier als Rang ("0"…"6"), unbekannte als "7-name" – verglichen als Text wie in Maven. */
+    private static String comparable(String qualifier) {
         for (int i = 0; i < QUALIFIERS.length; i++) {
-            if (QUALIFIERS[i].equals(q)) {
-                return i;
+            if (QUALIFIERS[i].equals(qualifier)) {
+                return String.valueOf(i);
             }
         }
-        return QUALIFIERS.length;
+        return QUALIFIERS.length + "-" + qualifier;
     }
 }

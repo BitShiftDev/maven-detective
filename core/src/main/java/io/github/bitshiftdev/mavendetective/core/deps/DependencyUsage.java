@@ -354,6 +354,8 @@ public final class DependencyUsage {
     public static DependencyUsage build(PomLocator locator, List<PomFile> poms, Map<String, DepNode> trees, JarIndex index,
                                         UsageSource source, Cancellation cancellation) {
         Cancellation cancel = cancellation == null ? Cancellation.NONE : cancellation;
+        // jedes target/classes nur einmal je Lauf lesen, nicht einmal je Modul, das davon abhängt
+        JarIndex runIndex = index == null ? null : index.forRun();
         Map<String, PomFile> reactor = new HashMap<String, PomFile>();
         for (PomFile p : poms) {
             reactor.put(p.getGroupId() + ":" + p.getArtifactId(), p);
@@ -366,7 +368,7 @@ public final class DependencyUsage {
             cancel.check();
             DepNode tree = trees == null ? null : trees.get(pom.getGroupId() + ":" + pom.getArtifactId());
             ModuleClasspath cp = ModuleClasspath.of(locator, pom, tree, reactor);
-            out.add(analyze(cp, source.usages(pom), index, reactor, cancel));
+            out.add(analyze(cp, source.usages(pom), runIndex, reactor, cancel));
         }
         return new DependencyUsage(out);
     }
@@ -601,7 +603,7 @@ public final class DependencyUsage {
         boolean bundle = false;
         if (viaEntry != null && viaEntry.getFile() != null && index != null) {
             try {
-                bundle = index.read(viaEntry.getFile()).size() == 0;
+                bundle = !index.hasClasses(viaEntry.getFile());
             } catch (IOException ex) {
                 bundle = false;
             } catch (RuntimeException ex) {

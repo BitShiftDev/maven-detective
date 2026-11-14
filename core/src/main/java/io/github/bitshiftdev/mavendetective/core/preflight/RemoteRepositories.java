@@ -81,8 +81,8 @@ final class RemoteRepositories {
         Map<String, Repo> repos = new LinkedHashMap<String, Repo>();
         repos.put(CENTRAL_ID, new Repo(CENTRAL_ID, CENTRAL_URL, null, -1));
         if (ctx.hasRootPom()) {
-            for (ProjectPoms.Pom pom : ctx.projectPoms().all()) {
-                for (Repo r : declared(pom)) {
+            for (ProjectPoms.Pom pom : ctx.modulePoms()) {
+                for (Repo r : declared(pom, ctx.code(pom, false))) {
                     Repo known = repos.get(r.id);
                     if (known == null || known.pom == null) {
                         repos.put(r.id, r);
@@ -146,16 +146,16 @@ final class RemoteRepositories {
         return u;
     }
 
-    /** {@code <repository>}/{@code <pluginRepository>} einer POM mit Zeile der URL. */
-    static List<Repo> declared(ProjectPoms.Pom pom) {
+    /** {@code <repository>}/{@code <pluginRepository>} einer POM mit Zeile der URL; {@code lines} ohne Kommentare. */
+    static List<Repo> declared(ProjectPoms.Pom pom, List<String> lines) {
         List<Repo> out = new ArrayList<Repo>();
         boolean inList = false;
         boolean inRepo = false;
         String id = null;
         String url = null;
         int urlLine = -1;
-        for (int i = 0; i < pom.lines.size(); i++) {
-            String line = pom.lines.get(i);
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
             if (line.contains("<repositories>") || line.contains("<pluginRepositories>")) {
                 inList = true;
             }
@@ -223,6 +223,16 @@ final class RemoteRepositories {
             ctx.options.cancellation.check();
             String url = r.effectiveUrl();
             if (reachable.containsKey(url)) {
+                continue;
+            }
+            if (MavenSettings.unresolved(url)) {
+                // Platzhalter, den nur die Build-Umgebung kennt: nicht anfragen, kein Urteil (fehlt in reachable)
+                Item item = Item.info(Topic.REPOSITORY, Texts.t("preflight.remote.unresolved", r.label(), url));
+                if (r.mirrorSettings != null && r.mirror != null && url.equals(r.mirror.url)) {
+                    int line = Math.max(1, r.mirrorSettings.lineOf(url));
+                    item.evidence(Evidence.setting(url, r.mirrorSettings.getFile().toString(), line));
+                }
+                items.add(item);
                 continue;
             }
             RepositoryProbe.Response response = probe.head(slash(url), proxyFor(ctx, url), ctx.options.timeoutMillis);

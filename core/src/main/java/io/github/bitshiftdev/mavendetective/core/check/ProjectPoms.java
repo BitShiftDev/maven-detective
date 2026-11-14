@@ -86,7 +86,7 @@ public final class ProjectPoms {
         public final Pom pom;
         public final int line;
 
-        Location(Pom pom, int line) {
+        public Location(Pom pom, int line) {
             this.pom = pom;
             this.line = line;
         }
@@ -206,6 +206,74 @@ public final class ProjectPoms {
             }
         }
         return out;
+    }
+
+    /**
+     * Zeilen mit ausgeblendeten Kommentaren (und auf Wunsch {@code <profiles>}-Blöcken): jedes ausgeblendete Zeichen wird
+     * zum Leerzeichen, Zeilen und Spalten bleiben gleich. Für Textsuchen, die nur wirksame Angaben sehen sollen.
+     */
+    public static List<String> codeLines(List<String> lines, boolean withoutProfiles) {
+        List<String> out = new ArrayList<String>(lines.size());
+        boolean comment = false;
+        int profiles = 0;
+        for (String line : lines) {
+            StringBuilder sb = new StringBuilder(line.length());
+            int i = 0;
+            while (i < line.length()) {
+                if (comment) {
+                    int end = line.indexOf("-->", i);
+                    int stop = end < 0 ? line.length() : end + 3;
+                    blank(sb, stop - i);
+                    i = stop;
+                    comment = end < 0;
+                } else if (line.startsWith("<!--", i)) {
+                    comment = true;
+                    blank(sb, 4);
+                    i += 4;
+                } else if (withoutProfiles && opens(line, i, "profiles")) {
+                    profiles++;
+                    blank(sb, 1);
+                    i++;
+                } else if (profiles > 0 && line.startsWith("</profiles>", i)) {
+                    profiles--;
+                    blank(sb, 11);
+                    i += 11;
+                } else if (profiles > 0) {
+                    blank(sb, 1);
+                    i++;
+                } else {
+                    sb.append(line.charAt(i++));
+                }
+            }
+            out.add(sb.toString());
+        }
+        return out;
+    }
+
+    /** {@code <name>} oder {@code <name attr…>} an dieser Stelle, nicht selbstschließend. */
+    private static boolean opens(String line, int i, String name) {
+        if (!line.startsWith("<" + name, i)) {
+            return false;
+        }
+        int j = i + 1 + name.length();
+        if (j >= line.length()) {
+            return true;
+        }
+        char c = line.charAt(j);
+        if (c == '>') {
+            return true;
+        }
+        if (!Character.isWhitespace(c)) {
+            return false;
+        }
+        int close = line.indexOf('>', j);
+        return close < 0 || line.charAt(close - 1) != '/';
+    }
+
+    private static void blank(StringBuilder sb, int n) {
+        for (int k = 0; k < n; k++) {
+            sb.append(' ');
+        }
     }
 
     private static void parseCoordinates(Pom pom) {

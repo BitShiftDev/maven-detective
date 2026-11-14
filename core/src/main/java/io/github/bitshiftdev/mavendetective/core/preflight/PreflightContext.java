@@ -11,14 +11,21 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Was alle Prüfungen eines Preflights brauchen, einmal gelesen. */
 final class PreflightContext {
 
+    private static final int MAX_MODULES = 500;
     private static final Pattern LOCAL_REPO_ARG = Pattern.compile("-Dmaven\\.repo\\.local=(\\S+)");
 
     final Path project;
@@ -28,6 +35,8 @@ final class PreflightContext {
     private ProjectPoms projectPoms;
     private PomLocator locator;
     private List<PomFile> poms;
+    private List<ProjectPoms.Pom> modulePoms;
+    private final Map<String, List<String>> code = new HashMap<String, List<String>>();
     private boolean settingsLoaded;
     private MavenSettings userSettings;
     private MavenSettings globalSettings;
@@ -99,13 +108,13 @@ final class PreflightContext {
         }
         settingsLoaded = true;
         try {
-            userSettings = MavenSettings.read(userSettingsFile());
+            userSettings = MavenSettings.read(userSettingsFile(), options.env, options.userHome);
         } catch (IOException e) {
             userSettingsError = e.getMessage();
             userSettingsErrorLine = line(e);
         }
         try {
-            globalSettings = MavenSettings.read(globalSettingsFile());
+            globalSettings = MavenSettings.read(globalSettingsFile(), options.env, options.userHome);
         } catch (IOException e) {
             globalSettingsError = e.getMessage();
             globalSettingsErrorLine = line(e);
@@ -175,7 +184,7 @@ final class PreflightContext {
         for (MavenSettings s : settings()) {
             String repo = s.getLocalRepository();
             if (repo != null && !repo.isEmpty()) {
-                return Paths.get(repo.replace("${user.home}", String.valueOf(options.userHome)));
+                return Paths.get(repo);
             }
         }
         return options.userHome == null ? null : options.userHome.resolve(".m2").resolve("repository");
@@ -195,12 +204,74 @@ final class PreflightContext {
         return locator;
     }
 
-    /** Lesbare POMs des Projekts, Wurzel zuerst. */
+    /**
+     * POMs des Reactors: die Wurzel und rekursiv ihre {@code <modules>} (ohne Profile), Wurzel zuerst. Andere
+     * {@code pom.xml} unterhalb des Projekts (Beispiele, Testdaten) zählen nicht. Unlesbare POMs stehen drin, damit der
+     * Preflight sie meldet, ihre Module aber nicht.
+     */
+    List<ProjectPoms.Pom> modulePoms() {
+        if (modulePoms == null) {
+            modulePoms = new ArrayList<ProjectPoms.Pom>();
+            if (hasRootPom()) {
+                Set<Path> seen = new HashSet<Path>();
+                Deque<Path> queue = new ArrayDeque<Path>();
+                queue.add(rootPom().toAbsolutePath().normalize());
+                while (!queue.isEmpty() && modulePoms.size() < MAX_MODULES) {
+                    options.cancellation.check();
+                    Path file = queue.poll();
+                    if (!seen.add(file)) {
+                        continue;
+                    }
+                    ProjectPoms.Pom pom = projectPoms().read(file);
+                    if (pom == null) {
+                        continue;
+                    }
+                    modulePoms.add(pom);
+                    PomFile f = pom.parseable ? locator().load(file) : null;
+                    if (f == null) {
+                        continue;
+                    }
+                    for (String module : f.getModules()) {
+                        Path target = file.getParent().resolve(module.trim()).normalize();
+                        queue.add(Files.isDirectory(target) ? target.resolve("pom.xml") : target);
+                    }
+                }
+            }
+        }
+        return modulePoms;
+    }
+
+    /** Zeilen der POM ohne Kommentare, auf Wunsch auch ohne {@code <profiles>} (siehe {@link ProjectPoms#codeLines}). */
+    List<String> code(ProjectPoms.Pom pom, boolean withoutProfiles) {
+        String key = pom.file + (withoutProfiles ? "|p" : "|");
+        List<String> lines = code.get(key);
+        if (lines == null) {
+            lines = ProjectPoms.codeLines(pom.lines, withoutProfiles);
+            code.put(key, lines);
+        }
+        return lines;
+    }
+
+    /** Stellen in Reactor-POMs, die den Text außerhalb von Kommentaren und Profilen enthalten. */
+    List<ProjectPoms.Location> findText(String needle) {
+        List<ProjectPoms.Location> out = new ArrayList<ProjectPoms.Location>();
+        for (ProjectPoms.Pom pom : modulePoms()) {
+            List<String> lines = code(pom, true);
+            for (int i = 0; i < lines.size(); i++) {
+                if (lines.get(i).contains(needle)) {
+                    out.add(new ProjectPoms.Location(pom, i + 1));
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Lesbare POMs des Reactors, Wurzel zuerst. */
     List<PomFile> poms() {
         if (poms == null) {
             poms = new ArrayList<PomFile>();
-            for (ProjectPoms.Pom p : projectPoms().all()) {
-                PomFile f = locator().load(p.file);
+            for (ProjectPoms.Pom p : modulePoms()) {
+                PomFile f = p.parseable ? locator().load(p.file) : null;
                 if (f != null) {
                     poms.add(f);
                 }

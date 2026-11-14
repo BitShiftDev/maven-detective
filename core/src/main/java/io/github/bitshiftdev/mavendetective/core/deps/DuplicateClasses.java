@@ -277,6 +277,8 @@ public final class DuplicateClasses {
     public static DuplicateClasses build(PomLocator locator, List<PomFile> poms, Map<String, DepNode> trees, JarIndex index,
                                          Cancellation cancellation) {
         Cancellation cancel = cancellation == null ? Cancellation.NONE : cancellation;
+        // jedes target/classes nur einmal je Lauf lesen, nicht einmal je Modul, das davon abhängt
+        JarIndex runIndex = index == null ? null : index.forRun();
         Map<String, PomFile> reactor = new HashMap<String, PomFile>();
         for (PomFile p : poms) {
             reactor.put(p.getGroupId() + ":" + p.getArtifactId(), p);
@@ -287,7 +289,7 @@ public final class DuplicateClasses {
                 continue;
             }
             DepNode tree = trees == null ? null : trees.get(pom.getGroupId() + ":" + pom.getArtifactId());
-            out.add(analyze(ModuleClasspath.of(locator, pom, tree, reactor), index, cancel));
+            out.add(analyze(ModuleClasspath.of(locator, pom, tree, reactor), runIndex, cancel));
         }
         return new DuplicateClasses(out);
     }

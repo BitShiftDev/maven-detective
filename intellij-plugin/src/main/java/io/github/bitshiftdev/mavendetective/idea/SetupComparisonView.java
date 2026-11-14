@@ -82,9 +82,17 @@ final class SetupComparisonView extends JPanel {
 
     void loading() {
         shown = null;
+        table.getEmptyText().setText(MavenDetectiveBundle.message("doctor.setup.loading"));
         summary.setText("");
         model.set(null);
         showHints();
+    }
+
+    /** Kein Vergleich (Fehler oder Abbruch); ein schon gezeigter bleibt stehen. */
+    void unavailable() {
+        if (shown == null) {
+            table.getEmptyText().setText(MavenDetectiveBundle.message("doctor.setup.none"));
+        }
     }
 
     void show(@NotNull SetupComparison c) {

@@ -84,11 +84,31 @@ public final class SnapshotStore {
             BuildSnapshot.Module old = e.getValue();
             if (now == null) {
                 next.getModules().put(e.getKey(), old);
-            } else if (!now.isDependenciesResolved() && old.isDependenciesResolved()
-                    && now.getEffectivePomHash() != null && now.getEffectivePomHash().equals(old.getEffectivePomHash())) {
+                continue;
+            }
+            boolean samePom = now.getEffectivePomHash() != null && now.getEffectivePomHash().equals(old.getEffectivePomHash());
+            if (!samePom || !old.isDependenciesResolved()) {
+                continue;
+            }
+            if (!now.isDependenciesResolved()) {
                 now.getDependencies().clear();
                 now.getDependencies().putAll(old.getDependencies());
+                now.getDependencyScopes().clear();
+                now.getDependencyScopes().putAll(old.getDependencyScopes());
+                now.getResolvedScopes().clear();
+                now.getResolvedScopes().addAll(old.getResolvedScopes());
                 now.setDependenciesResolved(true);
+            } else if (!now.getResolvedScopes().isEmpty()) {
+                // z. B. grünes compile nach grünem verify: test-Dependencies des alten Laufs behalten
+                for (java.util.Map.Entry<String, String> d : old.getDependencies().entrySet()) {
+                    String scope = old.getDependencyScopes().get(d.getKey());
+                    if (scope != null && !now.covers(scope) && !now.getDependencies().containsKey(d.getKey())) {
+                        now.getDependencies().put(d.getKey(), d.getValue());
+                        now.getDependencyScopes().put(d.getKey(), scope);
+                    }
+                }
+                // alte Fassung ohne Scope-Angaben: nichts übernehmbar, die Scopes dieses Laufs bleiben
+                now.getResolvedScopes().addAll(old.getResolvedScopes());
             }
         }
     }

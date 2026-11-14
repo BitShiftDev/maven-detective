@@ -16,9 +16,14 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Die Teile einer {@code settings.xml}, die Build Doctor prüft. */
 public final class MavenSettings {
+
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}$]+)}");
 
     public static final class Mirror {
         public final String id;
@@ -122,11 +127,22 @@ public final class MavenSettings {
         this.localRepository = localRepository;
     }
 
-    /** Liest die Datei; liefert {@code null}, wenn sie fehlt. Wirft bei ungültigem XML. */
+    /** Liest die Datei mit Umgebung und System-Properties dieser JVM (siehe {@link #read(Path, Map, Path)}). */
     public static MavenSettings read(Path file) throws IOException {
+        return read(file, System.getenv(), null);
+    }
+
+    /**
+     * Liest die Datei; liefert {@code null}, wenn sie fehlt. Wirft bei ungültigem XML. Platzhalter in den Werten werden
+     * wie in Maven ersetzt: {@code ${env.X}} aus {@code env}, {@code ${user.home}} aus {@code userHome} (sonst
+     * System-Property), andere aus den System-Properties. Was sich nicht auflösen lässt, bleibt stehen (wie in Maven);
+     * Aufrufer behandeln Werte mit {@code ${} als unbekannt.
+     */
+    public static MavenSettings read(Path file, Map<String, String> env, Path userHome) throws IOException {
         if (file == null || !Files.isRegularFile(file)) {
             return null;
         }
+        Interpolator in = new Interpolator(env, userHome);
         byte[] bytes = Files.readAllBytes(file);
         List<String> lines = new ArrayList<String>();
         Collections.addAll(lines, new String(bytes, StandardCharsets.UTF_8).split("\\r?\\n", -1));
@@ -145,33 +161,85 @@ public final class MavenSettings {
         Element root = doc.getDocumentElement();
         List<String> servers = new ArrayList<String>();
         for (Element server : children(child(root, "servers"), "server")) {
-            servers.add(text(child(server, "id")));
+            servers.add(in.text(child(server, "id")));
         }
         List<Mirror> mirrors = new ArrayList<Mirror>();
         for (Element m : children(child(root, "mirrors"), "mirror")) {
-            mirrors.add(new Mirror(text(child(m, "id")), text(child(m, "url")), text(child(m, "mirrorOf"))));
+            mirrors.add(new Mirror(in.text(child(m, "id")), in.text(child(m, "url")), in.text(child(m, "mirrorOf"))));
         }
         List<String> groups = new ArrayList<String>();
         for (Element g : children(child(root, "pluginGroups"), "pluginGroup")) {
-            groups.add(text(g));
+            groups.add(in.text(g));
         }
         List<Proxy> proxies = new ArrayList<Proxy>();
         for (Element p : children(child(root, "proxies"), "proxy")) {
-            String active = text(child(p, "active"));
-            String protocol = text(child(p, "protocol"));
-            String port = text(child(p, "port"));
+            String active = in.text(child(p, "active"));
+            String protocol = in.text(child(p, "protocol"));
+            String port = in.text(child(p, "port"));
             int portNumber = 8080;
             try {
                 portNumber = port == null ? 8080 : Integer.parseInt(port);
             } catch (NumberFormatException ignored) {
                 // Mavens Standard
             }
-            proxies.add(new Proxy(text(child(p, "id")), active == null || Boolean.parseBoolean(active),
-                    protocol == null ? "http" : protocol, text(child(p, "host")), portNumber, text(child(p, "nonProxyHosts"))));
+            String host = in.text(child(p, "host"));
+            proxies.add(new Proxy(in.text(child(p, "id")), active == null || Boolean.parseBoolean(active),
+                    protocol == null ? "http" : protocol, unresolved(host) ? null : host, portNumber,
+                    in.text(child(p, "nonProxyHosts"))));
         }
-        String offlineText = text(child(root, "offline"));
-        Boolean offline = offlineText == null ? null : Boolean.valueOf(offlineText.trim());
-        return new MavenSettings(file, lines, servers, mirrors, groups, proxies, offline, text(child(root, "localRepository")));
+        String offlineText = in.text(child(root, "offline"));
+        Boolean offline = offlineText == null || unresolved(offlineText) ? null : Boolean.valueOf(offlineText.trim());
+        String localRepository = in.text(child(root, "localRepository"));
+        return new MavenSettings(file, lines, servers, mirrors, groups, proxies, offline,
+                unresolved(localRepository) ? null : localRepository);
+    }
+
+    /** Wert mit Platzhalter, den weder Umgebung noch System-Properties auflösen: Maven sieht etwas anderes als wir. */
+    public static boolean unresolved(String value) {
+        return value != null && value.contains("${");
+    }
+
+    /** Ersetzt Platzhalter wie Mavens Settings-Interpolation (Umgebung, System-Properties). */
+    private static final class Interpolator {
+        private final Map<String, String> env;
+        private final Path userHome;
+
+        Interpolator(Map<String, String> env, Path userHome) {
+            this.env = env;
+            this.userHome = userHome;
+        }
+
+        String text(Element e) {
+            return interpolate(MavenSettings.text(e));
+        }
+
+        String interpolate(String value) {
+            if (value == null || !value.contains("${")) {
+                return value;
+            }
+            Matcher m = PLACEHOLDER.matcher(value);
+            StringBuffer out = new StringBuffer();
+            while (m.find()) {
+                String replacement = lookup(m.group(1).trim());
+                m.appendReplacement(out, Matcher.quoteReplacement(replacement == null ? m.group() : replacement));
+            }
+            m.appendTail(out);
+            return out.toString();
+        }
+
+        private String lookup(String name) {
+            if (name.startsWith("env.")) {
+                return env == null ? null : env.get(name.substring(4));
+            }
+            if ("user.home".equals(name) && userHome != null) {
+                return userHome.toString();
+            }
+            try {
+                return System.getProperty(name);
+            } catch (SecurityException e) {
+                return null;
+            }
+        }
     }
 
     public Path getFile() { return file; }

@@ -133,7 +133,7 @@ final class PreflightChecks {
                             runner > 0 ? String.valueOf(runner) : null)));
         }
 
-        boolean toolchains = !ctx.projectPoms().findText("maven-toolchains-plugin").isEmpty();
+        boolean toolchains = !ctx.findText("maven-toolchains-plugin").isEmpty();
         Requirement release = requiredRelease(ctx);
         if (release != null && runner > 0 && runner < release.version) {
             Item item = toolchains
@@ -148,7 +148,7 @@ final class PreflightChecks {
         }
         if (toolchains) {
             Path file = ctx.options.userHome == null ? null : ctx.options.userHome.resolve(".m2").resolve("toolchains.xml");
-            ProjectPoms.Location where = ctx.projectPoms().findText("maven-toolchains-plugin").get(0);
+            ProjectPoms.Location where = ctx.findText("maven-toolchains-plugin").get(0);
             if (file == null || !Files.isRegularFile(file)) {
                 items.add(Item.error(Topic.JDK, Texts.t("preflight.toolchains.missing"))
                         .evidence(Evidence.file(Texts.t("preflight.toolchains.used"), where.pom.file.toString(), where.line))
@@ -198,9 +198,10 @@ final class PreflightChecks {
                 break;   // release schlägt target/source
             }
         }
-        for (ProjectPoms.Pom pom : ctx.projectPoms().all()) {
-            for (int i = 0; i < pom.lines.size(); i++) {
-                Matcher m = RELEASE_TAG.matcher(pom.lines.get(i));
+        for (ProjectPoms.Pom pom : ctx.modulePoms()) {
+            List<String> lines = ctx.code(pom, true);
+            for (int i = 0; i < lines.size(); i++) {
+                Matcher m = RELEASE_TAG.matcher(lines.get(i));
                 if (!m.find()) {
                     continue;
                 }
@@ -211,7 +212,7 @@ final class PreflightChecks {
                 }
                 int feature = BuildSetup.javaMajor(value);
                 if (feature > 0 && (best == null || feature > best.version)) {
-                    best = new Requirement(feature, pom.lines.get(i).trim(), pom.file, i + 1);
+                    best = new Requirement(feature, lines.get(i).trim(), pom.file, i + 1);
                 }
             }
         }
@@ -235,8 +236,8 @@ final class PreflightChecks {
     /** Versionsbereiche aus Enforcer-Regeln ({@code requireJavaVersion}, {@code requireMavenVersion}). */
     static List<Requirement> enforcerRules(PreflightContext ctx, String rule) {
         List<Requirement> out = new ArrayList<Requirement>();
-        for (ProjectPoms.Location l : ctx.projectPoms().findText("<" + rule + ">")) {
-            List<String> lines = l.pom.lines;
+        for (ProjectPoms.Location l : ctx.findText("<" + rule + ">")) {
+            List<String> lines = ctx.code(l.pom, true);
             for (int i = l.line - 1; i < lines.size() && i < l.line + 8; i++) {
                 if (lines.get(i).contains("</" + rule + ">")) {
                     break;
@@ -323,7 +324,7 @@ final class PreflightChecks {
             items.add(Item.error(Topic.PROJECT, Texts.t("preflight.project.no.pom", ctx.project)));
             return items;
         }
-        List<ProjectPoms.Pom> all = ctx.projectPoms().all();
+        List<ProjectPoms.Pom> all = ctx.modulePoms();
         for (ProjectPoms.Pom p : all) {
             if (p.parseable) {
                 continue;

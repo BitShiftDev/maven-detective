@@ -115,7 +115,7 @@ public final class Environment {
         }
         String fromSettings = userSettings() == null ? null : userSettings().getLocalRepository();
         if (fromSettings != null && !fromSettings.isEmpty()) {
-            return Paths.get(fromSettings.replace("${user.home}", String.valueOf(userHome)));
+            return Paths.get(fromSettings);
         }
         return userHome == null ? null : userHome.resolve(".m2").resolve("repository");
     }
@@ -153,12 +153,12 @@ public final class Environment {
         }
         settingsLoaded = true;
         try {
-            userSettings = MavenSettings.read(userSettingsFile);
+            userSettings = MavenSettings.read(userSettingsFile, env, userHome);
         } catch (IOException e) {
             settingsError = e.getMessage();
         }
         try {
-            globalSettings = MavenSettings.read(globalSettingsFile);
+            globalSettings = MavenSettings.read(globalSettingsFile, env, userHome);
         } catch (IOException e) {
             settingsError = settingsError == null ? e.getMessage() : settingsError;
         }

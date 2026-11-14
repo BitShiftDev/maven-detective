@@ -312,9 +312,8 @@ public final class PomFile {
                 }
                 dep = null;
             } else if (path.size() == 3 && "project/properties".equals(p.substring(0, p.lastIndexOf('/')))) {
-                if (!pom.properties.containsKey(qName)) {
-                    pom.properties.put(qName, new Property(qName, value, elementLine));
-                }
+                // doppelt definiert: wie Maven gewinnt die letzte Angabe
+                pom.properties.put(qName, new Property(qName, value, elementLine));
             } else if ("project/groupId".equals(p)) {
                 pom.groupId = value;
             } else if ("project/artifactId".equals(p)) {

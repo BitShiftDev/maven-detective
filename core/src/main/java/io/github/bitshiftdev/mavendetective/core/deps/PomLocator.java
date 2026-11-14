@@ -27,8 +27,12 @@ public final class PomLocator {
     private final Map<Path, PomFile> cache = new HashMap<Path, PomFile>();
     private final Map<Path, EffectiveModel> models = new HashMap<Path, EffectiveModel>();
     private final Set<String> missing = new LinkedHashSet<String>();
+    /** Reactor-POMs nach {@code groupId:artifactId}; lazy, siehe {@link #reactor(String, String)}. */
+    private Map<String, List<ReactorPom>> reactorIndex;
     /** POMs, deren Inhalt nur im Speicher geändert ist (Upgrade-Simulation); gehen vor die Platte. */
     private final Map<Path, PomFile> overrides;
+    /** Wenn gesetzt: jede gelesene POM und jede Datei eines benutzten Modells (Kette, BOMs) landet hier. */
+    private Set<Path> touched;
 
     /**
      * @param projectRoot     Wurzel des Reactors (darf {@code null} sein)
@@ -61,12 +65,19 @@ public final class PomLocator {
         this.localRepository = base.localRepository;
         this.shared = base.shared;
         this.overrides = overrides;
+        // gelesene, unveränderte POMs weiterverwenden (BOMs mit Tausenden Einträgen nicht neu parsen);
+        // effektive Modelle nicht – sie können von einer geänderten Datei abhängen
+        for (Map.Entry<Path, PomFile> e : base.cache.entrySet()) {
+            if (!overrides.containsKey(e.getKey())) {
+                cache.put(e.getKey(), e.getValue());
+            }
+        }
     }
 
     /**
      * Ein Locator, der dieselben POMs findet, für die angegebenen Dateien aber den übergebenen Text
-     * liest statt der Platte – „was wäre, wenn die POM so aussähe?“ (Modul A6). Der eigene Cache
-     * startet leer, damit kein effektives Modell der alten Fassung übrig bleibt.
+     * liest statt der Platte – „was wäre, wenn die POM so aussähe?“ (Modul A6). Gelesene POMs werden
+     * übernommen, effektive Modelle nicht, damit keines der alten Fassung übrig bleibt.
      *
      * @throws IllegalArgumentException wenn ein Text kein gültiges XML ist
      */
@@ -85,6 +96,33 @@ public final class PomLocator {
 
     public Path getLocalRepository() { return localRepository; }
 
+    /**
+     * Ab jetzt jede POM merken, die gelesen oder über ein Modell (Parent-Kette, BOM-Importe) benutzt wird;
+     * {@code null} beendet das. Damit weiß die Upgrade-Simulation, welche Module eine Änderung überhaupt sehen.
+     * Nicht thread-sicher (wie der ganze Locator).
+     */
+    public void recordTouched(Set<Path> sink) {
+        this.touched = sink;
+    }
+
+    private void touch(EffectiveModel m, Set<EffectiveModel> seen) {
+        if (!seen.add(m)) {
+            return;
+        }
+        for (PomFile p : m.getChain()) {
+            touched.add(p.getFile());
+        }
+        for (EffectiveModel.ImportStep step : m.getImports()) {
+            if (step.bom != null) {
+                touched.add(step.bom.getFile());
+                EffectiveModel bom = models.get(step.bom.getFile());
+                if (bom != null) {
+                    touch(bom, seen);
+                }
+            }
+        }
+    }
+
     /** Koordinaten, deren POM weder im Projekt noch im lokalen Repository lag. */
     public List<String> getMissing() {
         return Collections.unmodifiableList(new ArrayList<String>(missing));
@@ -95,6 +133,9 @@ public final class PomLocator {
         Path key = file.toAbsolutePath().normalize();
         if (Files.isDirectory(key)) {
             key = key.resolve("pom.xml");
+        }
+        if (touched != null) {
+            touched.add(key);
         }
         if (cache.containsKey(key)) {
             return cache.get(key);
@@ -127,6 +168,9 @@ public final class PomLocator {
             models.put(pom.getFile(), m);
             m.build();
         }
+        if (touched != null) {
+            touch(m, new java.util.HashSet<EffectiveModel>());
+        }
         return m;
     }
 
@@ -146,20 +190,26 @@ public final class PomLocator {
         return byCoordinates(child.getParentGroupId(), child.getParentArtifactId(), child.getParentVersion());
     }
 
-    /** POM zu Koordinaten: erst Reactor, dann lokales Repository. */
+    /**
+     * POM zu Koordinaten: erst Reactor, dann lokales Repository. Reactor-POMs mit Ausdruck in der Version
+     * (CI-friendly {@code ${revision}}) werden im eigenen Modell interpoliert; bleibt dort oder in der verlangten
+     * Version ein {@code ${…}} offen, reicht {@code groupId:artifactId} (wie Mavens Reactor).
+     */
     public PomFile byCoordinates(String groupId, String artifactId, String version) {
         if (groupId == null || artifactId == null || version == null) {
             return null;
         }
-        for (ProjectPoms.Pom p : reactor.all()) {
-            if (artifactId.equals(p.artifactId) && groupId.equals(p.effectiveGroupId()) && version.equals(p.effectiveVersion())) {
-                PomFile f = load(p.file);
+        boolean open = version.contains("${");
+        for (ReactorPom r : reactor(groupId, artifactId)) {
+            String v = reactorVersion(r);
+            if (open || version.equals(v) || v == null || v.contains("${")) {
+                PomFile f = load(r.pom.file);
                 if (f != null) {
                     return f;
                 }
             }
         }
-        if (localRepository != null && !version.contains("${")) {
+        if (localRepository != null && !open) {
             Path dir = localRepository;
             for (String segment : groupId.split("\\.")) {
                 dir = dir.resolve(segment);
@@ -171,6 +221,67 @@ public final class PomLocator {
         }
         missing.add(groupId + ":" + artifactId + ":" + version);
         return null;
+    }
+
+    /** Eine POM des Reactors mit (einmal) interpolierter Version. */
+    private static final class ReactorPom {
+        final ProjectPoms.Pom pom;
+        String version;
+        boolean resolved;
+        boolean resolving;
+
+        ReactorPom(ProjectPoms.Pom pom) {
+            this.pom = pom;
+        }
+    }
+
+    private List<ReactorPom> reactor(String groupId, String artifactId) {
+        if (reactorIndex == null) {
+            Map<String, List<ReactorPom>> index = new HashMap<String, List<ReactorPom>>();
+            for (ProjectPoms.Pom p : reactor.all()) {
+                if (p.artifactId == null || p.effectiveGroupId() == null) {
+                    continue;
+                }
+                String key = p.effectiveGroupId() + ":" + p.artifactId;
+                List<ReactorPom> list = index.get(key);
+                if (list == null) {
+                    list = new ArrayList<ReactorPom>(1);
+                    index.put(key, list);
+                }
+                list.add(new ReactorPom(p));
+            }
+            reactorIndex = index;
+        }
+        List<ReactorPom> found = reactorIndex.get(groupId + ":" + artifactId);
+        return found == null ? Collections.<ReactorPom>emptyList() : found;
+    }
+
+    /**
+     * Version einer Reactor-POM; {@code ${revision}} usw. im Modell der POM selbst aufgelöst. Während das Modell
+     * gebaut wird (Parent im Reactor über Koordinaten), gilt die rohe Version – dann vergleicht der Aufrufer nur g:a.
+     */
+    private String reactorVersion(ReactorPom r) {
+        if (r.resolved || r.resolving) {
+            return r.resolved ? r.version : r.pom.effectiveVersion();
+        }
+        String v = r.pom.effectiveVersion();
+        if (v != null && v.contains("${")) {
+            r.resolving = true;
+            try {
+                PomFile f = load(r.pom.file);
+                if (f != null) {
+                    String interpolated = model(f).interpolate(v).value;
+                    if (interpolated != null) {
+                        v = interpolated;
+                    }
+                }
+            } finally {
+                r.resolving = false;
+            }
+        }
+        r.version = v;
+        r.resolved = true;
+        return v;
     }
 
     private static boolean matches(PomFile p, String groupId, String artifactId, String version) {

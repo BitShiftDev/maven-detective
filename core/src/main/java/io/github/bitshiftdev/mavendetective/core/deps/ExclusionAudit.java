@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Interpolated;
@@ -168,8 +169,14 @@ public final class ExclusionAudit {
      *              für den Hinweis, dass ein ausgeschlossenes Artifact über einen anderen Pfad doch kommt
      */
     public static ExclusionAudit build(PomLocator locator, List<PomFile> poms, Map<String, DepNode> trees) {
+        return build(locator, poms, trees, Cancellation.NONE);
+    }
+
+    /** Wie oben; {@code cancel} wird je Modul geprüft (IDE: „Stop“). */
+    public static ExclusionAudit build(PomLocator locator, List<PomFile> poms, Map<String, DepNode> trees, Cancellation cancel) {
         List<Finding> out = new ArrayList<Finding>();
         for (PomFile pom : poms) {
+            cancel.check();
             DepNode tree = trees == null ? null : trees.get(pom.getGroupId() + ":" + pom.getArtifactId());
             out.addAll(audit(locator, pom, tree));
         }

@@ -33,6 +33,13 @@
 - Network paths from a log (`\\host\share\…`) are never opened, so a foreign log cannot trigger an SMB connection on Windows.
 - The preflight network check never sends credentials, not even through the IDE's own authenticator.
 - Notifications show texts with angle brackets such as `<server>` instead of swallowing them. The English UI no longer shows German leftovers such as "→ guava raus".
+- Preflight: commented-out settings, settings inside `<profiles>` and `pom.xml` files that are not modules of the build (examples, test data) no longer turn the light red. Placeholders in `settings.xml` such as `${env.NEXUS_URL}` or `${user.home}` are resolved like Maven does; a mirror address that stays unresolved is not requested and gets no verdict. Maven installed by the Maven Wrapper 3.3.x (`only-script`) is found, so its global `settings.xml` counts again.
+- CI-friendly versions (`${revision}`): sibling modules of the reactor are found instead of reported as missing, so trees, "Why this version?", the upgrade simulator and class origin see their dependencies.
+- Version comparison now follows Maven's `ComparableVersion` exactly (for example `1.0-1 < 1.0.1`, `1.0.0-rc1 == 1.0-rc1`, very long numbers); the conflict matrix and the upgrade simulator no longer mix up versions or call an upgrade a downgrade.
+- POM fixes find dependencies declared with expressions such as `${project.groupId}`. A property defined twice counts with its last value, like in Maven – for "Why this version?" and when it is changed.
+- "Changes since the last green build": a short green run such as `mvn compile` no longer drops test dependencies from the reference, and only scopes both runs resolved are compared – no more invented "new dependency: junit".
+- Stopping an analysis ends its loading indicator and "running" state at once; the analyses also stop computing. Errors – including `OutOfMemoryError` – no longer leave a page, the setup tile, the preflight or the upgrade editor tab spinning or greyed out.
+- Faster analyses in large reactors: `target/classes` of reactor modules is read once per run and afterwards only when class files change (duplicate classes, unused/undeclared dependencies, live inspection); lookups in dependency management and the reactor are indexed; the upgrade simulator reuses parsed POMs, only resolves modules again that see a changed POM and can be stopped.
 
 ### Distribution
 

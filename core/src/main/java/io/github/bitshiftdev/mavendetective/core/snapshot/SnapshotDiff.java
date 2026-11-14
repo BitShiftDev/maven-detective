@@ -75,7 +75,7 @@ public final class SnapshotDiff {
             map(local, Change.Area.PROPERTY, null, g.getVersionProperties(), c.getVersionProperties(), false);
             map(local, Change.Area.PLUGIN, null, g.getPlugins(), c.getPlugins(), false);
             boolean comparable = sameOrigin && g.isDependenciesResolved() == c.isDependenciesResolved();
-            map(local, Change.Area.DEPENDENCY, null, g.getDependencies(), c.getDependencies(), comparable);
+            dependencies(local, g, c, comparable);
             if (local.isEmpty() && sameOrigin && g.getEffectivePomHash() != null && c.getEffectivePomHash() != null
                     && !g.getEffectivePomHash().equals(c.getEffectivePomHash())) {
                 local.add(new Change(Change.Area.EFFECTIVE_POM, key, Texts.t("changes.green.state"), Texts.t("changes.changed")));
@@ -158,6 +158,33 @@ public final class SnapshotDiff {
                 continue;
             }
             add(out, new Change(area, k, b, a), module);
+        }
+    }
+
+    /**
+     * Dependencies vergleichen. Neu/weg nur, wenn beide Läufe gleich aufgelöst haben und beide den Scope der
+     * Dependency gesehen haben – ein grünes {@code compile} kennt keine test-Dependencies, ein rotes {@code verify}
+     * schon; das ist keine Änderung.
+     */
+    private static void dependencies(List<Change> out, BuildSnapshot.Module g, BuildSnapshot.Module c, boolean comparable) {
+        Set<String> keys = new TreeSet<String>(g.getDependencies().keySet());
+        keys.addAll(c.getDependencies().keySet());
+        for (String k : keys) {
+            String b = g.getDependencies().get(k);
+            String a = c.getDependencies().get(k);
+            if (eq(a, b)) {
+                continue;
+            }
+            if (a == null || b == null) {
+                String scope = g.getDependencyScopes().get(k);
+                if (scope == null) {
+                    scope = c.getDependencyScopes().get(k);
+                }
+                if (!comparable || !g.covers(scope) || !c.covers(scope)) {
+                    continue;
+                }
+            }
+            add(out, new Change(Change.Area.DEPENDENCY, k, b, a), null);
         }
     }
 

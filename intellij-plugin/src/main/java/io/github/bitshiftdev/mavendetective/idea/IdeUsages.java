@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.application.ReadAction;
@@ -71,10 +72,21 @@ final class IdeUsages {
                         return u;
                     })
                     .inSmartMode(project)
+                    // „Stop“ greift auch, während auf das Ende der Indizierung gewartet wird
+                    .expireWhen(() -> isCancelled(cancel))
                     .executeSynchronously();
             usages.addAll(one);
         }
         return usages;
+    }
+
+    private static boolean isCancelled(Cancellation cancel) {
+        try {
+            cancel.check();
+            return false;
+        } catch (ProcessCanceledException e) {
+            return true;
+        }
     }
 
     /** Quelldateien (auch Test und erzeugte) des Moduls. Read-Action. */

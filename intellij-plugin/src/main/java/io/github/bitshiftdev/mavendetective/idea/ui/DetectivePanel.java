@@ -20,6 +20,7 @@ import com.intellij.openapi.actionSystem.UiDataProvider;
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.diagnostic.ControlFlowException;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.progress.ProcessCanceledException;
@@ -372,8 +373,8 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
     protected void aborted() {
     }
 
-    /** Rechnung mit Ausnahme beendet; Standard: protokollieren und in der Statuszeile nennen. */
-    protected void failed(@NotNull RuntimeException e) {
+    /** Rechnung mit Ausnahme (auch {@link Error}) beendet; Standard: protokollieren und in der Statuszeile nennen. */
+    protected void failed(@NotNull Throwable e) {
         LOG.warn("Maven Detective: " + getClass().getSimpleName() + " fehlgeschlagen", e);
         setStatus(MavenDetectiveBundle.message("status.failed", String.valueOf(e.getMessage())));
     }
@@ -402,13 +403,31 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
 
     /**
      * Rechnet im Hintergrund und liefert das Ergebnis auf dem EDT. Ein neuerer Lauf derselben
-     * Aufgabe, „Abbrechen“ oder das Schließen der Seite verwerfen ältere Ergebnisse.
+     * Aufgabe, „Abbrechen“ oder das Schließen der Seite verwerfen ältere Ergebnisse. Ladeanzeige und
+     * „läuft“ enden sofort beim Abbruch – nicht erst, wenn die verworfene Rechnung fertig ist – und
+     * auch dann, wenn die Rechnung mit einem {@link Error} endet.
      */
     public final class Background {
         private final @Nls @Nullable String loadingText;
         private volatile int generation;
-        /** Gestartete, noch nicht beendete Läufe (nur EDT). */
-        private int running;
+        /** Läufe, deren Ladeanzeige noch steht (nur EDT). */
+        private final List<Run> active = new ArrayList<>();
+
+        /** Ein Lauf; gibt Ladeanzeige und Zähler genau einmal frei (nur EDT). */
+        private final class Run {
+            private boolean released;
+
+            void release() {
+                if (released) {
+                    return;
+                }
+                released = true;
+                active.remove(this);
+                if (loadingText != null) {
+                    stopOverlay();
+                }
+            }
+        }
 
         private Background(@Nls @Nullable String loadingText) {
             this.loadingText = loadingText;
@@ -416,7 +435,8 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
 
         public <T> void run(@NotNull Function<Cancellation, T> work, @NotNull Consumer<T> done) {
             int gen = ++generation;
-            running++;
+            Run token = new Run();
+            active.add(token);
             if (loadingText != null) {
                 startOverlay(loadingText);
             }
@@ -427,42 +447,50 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
             };
             ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 T result = null;
-                RuntimeException error = null;
+                Throwable error = null;
                 boolean cancelled = false;
                 try {
                     result = work.apply(check);
-                } catch (ProcessCanceledException e) {
-                    cancelled = true;
-                } catch (RuntimeException e) {
-                    error = e;
-                }
-                T r = result;
-                RuntimeException err = error;
-                boolean stop = cancelled;
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    running--;
-                    if (loadingText != null) {
-                        stopOverlay();
-                    }
-                    if (stop || gen != generation) {
-                        return;
-                    }
-                    if (err != null) {
-                        failed(err);
-                        aborted();
+                } catch (Throwable e) {
+                    if (e instanceof ControlFlowException) {
+                        cancelled = true;
                     } else {
-                        done.accept(r);
+                        error = e;
                     }
-                }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
+                } finally {
+                    T r = result;
+                    Throwable err = error;
+                    boolean stop = cancelled;
+                    // immer zurückmelden, sonst stünden Ladeanzeige und „läuft“ für immer
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        token.release();
+                        if (stop || gen != generation) {
+                            return;
+                        }
+                        if (err != null) {
+                            failed(err);
+                            aborted();
+                        } else {
+                            done.accept(r);
+                        }
+                    }, ModalityState.defaultModalityState(), o -> disposed || project.isDisposed());
+                }
+                if (error instanceof Error) {
+                    throw (Error) error;   // nach der Rückmeldung an die Plattform weiterreichen
+                }
             });
         }
 
         public boolean isRunning() {
-            return running > 0;
+            return !active.isEmpty();
         }
 
+        /** Verwirft laufende Rechnungen und gibt ihre Ladeanzeige sofort frei (EDT). */
         public void cancel() {
             generation++;
+            for (Run r : new ArrayList<>(active)) {
+                r.release();
+            }
         }
 
         /** Neue Generation für Arbeit außerhalb von {@link #run} (z. B. {@code Task.Backgroundable}). */

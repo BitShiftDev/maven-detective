@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -506,8 +507,18 @@ public final class UpgradeSimulator {
             projectFiles.add(p.getFile());
         }
         Map<Path, DependencyResolver.Tree> before = new LinkedHashMap<Path, DependencyResolver.Tree>();
+        // je Modul die POMs, die seine Auflösung gelesen hat: nur wer eine geänderte sieht, wird neu aufgelöst
+        Map<Path, Set<Path>> touched = new HashMap<Path, Set<Path>>();
         for (PomFile p : poms) {
-            before.put(p.getFile(), DependencyResolver.resolve(locator, p, cancel));
+            cancel.check();
+            Set<Path> t = new HashSet<Path>();
+            locator.recordTouched(t);
+            try {
+                before.put(p.getFile(), DependencyResolver.resolve(locator, p, cancel));
+            } finally {
+                locator.recordTouched(null);
+            }
+            touched.put(p.getFile(), t);
         }
 
         Map<String, Step> steps = new LinkedHashMap<String, Step>();
@@ -548,7 +559,10 @@ public final class UpgradeSimulator {
             if (changedPom == null) {
                 continue;
             }
-            DependencyResolver.Tree a = DependencyResolver.resolve(after, changedPom, cancel);
+            Set<Path> seen = touched.get(p.getFile());
+            boolean affected = seen == null || !java.util.Collections.disjoint(seen, changed.keySet());
+            // unberührte Module: derselbe Baum, keine zweite Auflösung und kein zweiter Baum im Speicher
+            DependencyResolver.Tree a = affected ? DependencyResolver.resolve(after, changedPom, cancel) : b;
             ModuleResult m = new ModuleResult(p, b.getRoot(), a.getRoot());
             diff(m);
             for (String miss : a.getMissing()) {

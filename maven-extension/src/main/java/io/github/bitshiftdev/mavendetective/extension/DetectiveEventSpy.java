@@ -88,6 +88,8 @@ public class DetectiveEventSpy extends AbstractEventSpy {
     private String mavenVersion;
     private String projectDirectory;
     private final AtomicInteger repositoryEvents = new AtomicInteger();
+    /** groupId:artifactId → Scopes, die gestartete Mojos auflösen ließen (für die Schnappschuss-Referenz). */
+    private final Map<String, java.util.Set<String>> resolvedScopes = new java.util.concurrent.ConcurrentHashMap<String, java.util.Set<String>>();
 
     @Override
     public void init(Context context) {
@@ -130,6 +132,7 @@ public class DetectiveEventSpy extends AbstractEventSpy {
                     record(e);
                 }
             } else if (event instanceof ExecutionEvent) {
+                rememberScopes((ExecutionEvent) event);
                 Map<String, Object> e = execution((ExecutionEvent) event);
                 if (e != null) {
                     record(e);
@@ -140,7 +143,7 @@ public class DetectiveEventSpy extends AbstractEventSpy {
                     record(e);
                 }
                 SnapshotDiff changes = snapshots && store != null
-                        ? Snapshots.record(store, request, result, mavenVersion, projectDirectory, log) : null;
+                        ? Snapshots.record(store, request, result, mavenVersion, projectDirectory, resolvedScopes, log) : null;
                 if (report && result.hasExceptions()) {
                     printDiagnosis(changes);
                 }
@@ -211,6 +214,26 @@ public class DetectiveEventSpy extends AbstractEventSpy {
         }
         e.put("failure", String.valueOf(exceptions.get(0).getMessage()));
         return e;
+    }
+
+    /** Merkt sich je Modul, welche Scopes Maven für die gestarteten Mojos aufgelöst hat. */
+    private void rememberScopes(ExecutionEvent ee) {
+        if (ee.getType() != ExecutionEvent.Type.MojoStarted || ee.getProject() == null || ee.getMojoExecution() == null
+                || ee.getMojoExecution().getMojoDescriptor() == null) {
+            return;
+        }
+        List<String> scopes = io.github.bitshiftdev.mavendetective.core.snapshot.BuildSnapshot.scopesResolvedBy(
+                ee.getMojoExecution().getMojoDescriptor().getDependencyResolutionRequired());
+        if (scopes.isEmpty()) {
+            return;
+        }
+        String key = ee.getProject().getGroupId() + ":" + ee.getProject().getArtifactId();
+        java.util.Set<String> set = resolvedScopes.get(key);
+        if (set == null) {
+            resolvedScopes.putIfAbsent(key, java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<String, Boolean>()));
+            set = resolvedScopes.get(key);
+        }
+        set.addAll(scopes);
     }
 
     private static Map<String, Object> execution(ExecutionEvent ee) {

@@ -51,6 +51,21 @@ class BuildSetupTest {
     }
 
     @Test
+    void findsUnpackedWrapperDistributionOfBothLayouts(@TempDir Path tmp) throws Exception {
+        Path home = tmp.resolve("home");
+        Map<String, String> env = new HashMap<String, String>();
+        // Wrapper bis 3.2: dists/apache-maven-X-bin/<hash>/apache-maven-X
+        Path old = home.resolve(".m2/wrapper/dists/apache-maven-3.9.6-bin/abc/apache-maven-3.9.6");
+        Files.createDirectories(old.resolve("conf"));
+        assertEquals(old, BuildSetup.wrapperDistribution("3.9.6", home, env));
+        // Wrapper 3.3.x (only-script): dists/apache-maven-X/<hash>
+        Path neu = home.resolve(".m2/wrapper/dists/apache-maven-3.9.11/5f2a1c");
+        Files.createDirectories(neu.resolve("conf"));
+        assertEquals(neu, BuildSetup.wrapperDistribution("3.9.11", home, env));
+        assertNull(BuildSetup.wrapperDistribution("3.8.8", home, env));
+    }
+
+    @Test
     void detectsInstalledMavenFromMavenHome(@TempDir Path tmp) throws Exception {
         Path mvnHome = tmp.resolve("apache-maven");
         write(mvnHome.resolve("lib/maven-core-3.9.11.jar"), "");

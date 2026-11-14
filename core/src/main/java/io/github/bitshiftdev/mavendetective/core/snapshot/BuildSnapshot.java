@@ -3,11 +3,14 @@ package io.github.bitshiftdev.mavendetective.core.snapshot;
 import io.github.bitshiftdev.mavendetective.core.io.Json;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * Was einen Build ausmacht, ohne den Quellcode: Maven, JDK, Profile, Mirrors und pro Modul Parent,
@@ -57,6 +60,13 @@ public final class BuildSnapshot {
         private final Map<String, String> dependencies = new TreeMap<String, String>();
         /** true: transitiv aufgelöst; false: nur direkte Dependencies der Effective POM. */
         private boolean dependenciesResolved;
+        /**
+         * Scopes, die der Lauf aufgelöst hat ({@code mvn compile} kennt keine test-Dependencies, {@code verify} schon).
+         * Leer heißt unbekannt = alle (IDE, ältere Schnappschüsse).
+         */
+        private final Set<String> resolvedScopes = new TreeSet<String>();
+        /** groupId:artifactId[:classifier] → Scope, soweit bekannt. */
+        private final Map<String, String> dependencyScopes = new TreeMap<String, String>();
 
         public String getVersion() { return version; }
         public Module setVersion(String version) { this.version = version; return this; }
@@ -76,6 +86,18 @@ public final class BuildSnapshot {
         public boolean isDependenciesResolved() { return dependenciesResolved; }
         public Module setDependenciesResolved(boolean resolved) { this.dependenciesResolved = resolved; return this; }
 
+        public Set<String> getResolvedScopes() { return resolvedScopes; }
+
+        public Map<String, String> getDependencyScopes() { return dependencyScopes; }
+
+        /**
+         * Hat dieser Lauf Dependencies dieses Scopes gesehen? Ohne Auflösung stehen die direkten Dependencies aller
+         * Scopes drin; ohne Angabe der Scopes (IDE, alte Schnappschüsse) gilt alles als gesehen.
+         */
+        public boolean covers(String scope) {
+            return !dependenciesResolved || resolvedScopes.isEmpty() || scope == null || resolvedScopes.contains(scope);
+        }
+
         /** Übernimmt eine Property, wenn ihr Name nach Version aussieht. */
         public Module addPropertyIfVersion(String name, String value) {
             if (name != null && value != null && isVersionProperty(name)) {
@@ -83,6 +105,33 @@ public final class BuildSnapshot {
             }
             return this;
         }
+    }
+
+    /**
+     * Scopes, die ein Mojo mit {@code requiresDependencyResolution = value} auflösen lässt (Mavens
+     * {@code ResolutionScope}); leer bei {@code none}/{@code null}/Unbekanntem.
+     */
+    public static List<String> scopesResolvedBy(String value) {
+        if (value == null) {
+            return Collections.emptyList();
+        }
+        String v = value.trim();
+        if ("compile".equals(v)) {
+            return Arrays.asList("compile", "provided", "system");
+        }
+        if ("compile+runtime".equals(v)) {
+            return Arrays.asList("compile", "provided", "system", "runtime");
+        }
+        if ("runtime".equals(v)) {
+            return Arrays.asList("compile", "runtime");
+        }
+        if ("runtime+system".equals(v)) {
+            return Arrays.asList("compile", "runtime", "system");
+        }
+        if ("test".equals(v)) {
+            return Arrays.asList("compile", "provided", "system", "runtime", "test");
+        }
+        return Collections.emptyList();
     }
 
     public static boolean isVersionProperty(String name) {
@@ -163,6 +212,12 @@ public final class BuildSnapshot {
             mo.put("plugins", new LinkedHashMap<String, Object>(m.plugins));
             mo.put("dependenciesResolved", m.dependenciesResolved);
             mo.put("dependencies", new LinkedHashMap<String, Object>(m.dependencies));
+            if (!m.resolvedScopes.isEmpty()) {
+                mo.put("resolvedScopes", new ArrayList<String>(m.resolvedScopes));
+            }
+            if (!m.dependencyScopes.isEmpty()) {
+                mo.put("dependencyScopes", new LinkedHashMap<String, Object>(m.dependencyScopes));
+            }
             mods.put(e.getKey(), mo);
         }
         root.put("modules", mods);
@@ -202,6 +257,12 @@ public final class BuildSnapshot {
                 copy(mo.get("versionProperties"), m.versionProperties);
                 copy(mo.get("plugins"), m.plugins);
                 copy(mo.get("dependencies"), m.dependencies);
+                copy(mo.get("dependencyScopes"), m.dependencyScopes);
+                if (mo.get("resolvedScopes") instanceof List) {
+                    for (Object o : (List<?>) mo.get("resolvedScopes")) {
+                        m.resolvedScopes.add(String.valueOf(o));
+                    }
+                }
             }
         }
         return s;

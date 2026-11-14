@@ -62,6 +62,27 @@ class DependencyResolverTest {
     }
 
     @Test
+    void ciFriendlyRevisionFindetReactorGeschwister() throws Exception {
+        Path root = tmp.resolve("ci");
+        Files.createDirectories(root.resolve("a"));
+        Files.createDirectories(root.resolve("b"));
+        Files.writeString(root.resolve("pom.xml"), "<project><groupId>g</groupId><artifactId>root</artifactId><version>${revision}</version>"
+                + "<packaging>pom</packaging><properties><revision>1.0-SNAPSHOT</revision></properties>"
+                + "<modules><module>a</module><module>b</module></modules></project>");
+        Files.writeString(root.resolve("a/pom.xml"), "<project><parent><groupId>g</groupId><artifactId>root</artifactId>"
+                + "<version>${revision}</version></parent><artifactId>a</artifactId><dependencies>"
+                + dep("org.x", "x", "1.0", "") + "</dependencies></project>");
+        Files.writeString(root.resolve("b/pom.xml"), "<project><parent><groupId>g</groupId><artifactId>root</artifactId>"
+                + "<version>${revision}</version></parent><artifactId>b</artifactId><dependencies>"
+                + dep("g", "a", "${project.version}", "") + "</dependencies></project>");
+        PomLocator locator = new PomLocator(root, repo);
+        DependencyResolver.Tree t = DependencyResolver.resolve(locator, locator.load(root.resolve("b/pom.xml")));
+        assertTrue(t.getMissing().isEmpty(), t.getMissing().toString());
+        assertEquals("1.0-SNAPSHOT", t.getRoot().findIncluded("g", "a").getVersion());
+        assertNotNull(t.getRoot().findIncluded("org.y", "y"), "transitive Dependencies des Geschwisters fehlen");
+    }
+
+    @Test
     void nearestWinsAndFirstDeclarationAtSameDepth() throws Exception {
         PomFile pom = project("<dependencies>" + dep("org.a", "a", "1.0", "") + dep("org.b", "b", "1.0", "") + "</dependencies>");
         DependencyResolver.Tree t = resolve(pom);

@@ -147,6 +147,11 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
     }
 
     @Override
+    protected void aborted() {
+        showSetup();   // Kachel „Setup“ nicht weiterdrehen lassen
+    }
+
+    @Override
     public void cancelRunning() {
         super.cancelRunning();
         for (Class<? extends DetectivePanel> type : List.of(ConflictMatrixPanel.class, DuplicateClassesPanel.class, DependencyUsagePanel.class,

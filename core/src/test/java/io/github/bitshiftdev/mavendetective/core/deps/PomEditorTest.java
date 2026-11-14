@@ -474,6 +474,60 @@ class PomEditorTest {
     }
 
     @Test
+    void doppelteKommtDieLetztePropertyZumZug() throws Exception {
+        String xml = """
+                <project>
+                    <properties>
+                        <v>1</v>
+                        <v>2</v>
+                    </properties>
+                </project>
+                """;
+        assertEquals("""
+                <project>
+                    <properties>
+                        <v>1</v>
+                        <v>3</v>
+                    </properties>
+                </project>
+                """, PomEditor.setProperty(xml, "v", "3").apply(xml));
+        java.nio.file.Path file = java.nio.file.Files.createTempFile("pom", ".xml");
+        try {
+            assertEquals("2", PomFile.parse(file, xml).getProperties().get("v").getValue(), "Maven nimmt die letzte");
+        } finally {
+            java.nio.file.Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    void findetDependencyMitAusdruckInDerGroupId() {
+        String xml = """
+                <project>
+                    <groupId>com.acme</groupId>
+                    <artifactId>b</artifactId>
+                    <properties><a.name>a</a.name></properties>
+                    <dependencies>
+                        <dependency>
+                            <groupId>${project.groupId}</groupId>
+                            <artifactId>${a.name}</artifactId>
+                            <version>${project.version}</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>${parent.defined.group}</groupId>
+                            <artifactId>c</artifactId>
+                        </dependency>
+                    </dependencies>
+                </project>
+                """;
+        String scoped = PomEditor.setScope(xml, "com.acme", "a", "test", null).apply(xml);
+        assertTrue(scoped.contains("<scope>test</scope>"), scoped);
+        assertFalse(PomEditor.removeDependency(xml, "com.acme", "a", null).apply(xml).contains("${a.name}"));
+        // groupId aus einer Property des Parents: gleiche artifactId genügt
+        assertFalse(PomEditor.removeDependency(xml, "org.other", "c", null).apply(xml).contains("<artifactId>c</artifactId>"));
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.removeDependency(xml, "org.other", "a", null));
+    }
+
+    @Test
     void setsOrAddsProperties() {
         String withProps = """
                 <project>

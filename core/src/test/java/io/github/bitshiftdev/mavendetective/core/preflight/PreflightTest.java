@@ -358,6 +358,75 @@ class PreflightTest {
     }
 
     @Test
+    void auskommentierteUndProfilAngabenZaehlenNicht() throws IOException {
+        pom("""
+                <properties><maven.compiler.release>17</maven.compiler.release></properties>
+                <!-- <build><plugins><plugin><configuration><release>25</release></configuration></plugin></plugins></build> -->
+                <!--
+                <requireJavaVersion><version>[25,)</version></requireJavaVersion>
+                -->
+                <profiles>
+                  <profile>
+                    <id>jdk25</id>
+                    <build><plugins><plugin><configuration><release>25</release></configuration></plugin></plugins></build>
+                  </profile>
+                </profiles>""");
+        Report r = run();
+        assertEquals(Light.GREEN, r.getLight(), r.getItems().toString());
+        assertTrue(first(r, Topic.JDK, Status.OK).getText().contains("17"));
+    }
+
+    @Test
+    void pomAusserhalbDerModuleZaehltNicht() throws IOException {
+        pom("<packaging>pom</packaging>\n<modules><module>core</module></modules>");
+        write(project.resolve("core").resolve("pom.xml"), """
+                <project><modelVersion>4.0.0</modelVersion>
+                  <parent><groupId>com.acme</groupId><artifactId>app</artifactId><version>1.0</version></parent>
+                  <artifactId>core</artifactId>
+                  <properties><maven.compiler.release>17</maven.compiler.release></properties>
+                </project>""");
+        // Beispielprojekt ohne Eintrag in <modules>: Maven baut es nicht
+        write(project.resolve("examples").resolve("legacy").resolve("pom.xml"), """
+                <project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>legacy</artifactId><version>1</version>
+                  <properties><maven.compiler.release>25</maven.compiler.release></properties>
+                </project>""");
+        Report r = run();
+        assertEquals(Light.GREEN, r.getLight(), r.getItems().toString());
+        assertTrue(first(r, Topic.JDK, Status.OK).getText().contains("17"));
+    }
+
+    @Test
+    void platzhalterInSettingsWerdenAufgeloest() throws IOException {
+        pom("");
+        write(home.resolve(".m2").resolve("settings.xml"), """
+                <settings>
+                  <localRepository>${env.M2_CACHE}/repo</localRepository>
+                  <mirrors><mirror><id>nexus</id><mirrorOf>*</mirrorOf><url>${env.NEXUS_URL}/repository/maven-public/</url></mirror></mirrors>
+                </settings>
+                """);
+        List<String> asked = new ArrayList<>();
+        RepositoryProbe probe = (url, proxy, timeout) -> {
+            asked.add(url);
+            return RepositoryProbe.Response.status(200, 1);
+        };
+        Path cache = tmp.resolve("cache");
+        Preflight.Options options = new Preflight.Options().network(true).probe(probe).userHome(home)
+                .env(Map.of("M2_CACHE", cache.toString(), "NEXUS_URL", "https://nexus.corp.example"));
+        Report r = Preflight.run(project, setup, options);
+        assertEquals(List.of("https://nexus.corp.example/repository/maven-public/"), asked);
+        assertEquals(cache.resolve("repo"), r.getLocalRepository());
+        assertEquals(Light.GREEN, r.getLight(), r.getItems().toString());
+
+        // unbekannte Variable: nicht anfragen, kein ROT
+        asked.clear();
+        Report unknown = Preflight.run(project, setup, new Preflight.Options().network(true).probe(probe).userHome(home).env(Map.of()));
+        assertTrue(asked.isEmpty(), asked.toString());
+        assertTrue(items(unknown, Topic.REPOSITORY).stream().anyMatch(i -> i.getStatus() == Status.INFO
+                && i.getText().contains("${env.NEXUS_URL}")), unknown.getItems().toString());
+        assertTrue(unknown.getLight() != Light.RED, unknown.getItems().toString());
+    }
+
+    @Test
     void proxyAusSettingsMitAusnahmen() throws IOException {
         pom("");
         write(home.resolve(".m2").resolve("settings.xml"), """
