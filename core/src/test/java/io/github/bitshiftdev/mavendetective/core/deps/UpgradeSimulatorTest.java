@@ -359,6 +359,68 @@ class UpgradeSimulatorTest {
         assertTrue(dev.contains("org.a:a 1.5 statt 1.0"), dev);
     }
 
+    /** Module, die schon die Zielversion haben, bekommen keinen Schritt „von X auf X“. */
+    @Test
+    void modulesAlreadyOnTheTargetGetNoStep() throws IOException {
+        write("svc/pom.xml", """
+                <project>
+                  <parent><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version></parent>
+                  <artifactId>svc</artifactId>
+                  <dependencies>
+                    <dependency><groupId>org.d</groupId><artifactId>d</artifactId><version>1.1</version></dependency>
+                    <dependency><groupId>org.x</groupId><artifactId>x</artifactId><version>1.0</version></dependency>
+                  </dependencies>
+                </project>
+                """);
+        PomLocator locator = new PomLocator(root, repo);
+        List<PomFile> poms = new ArrayList<>();
+        for (String m : new String[] {"pom.xml", "app/pom.xml", "tool/pom.xml", "svc/pom.xml"}) {
+            poms.add(locator.load(root.resolve(m)));
+        }
+
+        Result r = UpgradeSimulator.simulate(locator, poms, Request.parse("org.d:d:1.1"), Map.of(), null);
+        assertEquals(1, r.getSteps().size(), r.lines(false).toString());
+        assertEquals(root.resolve("tool/pom.xml").toString(), r.getSteps().get(0).getFile());
+        assertTrue(r.getProblems().isEmpty(), r.getProblems().toString());
+
+        // svc bekommt org.a:a 1.5 schon über x, app erst nach dem Pin: kein zweiter Schritt
+        Result a = UpgradeSimulator.simulate(locator, poms, Request.parse("org.a:a:1.5"), Map.of(), null);
+        assertEquals(1, a.getSteps().size(), a.lines(false).toString());
+
+        Result same = UpgradeSimulator.simulate(locator, poms.subList(0, 3), Request.parse("org.d:d:1.0"), Map.of(), null);
+        assertTrue(same.getSteps().isEmpty());
+        assertEquals(List.of("org.d:d steht in jedem Modul schon auf 1.0 – nichts zu ändern."), same.getProblems());
+        assertFalse(String.join("\n", same.lines(false)).contains("von 1.0 auf 1.0"));
+    }
+
+    /** Fehlt das gehobene BOM lokal, ist eine unbekannte Version kein Downgrade (Review: „drops 2.18.2 → null“). */
+    @Test
+    void missingBomIsNoDowngrade() {
+        Result r = simulate(Request.parse("org.bom:bom:3.0"));
+        assertFalse(r.isComplete());
+        ModuleResult app = module(r, "app");
+        assertTrue(app.isIncomplete());
+        assertEquals(0, app.count(Kind.DOWNGRADED), app.getDeltas().toString());
+        assertNull(delta(app, "org.e:e"), "Version unbekannt – steht unter „fehlt“");
+        assertFalse(r.hasRisks());
+        String text = String.join("\n", r.lines(false));
+        assertFalse(text.contains("→ null"), text);
+        assertTrue(text.contains("Modul app: keine Änderung – unvollständig, 1 POM fehlt"), text);
+    }
+
+    /** Fehlt die POM der neuen Version, fallen ihre Kinder nicht „weg“ – sie sind nur unbekannt. */
+    @Test
+    void missingPomHidesRemovalsButKeepsWhatIsKnown() {
+        Result r = simulate(Request.parse("lib.version=3.0"));
+        ModuleResult app = module(r, "app");
+        assertTrue(app.isIncomplete());
+        assertEquals(Kind.UPGRADED, delta(app, "org.lib:lib").getKind());
+        assertEquals(0, app.count(Kind.REMOVED), app.getDeltas().toString());
+        assertTrue(app.getRisks().isEmpty());
+        assertFalse(r.hasRisks());
+        assertFalse(module(r, "tool").isIncomplete());
+    }
+
     @Test
     void requestParsing() {
         Request a = Request.parse("g:a:1.0");

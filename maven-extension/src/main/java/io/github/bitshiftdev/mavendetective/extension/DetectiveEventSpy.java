@@ -64,6 +64,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Ist der Lauf grün, wird er die neue Referenz; scheitert er, zeigt die Karte, was sich seit dem
  * letzten grünen Lauf geändert hat.
  *
+ * <p>Scheitert Surefire oder Failsafe, liest die Extension die XML-Berichte dieses Laufs ({@link TestFailures}),
+ * denn Maven meldet selbst nur „There are test failures“.
+ *
  * <p>Die Extension darf einen Build nie verändern oder abbrechen: jeder Fehler hier wird geschluckt.
  */
 @Named("maven-detective")
@@ -88,8 +91,16 @@ public class DetectiveEventSpy extends AbstractEventSpy {
     private String mavenVersion;
     private String projectDirectory;
     private final AtomicInteger repositoryEvents = new AtomicInteger();
+    /** Testberichte, die älter sind, stammen aus einem früheren Lauf. */
+    private final long startedAt = System.currentTimeMillis();
     /** groupId:artifactId → Scopes, die gestartete Mojos auflösen ließen (für die Schnappschuss-Referenz). */
     private final Map<String, java.util.Set<String>> resolvedScopes = new java.util.concurrent.ConcurrentHashMap<String, java.util.Set<String>>();
+    /**
+     * groupId:artifactId → größte aufgelöste Artifact-Menge eines Mojos. Maven ersetzt {@code getArtifacts()} je Mojo:
+     * nach {@code jar} (runtime) fehlen am Ende eines grünen {@code verify} die test-Dependencies von Surefire.
+     */
+    private final Map<String, java.util.Set<org.apache.maven.artifact.Artifact>> resolvedArtifacts =
+            new java.util.concurrent.ConcurrentHashMap<String, java.util.Set<org.apache.maven.artifact.Artifact>>();
 
     @Override
     public void init(Context context) {
@@ -136,6 +147,10 @@ public class DetectiveEventSpy extends AbstractEventSpy {
                 Map<String, Object> e = execution((ExecutionEvent) event);
                 if (e != null) {
                     record(e);
+                    Map<String, Object> tests = TestFailures.event((ExecutionEvent) event, startedAt, log);
+                    if (tests != null) {
+                        record(tests);
+                    }
                 }
             } else if (event instanceof MavenExecutionResult) {
                 MavenExecutionResult result = (MavenExecutionResult) event;
@@ -143,7 +158,7 @@ public class DetectiveEventSpy extends AbstractEventSpy {
                     record(e);
                 }
                 SnapshotDiff changes = snapshots && store != null
-                        ? Snapshots.record(store, request, result, mavenVersion, projectDirectory, resolvedScopes, log) : null;
+                        ? Snapshots.record(store, request, result, mavenVersion, projectDirectory, resolvedScopes, resolvedArtifacts, log) : null;
                 if (report && result.hasExceptions()) {
                     printDiagnosis(changes);
                 }
@@ -234,6 +249,16 @@ public class DetectiveEventSpy extends AbstractEventSpy {
             set = resolvedScopes.get(key);
         }
         set.addAll(scopes);
+        // Maven löst vor MojoStarted auf: jetzt enthält getArtifacts() genau die Menge für dieses Mojo
+        java.util.Set<org.apache.maven.artifact.Artifact> artifacts = ee.getProject().getArtifacts();
+        if (artifacts != null && !artifacts.isEmpty()) {
+            synchronized (resolvedArtifacts) {
+                java.util.Set<org.apache.maven.artifact.Artifact> known = resolvedArtifacts.get(key);
+                if (known == null || artifacts.size() > known.size()) {
+                    resolvedArtifacts.put(key, new java.util.LinkedHashSet<org.apache.maven.artifact.Artifact>(artifacts));
+                }
+            }
+        }
     }
 
     private static Map<String, Object> execution(ExecutionEvent ee) {

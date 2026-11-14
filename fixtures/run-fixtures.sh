@@ -49,19 +49,25 @@ while IFS='|' read -r dir rule args; do
   fi
 done < "$HERE/fixtures.txt"
 
-# Schnappschuss-Vergleich: erst grün, dann Version anheben und scheitern lassen
+# Schnappschuss-Vergleich: erst rot (Ablage hat schon einen Stand), dann grün, dann Version anheben und
+# scheitern lassen. Der grüne Lauf muss die Referenz schreiben und „latest“ ersetzen, der zweite rote die Karte zeigen.
 dir=09-changed-since-green
 work="$WORK/$dir"; mkdir -p "$work/repo"; cp "$HERE/$dir/pom.xml" "$work/pom.xml"
 common=(-B -o -Dmaven.repo.local="$work/repo" -Dmaven.ext.class.path="$EXT_JAR" -DmavenDetective.home="$work/home")
+(cd "$work" && mvn "${common[@]}" nosuchprefix:goal > "$work/red0.log" 2>&1)
 (cd "$work" && mvn "${common[@]}" validate > "$work/green.log" 2>&1)
 green_exit=$?
+snapdir="$(ls -d "$work"/home/snapshots/*/ 2>/dev/null | head -1)"
+green_ok="nein"
+[[ -f "$snapdir/green-extension.json" ]] && grep -q '"successful": *true' "$snapdir/latest-extension.json" && green_ok="ja"
 sed -i.bak 's/33.0.0-jre/33.3.1-jre/' "$work/pom.xml"
 (cd "$work" && mvn "${common[@]}" nosuchprefix:goal > "$work/red.log" 2>&1)
 expected="Property guava.version 33.0.0-jre → 33.3.1-jre"
-if [[ $green_exit -eq 0 ]] && grep -q "Seit dem letzten grünen Build" "$work/red.log" && grep -qF "$expected" "$work/red.log"; then
+if [[ $green_exit -eq 0 && "$green_ok" == "ja" ]] && grep -q "Maven Detective .* Build Doctor" "$work/red0.log" \
+    && grep -q "Seit dem letzten grünen Build" "$work/red.log" && grep -qF "$expected" "$work/red.log"; then
   pass=$((pass + 1)); printf '  ✓ %-28s %s\n' "$dir" "$expected"
 else
-  fail=$((fail + 1)); printf '  ✗ %-28s Karte nennt die Änderung nicht (grün: exit %s)\n' "$dir" "$green_exit"
+  fail=$((fail + 1)); printf '  ✗ %-28s Karte nennt die Änderung nicht (grün: exit %s, Referenz geschrieben: %s)\n' "$dir" "$green_exit" "$green_ok"
   grep -A10 "Maven Detective" "$work/red.log" | sed 's/^/      /'
 fi
 

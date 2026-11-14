@@ -10,6 +10,10 @@
 ### Fixed
 
 - **What changed?** in the IDE no longer reports "No change" when the green and the red run differ only in their profiles or `-D` arguments (e.g. `verify -Pgreen` vs. `verify`). Profiles and properties are now read from the run configuration's goals and command-line options too, the card lists the switched profile and the versions the POMs declare directly under it (e.g. `jackson-databind 2.18.2 → 2.15.4 (gateway)`), and it says when transitive effects could not be compared because the IDE reads dependencies from its Maven import.
+- Maven extension: a failing Surefire/Failsafe test (`NoSuchMethodError`, `NoClassDefFoundError` …) is now diagnosed from the test reports instead of showing "Unknown error"; only reports written by the current run are read.
+- Maven extension: the reference of a green `verify` run kept only the dependencies of the last plugin (runtime scope), so the next red run listed test dependencies such as JUnit as "new".
+- Upgrade simulator: no more "version changed from X to X" steps for modules that already have the target version.
+- Upgrade simulator: when POMs are missing locally, an unknown version is no longer shown as a downgrade ("→ null"); lower versions, removals and new conflicts of such a module only appear once the POMs are there.
 
 ## [0.1.0] - 2026-11-14
 

@@ -282,6 +282,14 @@ public final class UpgradeSimulator {
             return deltas.isEmpty() && risks.isEmpty();
         }
 
+        /**
+         * Dem neuen Baum fehlen POMs: Gesenkte, entfernte Artifacts und neue Konflikte werden dann nicht
+         * gemeldet (sie können von der Lücke kommen), nur was steigt oder dazukommt.
+         */
+        public boolean isIncomplete() {
+            return !missing.isEmpty();
+        }
+
         public int count(Kind kind) {
             int n = 0;
             for (Delta d : deltas) {
@@ -380,7 +388,7 @@ public final class UpgradeSimulator {
             }
             List<String> unchanged = new ArrayList<String>();
             for (ModuleResult m : modules) {
-                if (m.isUnchanged() && !all && m.note == null && m.deviation == null) {
+                if (m.isUnchanged() && !all && m.note == null && m.deviation == null && !m.isIncomplete()) {
                     unchanged.add(m.getName());
                     continue;
                 }
@@ -426,10 +434,10 @@ public final class UpgradeSimulator {
                 sb.append("> ⚠ ").append(p).append("\n\n");
             }
             for (ModuleResult m : modules) {
-                if (m.isUnchanged() && !all && m.note == null) {
+                if (m.isUnchanged() && !all && m.note == null && !m.isIncomplete()) {
                     continue;
                 }
-                sb.append("#### ").append(Texts.t("upgrade.module", "`" + m.getName() + "`")).append("` – ").append(moduleSummary(m)).append("\n\n");
+                sb.append("#### ").append(Texts.t("upgrade.module", "`" + m.getName() + "`")).append(" – ").append(moduleSummary(m)).append("\n\n");
                 if (m.note != null) {
                     sb.append("> ").append(m.note).append("\n\n");
                 }
@@ -466,6 +474,11 @@ public final class UpgradeSimulator {
         }
 
         private String moduleSummary(ModuleResult m) {
+            String summary = changeSummary(m);
+            return m.isIncomplete() ? summary + " – " + Texts.t("upgrade.summary.incomplete", m.missing.size()) : summary;
+        }
+
+        private String changeSummary(ModuleResult m) {
             if (m.isUnchanged()) {
                 return m.targetBefore != null && m.targetBefore.equals(m.targetAfter) ? Texts.t("upgrade.summary.stays", m.targetAfter)
                         : Texts.t("upgrade.summary.none");
@@ -534,15 +547,22 @@ public final class UpgradeSimulator {
                     xml = TextFile.read(file).getText();
                 }
                 PomEditor.Edit edit = PomEditor.forFix(xml, s.fix);
+                String next = edit.apply(xml);
+                if (next.equals(xml)) {
+                    continue;   // steht schon so in der POM
+                }
                 s.description = edit.description;
                 s.line = PomEditor.lineOf(xml, edit.offset);
-                changed.put(file, edit.apply(xml));
+                changed.put(file, next);
                 result.steps.add(s);
             } catch (IOException e) {
                 result.problems.add(Texts.t("upgrade.unreadable", s.file, e.getMessage()));
             } catch (IllegalArgumentException e) {
                 result.problems.add(Texts.t("upgrade.step.failed", s.fix.getLabel(), e.getMessage()));
             }
+        }
+        if (result.steps.isEmpty() && !steps.isEmpty() && result.problems.isEmpty()) {
+            result.problems.add(Texts.t("upgrade.up.to.date", request.label(), request.version));
         }
         PomLocator after;
         try {
@@ -564,13 +584,13 @@ public final class UpgradeSimulator {
             // unberührte Module: derselbe Baum, keine zweite Auflösung und kein zweiter Baum im Speicher
             DependencyResolver.Tree a = affected ? DependencyResolver.resolve(after, changedPom, cancel) : b;
             ModuleResult m = new ModuleResult(p, b.getRoot(), a.getRoot());
-            diff(m);
             for (String miss : a.getMissing()) {
                 if (!b.getMissing().contains(miss)) {
                     m.missing.add(miss);
                     result.missing.add(miss);
                 }
             }
+            diff(m);
             if (!request.isProperty()) {
                 DepNode tb = b.getRoot().findIncluded(request.groupId, request.artifactId);
                 DepNode ta = a.getRoot().findIncluded(request.groupId, request.artifactId);
@@ -601,20 +621,39 @@ public final class UpgradeSimulator {
         return result;
     }
 
-    /** Vergleicht die Classpath-Knoten (INCLUDED) beider Bäume. */
+    /**
+     * Vergleicht die Classpath-Knoten (INCLUDED) beider Bäume.
+     *
+     * <p>Fehlen dem neuen Baum POMs ({@link ModuleResult#isIncomplete()}), fehlen ihm auch deren Management und
+     * Kinder: Versionen werden unbekannt ({@code null}), Kinder verschwinden, ohne BOM gewinnt eine ältere
+     * transitive Version. Solche Lücken sind keine Downgrades – deshalb meldet ein unvollständiges Modul nur, was
+     * steigt oder dazukommt; gesenkte, entfernte und neue Konflikte erst, wenn die POMs da sind.
+     */
     private static void diff(ModuleResult m) {
+        boolean incomplete = m.isIncomplete();
         Map<String, DepNode> b = included(m.before);
         Map<String, DepNode> a = included(m.after);
         for (Map.Entry<String, DepNode> e : a.entrySet()) {
             DepNode old = b.get(e.getKey());
             DepNode now = e.getValue();
             if (old == null) {
-                m.deltas.add(new Delta(Kind.ADDED, null, now));
+                if (now.getVersion() != null) {
+                    m.deltas.add(new Delta(Kind.ADDED, null, now));
+                }
             } else if (!same(old.getVersion(), now.getVersion())) {
-                m.deltas.add(new Delta(MavenVersion.compare(now.getVersion(), old.getVersion()) < 0 ? Kind.DOWNGRADED : Kind.UPGRADED, old, now));
+                if (old.getVersion() == null || now.getVersion() == null) {
+                    continue;   // Version unbekannt (POM fehlt) – steht unter „fehlt“, ist kein Downgrade
+                }
+                boolean down = MavenVersion.compare(now.getVersion(), old.getVersion()) < 0;
+                if (!down || !incomplete) {
+                    m.deltas.add(new Delta(down ? Kind.DOWNGRADED : Kind.UPGRADED, old, now));
+                }
             } else if (!same(old.getScope(), now.getScope())) {
                 m.deltas.add(new Delta(Kind.SCOPE, old, now));
             }
+        }
+        if (incomplete) {
+            return;
         }
         for (Map.Entry<String, DepNode> e : b.entrySet()) {
             if (!a.containsKey(e.getKey())) {
@@ -714,6 +753,8 @@ public final class UpgradeSimulator {
         private final Result result;
         private final Map<String, Step> steps;
         private final Set<String> problems = new LinkedHashSet<String>();
+        /** Mindestens ein Modul hat die Zielversion schon. */
+        private boolean upToDate;
 
         Planner(PomLocator locator, List<PomFile> poms, Set<Path> projectFiles, Request request,
                 Map<Path, DependencyResolver.Tree> before, Result result, Map<String, Step> steps) {
@@ -739,7 +780,8 @@ public final class UpgradeSimulator {
             }
             result.problems.addAll(problems);
             if (steps.isEmpty() && problems.isEmpty()) {
-                result.problems.add(Texts.t("upgrade.not.found", request.label()));
+                result.problems.add(upToDate ? Texts.t("upgrade.up.to.date", request.label(), request.version)
+                        : Texts.t("upgrade.not.found", request.label()));
             }
         }
 
@@ -888,6 +930,10 @@ public final class UpgradeSimulator {
                 if (request.pin) {
                     pin(module, current, Texts.t("upgrade.reason.pin"));
                     continue;
+                }
+                if (inc != null && request.version.equals(current)) {
+                    upToDate = true;
+                    continue;   // hat die Zielversion schon – kein Schritt „von X auf X“
                 }
                 if (declared != null && declared.dep.getVersion() != null) {
                     planDirect(module, model, declared, current);

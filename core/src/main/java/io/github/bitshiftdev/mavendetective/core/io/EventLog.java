@@ -32,7 +32,12 @@ import java.util.Map;
  *  "chain":[{"class":"…","message":"…"}]}
  * {"type":"buildError","project":"…","chain":[…],"problems":[{"source":"…","line":6,"column":17,
  *  "severity":"ERROR","message":"…"}]}
+ * {"type":"testFailures","project":"g:a:1.0","mojo":"g:a:v:test","execution":"default-test",
+ *  "reports":"…/target/surefire-reports","text":"Klasse.methode <<< ERROR!\njava.lang.NoSuchMethodError: …"}
  * </pre>
+ *
+ * <p>{@code testFailures} trägt die Ausnahmen gescheiterter Tests aus den Surefire-/Failsafe-Berichten nach
+ * (siehe {@link TestReports}); sie zählen wie Testausgabe im Text-Log ({@link ErrorRecord#isTestOutput()}).
  *
  * Unbekannte Typen und Felder werden ignoriert, damit ältere Leser neuere Dateien verstehen.
  */
@@ -45,6 +50,7 @@ public final class EventLog {
     public static final String TYPE_MOJO_FAILED = "mojoFailed";
     public static final String TYPE_PROJECT_FAILED = "projectFailed";
     public static final String TYPE_BUILD_ERROR = "buildError";
+    public static final String TYPE_TEST_FAILURES = "testFailures";
 
     private EventLog() {
     }
@@ -86,12 +92,13 @@ public final class EventLog {
                         str(e, "event"), str(e, "artifact"), str(e, "repositoryId"),
                         str(e, "repositoryUrl"), str(e, "failure")));
             } else if (TYPE_MOJO_FAILED.equals(type) || TYPE_PROJECT_FAILED.equals(type)
-                    || TYPE_BUILD_ERROR.equals(type)) {
+                    || TYPE_BUILD_ERROR.equals(type) || TYPE_TEST_FAILURES.equals(type)) {
                 ErrorRecord r = new ErrorRecord();
                 r.setProject(str(e, "project"));
                 r.setMojo(str(e, "mojo"));
                 r.setExecution(str(e, "execution"));
                 r.setText(str(e, "text"));
+                r.setTestOutput(TYPE_TEST_FAILURES.equals(type));
                 for (Map<String, Object> c : maps(e.get("chain"))) {
                     r.getChain().add(new ExceptionInfo(str(c, "class"), str(c, "message")));
                 }

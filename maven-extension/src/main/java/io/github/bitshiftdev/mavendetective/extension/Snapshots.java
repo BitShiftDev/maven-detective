@@ -33,13 +33,13 @@ final class Snapshots {
      */
     static SnapshotDiff record(SnapshotStore store, MavenExecutionRequest request, MavenExecutionResult result,
                                String mavenVersion, String projectDirectory, Map<String, ? extends Set<String>> resolvedScopes,
-                               Logger log) {
+                               Map<String, ? extends Set<Artifact>> resolvedArtifacts, Logger log) {
         try {
             if (projectDirectory == null) {
                 return null;
             }
             Path project = Paths.get(projectDirectory);
-            BuildSnapshot current = build(request, result, mavenVersion, projectDirectory, resolvedScopes)
+            BuildSnapshot current = build(request, result, mavenVersion, projectDirectory, resolvedScopes, resolvedArtifacts)
                     .setSuccessful(!result.hasExceptions());
             store.saveLatest(project, current);
             if (!result.hasExceptions()) {
@@ -55,11 +55,14 @@ final class Snapshots {
     }
 
     /**
-     * @param resolvedScopes groupId:artifactId → Scopes, die die gelaufenen Mojos auflösen ließen; fehlt ein Modul,
-     *                       gilt „unbekannt“ (wie bisher: alles)
+     * @param resolvedScopes    groupId:artifactId → Scopes, die die gelaufenen Mojos auflösen ließen; fehlt ein Modul,
+     *                          gilt „unbekannt“ (wie bisher: alles)
+     * @param resolvedArtifacts groupId:artifactId → größte Artifact-Menge, die ein Mojo bekam; fehlt ein Modul, gilt
+     *                          {@code getArtifacts()} am Ende (Maven ersetzt sie je Mojo, z. B. test → runtime)
      */
     static BuildSnapshot build(MavenExecutionRequest request, MavenExecutionResult result,
-                               String mavenVersion, String projectDirectory, Map<String, ? extends Set<String>> resolvedScopes) {
+                               String mavenVersion, String projectDirectory, Map<String, ? extends Set<String>> resolvedScopes,
+                               Map<String, ? extends Set<Artifact>> resolvedArtifacts) {
         BuildSnapshot s = new BuildSnapshot()
                 .setOrigin(BuildSnapshot.ORIGIN_EXTENSION)
                 .setCreatedAt(SnapshotStore.now())
@@ -110,6 +113,10 @@ final class Snapshots {
             }
             // getArtifacts() ist nur gefüllt, wenn ein Mojo die Auflösung angefordert hat (compile, test, …)
             Set<Artifact> artifacts = p.getArtifacts();
+            Set<Artifact> widest = resolvedArtifacts == null ? null : resolvedArtifacts.get(p.getGroupId() + ":" + p.getArtifactId());
+            if (widest != null && (artifacts == null || widest.size() > artifacts.size())) {
+                artifacts = widest;
+            }
             if (artifacts != null && !artifacts.isEmpty()) {
                 m.setDependenciesResolved(true);
                 Set<String> scopes = resolvedScopes == null ? null : resolvedScopes.get(p.getGroupId() + ":" + p.getArtifactId());
