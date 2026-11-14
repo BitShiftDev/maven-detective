@@ -1,7 +1,7 @@
 # Mitmachen
 
-> **English:** Contributions are welcome in English or German. Code comments, commit messages and the README are
-> German; please keep new user-facing texts in both `…properties` files (English is the default). Build with JDK 21:
+> **English:** Contributions are welcome in English or German. The README is English; code comments and commit messages are
+> German. Please keep new user-facing texts in both `…properties` files (English is the default). Build with JDK 21:
 > `./gradlew :core:test :intellij-plugin:test`. For a misdiagnosed build, open a “Wrong diagnosis” issue with an
 > anonymised log excerpt.
 
@@ -35,9 +35,9 @@ Voraussetzung: JDK 21 (Kern und Extension werden trotzdem als Java-8-Bytecode ge
 1. Regel in `core/src/main/resources/io/github/bitshiftdev/mavendetective/core/catalog/build-doctor-v1.yaml` eintragen (Felder im Dateikopf; Regex in einfachen Anführungszeichen, zu jedem Text ein `…_en:`).
 2. Testlog `core/src/test/resources/logs/<regel-id>__<beschreibung>.log` anlegen – `LogCatalogTest` verlangt mindestens eines je Regel.
 3. Wenn reproduzierbar: Fixture unter `fixtures/NN-name/` und Zeile in `fixtures/fixtures.txt`.
-4. README-Abschnitte ergänzen, falls neue Kategorien oder Prüfungen dazukommen.
+4. README (Englisch) ergänzen, falls neue Kategorien oder Prüfungen dazukommen: Tabelle „What it recognises“ bzw. Liste „Available checks“.
 
-Eigene Regeln lassen sich auch ohne Änderung am Projekt ausprobieren: `diagnose … --catalog eigene.yaml` und `validate-catalog eigene.yaml` (siehe README, „Fehlerkatalog erweitern“).
+Eigene Regeln lassen sich auch ohne Änderung am Projekt ausprobieren: `diagnose … --catalog eigene.yaml` und `validate-catalog eigene.yaml` (siehe README, „Extend the error catalog“).
 
 ## Pull Requests
 

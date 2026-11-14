@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="330" viewBox="0 0 980 330">
+  <!-- Echte Ausgabe des Kerns für core/src/test/resources/logs/jdk-mismatch__release-not-supported.log, Sprache Englisch -->
+  <rect width="980" height="330" rx="12" fill="#0D1117"/>
+  <rect x="0.5" y="0.5" width="979" height="329" rx="12" fill="none" stroke="#30363D"/>
+  <circle cx="24" cy="22" r="6" fill="#FF5F57"/>
+  <circle cx="44" cy="22" r="6" fill="#FEBC2E"/>
+  <circle cx="64" cy="22" r="6" fill="#28C840"/>
+  <text x="490" y="27" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#8B949E">mvn verify</text>
+  <line x1="0" y1="44" x2="980" y2="44" stroke="#30363D"/>
+
+  <g font-family="'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14" xml:space="preserve">
+    <text x="20" y="72" fill="#8B949E">[INFO] ------------------------------------------------------------------------</text>
+    <text x="20" y="94"><tspan fill="#8B949E">[INFO] </tspan><tspan fill="#F85149" font-weight="700">BUILD FAILURE</tspan></text>
+    <text x="20" y="116" fill="#8B949E">[INFO] ------------------------------------------------------------------------</text>
+
+    <text x="20" y="148"><tspan fill="#F85149">[ERROR] </tspan><tspan fill="#9D75F8">+-- </tspan><tspan fill="#F0F6FC" font-weight="700">Maven Detective · Build Doctor</tspan><tspan fill="#9D75F8"> ----------------------------</tspan></text>
+    <text x="20" y="170"><tspan fill="#F85149">[ERROR] </tspan><tspan fill="#9D75F8">| </tspan><tspan fill="#F0F6FC" font-weight="700">#5 JDK does not fit</tspan><tspan fill="#8B949E"> · </tspan><tspan fill="#3FB950" font-weight="700">certain</tspan></text>
+    <text x="20" y="192"><tspan fill="#F85149">[ERROR] </tspan><tspan fill="#9D75F8">| </tspan><tspan fill="#5EA1FE" font-weight="700">Cause:</tspan><tspan fill="#E6EDF3"> The project requires Java 21, but Maven runs with JDK 17.</tspan></text>
+    <text x="20" y="214"><tspan fill="#F85149">[ERROR] </tspan><tspan fill="#9D75F8">| </tspan><tspan fill="#8B949E">  - … on project gateway: Fatal error compiling: release version 21 not supported</tspan></text>
+    <text x="20" y="236"><tspan fill="#F85149">[ERROR] </tspan><tspan fill="#9D75F8">| </tspan><tspan fill="#8B949E">  - JDK of the Maven run: 17.0.13 (/usr/lib/jvm/temurin-17-jdk)</tspan></text>
+    <text x="20" y="258"><tspan fill="#F85149">[ERROR] </tspan><tspan fill="#9D75F8">| </tspan><tspan fill="#3FB950" font-weight="700">Fix:</tspan><tspan fill="#E6EDF3"> Switch the runner JDK to Java 21</tspan></text>
+    <text x="20" y="280"><tspan fill="#F85149">[ERROR] </tspan><tspan fill="#9D75F8">+--------------------------------------------------------------</tspan></text>
+  </g>
+  <text x="960" y="314" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#6E7681">Same card in IntelliJ IDEA, in the Maven log and on the command line</text>
+</svg>

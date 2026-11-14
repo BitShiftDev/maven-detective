@@ -9,3 +9,9 @@ target/
 .DS_Store
 .claude/*
 !.claude/skills/
+
+# Interne Notizen (offene Abnahmen, Gate 1, nächste Schritte)
+*.local.md
+
+# Interne Planung (Konzept, UI-Plan) bleibt lokal
+Maven Detective – *.md

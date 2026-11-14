@@ -7,48 +7,57 @@
     <!-- Englisch Pflicht: Plugin Verifier und Marketplace verlangen eine Beschreibung, die mit
          mindestens 40 lateinischen Zeichen beginnt (Umlaute zählen nicht) -->
     <description><![CDATA[
-    <p>Explains why a Maven build fails – in plain language, with evidence and a quick fix.</p>
+    <p><b>Maven Detective explains why your Maven build failed – and fixes it in one click.</b></p>
+    <p>Instead of scrolling through 500 lines of stack traces and download noise, you get a diagnosis card:
+       the cause in one sentence, the log lines and files that prove it, a confidence level and a quick fix.
+       Every green build becomes a reference, so you also see <i>what changed</i> since the build last worked.</p>
+
+    <h3>Build Doctor</h3>
     <ul>
-      <li><b>Build Doctor:</b> instead of 500 lines of log, a card with cause, evidence, confidence and one-click fix.</li>
-      <li>Detects, among others, cached failed downloads (.lastUpdated), missing credentials in settings.xml,
-          blocked http repositories, corrupt JARs, wrong JDK, missing modules and parent POMs.</li>
-      <li><b>What changed?</b> Every green run becomes the reference; when a later one fails, the card lists
-          the changes since then – JDK, Maven, profiles, parent, plugins, dependencies.</li>
-      <li><b>IDE vs. command line:</b> compares Maven, JDK, settings.xml, profiles and .mvn/ configuration
-          between IntelliJ and ./mvnw.</li>
-      <li><b>Answers in pom.xml:</b> the managed version and its source next to every dependency without a version
-          ("2.18.2 · jackson-bom"), "3 modules · 2 versions" above dependencies whose version differs across modules,
-          a gutter icon where a dependency brings duplicate classes or loses a higher requested version, and a banner on
-          the file the last build failed on.</li>
-      <li><b>Why this version?</b> Alt+Enter or right-click a dependency in pom.xml (also in the Maven tool window and under
-          External Libraries) to see the decision chain:
-          direct declaration, dependencyManagement in the module or parent, imported BOM, the property that sets it,
-          path in the tree (nearest wins) and overridden versions – every step jumps to the right POM line.</li>
-      <li><b>Conflict matrix:</b> one table for the whole reactor – artifact by module, resolved version in each cell,
-          deviations highlighted. One click pins the version in the common parent's dependencyManagement and lists
-          the declarations that would still override it.</li>
-      <li><b>Exclusion hygiene:</b> an inspection in pom.xml greys out exclusions that no longer exclude anything
-          (typically after an upgrade) or that another exclusion already covers; a page lists them for the whole project
-          and removes the checked ones in one step.</li>
-      <li><b>Duplicate classes:</b> finds classes that sit in more than one JAR of a module, also under different coordinates
-          (commons-logging next to jcl-over-slf4j, javax.xml.bind next to jakarta.xml.bind-api 2.x), shows which copy wins
-          and whether the contents differ, and inserts the exclusion that removes the redundant JAR.</li>
-      <li><b>Unused and undeclared dependencies:</b> resolves the classes your sources name via the code index and reports
-          dependencies that are used but only arrive transitively (also live on the import in the editor), declared ones that
-          no source names, and compile dependencies only tests use – with one-click declare, remove or change scope.
-          Known runtime-only libraries (JDBC drivers, logging backends, test engines) and JARs that register services are not
-          reported as unused for sure.</li>
-      <li><b>Upgrade simulator:</b> "what happens if I raise X to version Y?" – before the POM changes. Finds the place that sets
-          the version today (property, BOM import, parent, direct declaration, dependencyManagement), applies the change in memory,
-          rebuilds every module's dependency tree from the POMs and shows what goes up, down, appears, disappears or changes scope,
-          plus new conflicts where a higher requested version loses. Missing POMs of the new version are fetched only on click;
-          one more click applies exactly the simulated change.</li>
-      <li><b>Settings</b> under <i>Tools | Maven Detective</i>: language (English or German), balloon on red builds,
-          rebuild after a fix, diff preview, snapshots on/off and their folder.</li>
-      <li><b>See before you change:</b> every quick fix that edits a pom.xml shows the change in the IDE's diff viewer first
-          (can be switched off); the upgrade simulation opens as an editor tab with the POM diff and the tree difference.</li>
-      <li>Complements Maven Helper and the Dependency Analyzer: they show facts, Maven Detective shows cause and fix.</li>
+      <li><b>Cause, not symptoms:</b> recognises the Maven classics – cached failed downloads (<code>.lastUpdated</code>),
+          401/403 without a matching <code>&lt;server&gt;</code>, blocked http repositories, corrupt JARs, the wrong JDK,
+          invalid POMs, reactor problems, missing plugins, enforcer rules, out of memory, EAR/WAR/EJB packaging –
+          and verifies each suspicion against your local repository, <code>settings.xml</code>, JDK and POMs.</li>
+      <li><b>One-click fixes:</b> rebuild with <code>-U</code>/<code>-am</code>, switch the runner JDK, set a plugin version,
+          delete broken files, add a JVM option. The plugin rebuilds and tells you <i>Fixed ✓</i> or shows the next diagnosis.</li>
+      <li><b>What changed?</b> JDK, Maven, profiles, parent, plugins and dependencies since the last green build.</li>
+      <li><b>Where did that class come from?</b> For <code>NoSuchMethodError</code>, <code>NoClassDefFoundError</code> and
+          <code>package … does not exist</code>: which JAR the JVM loads, whether it has the method, which version lost and why.</li>
+      <li><b>IDE vs. command line:</b> "works in the terminal, fails in IntelliJ" – Maven, JDK, <code>settings.xml</code>,
+          profiles and <code>.mvn/</code> configuration side by side.</li>
+      <li><b>Preflight:</b> a traffic light for your setup <i>before</i> the build – including repository access behind
+          corporate proxies, on request.</li>
+      <li><b>Log navigator:</b> jump to the first real error and the failed module; download noise folded away in the console.</li>
     </ul>
+
+    <h3>Dependency X-ray</h3>
+    <ul>
+      <li><b>Why This Version?</b> Alt+Enter on any dependency shows the decision chain – declaration,
+          dependencyManagement, imported BOM, property, nearest-wins path – each step jumps to its POM line.</li>
+      <li><b>Conflict matrix:</b> artifact × module for the whole reactor; pin a version in the common parent with one click.</li>
+      <li><b>Duplicate classes:</b> the same class in several JARs (e.g. <code>commons-logging</code> next to
+          <code>jcl-over-slf4j</code>), which copy wins, and the exclusion that removes the redundant JAR.</li>
+      <li><b>Exclusion hygiene:</b> greys out exclusions that no longer exclude anything.</li>
+      <li><b>Unused and undeclared dependencies:</b> based on the classes your code actually names – declare, remove or
+          change scope with one click; live inspection on imports.</li>
+      <li><b>Upgrade simulator:</b> "what happens if I raise X to Y?" – see what goes up, down, appears or disappears in
+          every module's tree <i>before</i> the POM changes, then apply exactly that change.</li>
+      <li><b>Answers in your pom.xml:</b> <code>2.18.2 · jackson-bom</code> behind managed dependencies,
+          <code>3 modules · 2 versions</code> above conflicting ones, gutter icons for lost versions and duplicate classes.</li>
+    </ul>
+
+    <h3>Safe by design</h3>
+    <ul>
+      <li>Every quick fix that edits a <code>pom.xml</code> shows a diff first and is a single undo step.</li>
+      <li>Checks only read local files – the network is used only when you ask for it.</li>
+      <li>English and German user interface and diagnoses.</li>
+      <li>The same diagnosis on the command line and in CI via the
+          <a href="https://github.com/BitShiftDev/maven-detective#maven-extension">Maven extension</a>.</li>
+    </ul>
+
+    <p>Maven Detective complements Maven Helper and the Dependency Analyzer: they show you the facts,
+       Maven Detective shows you the cause and the fix.
+       <a href="https://github.com/BitShiftDev/maven-detective">Source, docs and issues on GitHub</a>.</p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>

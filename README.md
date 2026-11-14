@@ -1,123 +1,212 @@
-# Maven Detective
+<p align="center">
+  <img src="docs/images/banner.svg" alt="Maven Detective – know why your Maven build failed and fix it in one click" width="100%">
+</p>
 
-[![build](https://github.com/BitShiftDev/maven-detective/actions/workflows/build.yml/badge.svg)](https://github.com/BitShiftDev/maven-detective/actions/workflows/build.yml)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/BitShiftDev/maven-detective/actions/workflows/build.yml"><img src="https://github.com/BitShiftDev/maven-detective/actions/workflows/build.yml/badge.svg" alt="Build"></a>
+  <a href="https://github.com/BitShiftDev/maven-detective/releases"><img src="https://img.shields.io/github/v/release/BitShiftDev/maven-detective?label=release&color=7C8BFB" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/IntelliJ%20IDEA-2025.3%2B-5EA1FE?logo=intellijidea&logoColor=white" alt="IntelliJ IDEA 2025.3+">
+  <img src="https://img.shields.io/badge/Maven-3.9-9D75F8?logo=apachemaven&logoColor=white" alt="Maven 3.9">
+  <img src="https://img.shields.io/badge/Java-8%2B-orange" alt="Java 8+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
+</p>
 
-> **English:** Maven Detective explains why a Maven build fails – in plain language, with evidence, confidence and a quick fix.
-> It ships as an IntelliJ IDEA plugin (2025.3+), a Maven core extension that prints the diagnosis into the Maven log
-> (`io.github.bitshiftdev.mavendetective:maven-detective-extension` via `.mvn/extensions.xml`), and a command line tool; on top it answers dependency questions (why this version, conflicts across modules,
-> duplicate classes, stale exclusions, unused/undeclared dependencies, upgrade simulation). User interface and
-> diagnoses are available in English and German; this README and the code comments are in German.
-> See [Installation](#installation) and the [changelog](CHANGELOG.md). Issues and pull requests in English are welcome.
+<p align="center">
+  <b>500 lines of Maven log in. One sentence of cause, the evidence and a one-click fix out.</b><br>
+  In IntelliJ IDEA, in your terminal and in CI – with the same diagnosis everywhere.
+</p>
 
-IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, mit Belegen, Sicherheit und Quick-Fix. Dazu eine Maven-Core-Extension, die dieselbe Diagnose auf der Kommandozeile und in CI liefert.
+<p align="center">
+  <a href="#installation">Installation</a> ·
+  <a href="#build-doctor">Build Doctor</a> ·
+  <a href="#dependency-x-ray">Dependency X-ray</a> ·
+  <a href="#command-line">Command line</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-```
-[ERROR] +-- Maven Detective · Build Doctor ----------------------------
-[ERROR] | #4 Kaputtes JAR im lokalen Repo · sicher
-[ERROR] | Ursache: Die Datei …/broken-maven-plugin-1.0.jar im lokalen Repository ist beschädigt (abgebrochener Download oder volle Platte).
-[ERROR] |   - Failed to parse plugin descriptor for com.example.fixture:broken-maven-plugin:1.0 (…): zip END header not found
-[ERROR] |   - Lässt sich nicht als ZIP öffnen: zip END header not found -> …/broken-maven-plugin-1.0.jar
-[ERROR] | Behebung: Datei löschen und neu laden  (1 Datei: …/broken-maven-plugin-1.0.jar)
-[ERROR] +--------------------------------------------------------------
-```
+---
 
-## Stand: Phase 5 – Build Doctor fragt Modul A
+<p align="center">
+  <img src="docs/images/diagnosis-card.svg" alt="Diagnosis card in the Maven log: JDK does not fit (certain). Cause: the project requires Java 21, but Maven runs with JDK 17. Fix: switch the runner JDK to Java 21." width="100%">
+</p>
 
-| Baustein | Status |
-| --- | --- |
-| Analyse-Kern (`core`, Java 8, ohne Abhängigkeiten) | fertig, 197 Unit-Tests |
-| Fehlerkatalog v1 (YAML) | 12 Kategorien aus dem Konzept + „Tests fehlgeschlagen“ + „EAR/WAR/EJB-Packaging“ |
-| Log-Parser (Fallback) | fertig: Maven 3.9-Format, CI-Zeitstempel, ANSI-Farben, `[FATAL]` |
-| Maven-Extension (`EventSpy`) | fertig, mit Maven 3.9.11 an 11 Fixture-Projekten getestet |
-| „Was hat sich geändert?“ (Schnappschuss-Diff) | fertig in Kern, Extension, CLI (`changes`) und IDE |
-| IDE gegen Kommandozeile | fertig: Vergleich als Tabelle im Tool-Window, Hinweis auf der Karte |
-| Preflight-Check | fertig in Kern, CLI (`preflight`, `--network`) und IDE (Aktion „Preflight“ im Build Doctor und in der Toolbar des Maven-Tool-Windows, Kachel in der Übersicht): Ampel aus settings.xml, JDK, Maven, Projekt, lokalem Repository und Remote-Repositories; Netz nur auf Klick. **In `runIde` noch nicht durchgeklickt** |
-| Klassen-Herkunft (Regeln 9 und 10) | fertig im Kern, wirkt damit in CLI, Extension und IDE: Bei `NoSuchMethodError`, `NoClassDefFoundError` & Co. und bei `package … does not exist` sucht Build Doctor die Klasse im Classpath des gescheiterten Moduls und liest die Klassendateien. Die Karte sagt, welches JAR die JVM lädt, ob es die Methode hat, welche Version verdrängt wurde oder welche Exclusion die Klasse entfernt; Quick-Fixes über Modul A (Exclusion, Version heben über den Upgrade-Simulator, Scope, Dependency deklarieren). Unit-Tests mit echt kompilierten Klassen, **kein Fixture mit echtem `mvn`** (bräuchte Netz für Surefire) |
-| Log-Navigator | fertig in Kern, CLI (`outline`, `--strip`) und IDE (Ansicht „Log-Navigator“ im Build Doctor: Gliederung nach Modulen und Plugin-Schritten, Sprung zum ersten Fehler und zum gescheiterten Modul, Downloads eingeklappt; Downloads auch in Konsole und Build-Fenster eingeklappt). **In `runIde` noch nicht durchgeklickt** |
-| IntelliJ-Plugin | baut gegen IntelliJ IDEA 2025.3; Tool-Window mit drei Tabs (Übersicht mit Kacheln, Build Doctor, Dependencies mit Navigation), Badge an der Leiste bei rotem Build, Ergebnisse veralten sichtbar nach jedem Maven-Import; Diagnose-Karte aus Komponenten mit Verlauf der letzten 20 Läufe, Link „Ursache anzeigen“ hinter `BUILD FAILURE` in der Konsole und Fix-und-Prüf-Schleife (nach dem Fix neu bauen, „Behoben ✓“ oder neue Diagnose); Quick-Fixes: Neubau mit `-U`/`-am`, Runner-JDK, Plugin-Version, `.lastUpdated` löschen, JVM-Option; jede Änderung an einer `pom.xml` zeigt vorher einen Diff (abschaltbar); Oberfläche und Diagnose-Texte auf Englisch (Standard) oder Deutsch (Einstellung *Sprache*); Einstellungen unter *Settings | Tools | Maven Detective* (Sprache, Sprechblase bei rotem Build, Neubau nach Fix, Diff-Vorschau, Schnappschüsse an/aus und Ordner, Starter-Funde), „Got it“-Hinweise beim ersten roten Build und beim ersten Öffnen einer `pom.xml`, leere Seiten erklären in zwei Sätzen, was sie tun. **In `runIde` noch nicht durchgeklickt** |
-| Gate 1 (30 echte Logs) | **offen** – braucht Logs echter gescheiterter Builds, siehe unten |
-| A1 „Warum diese Version?“ | fertig in Kern, CLI (`why`) und IDE (Popup am Cursor per Alt+Enter oder Rechtsklick in der `pom.xml`, Rechtsklick im Maven-Tool-Window und unter External Libraries, Tab „Dependencies“ → „Warum diese Version?“). **In `runIde` noch nicht durchgeklickt** |
-| Antworten in der `pom.xml` (UI-Plan U4) | Inlay „2.18.2 · jackson-bom“ hinter Dependencies ohne Version, Code Vision „3 Module · 2 Versionen“ bei Abweichungen, Gutter-Icon bei verdrängter höherer Version oder doppelten Klassen, Banner an der Datei, an der der letzte Build scheiterte. **In `runIde` noch nicht durchgeklickt** |
-| A2 Konflikt-Matrix | fertig in Kern, CLI (`matrix`, `--pin`) und IDE (Tab „Dependencies“ → „Konflikte“ mit Quick-Fix „im Parent festlegen“). **In `runIde` noch nicht durchgeklickt** |
-| A4 Exclusion-Hygiene | fertig in Kern, CLI (`exclusions`, `--remove`) und IDE (Inspection „Veraltete Exclusion“ in der `pom.xml` mit Quick-Fix, Tab „Dependencies“ → „Exclusions“ mit Sammel-Entfernen). **In `runIde` noch nicht durchgeklickt** |
-| A3 Doppelte Klassen | fertig in Kern, CLI (`duplicates`, `--exclude`) und IDE (Tab „Dependencies“ → „Doppelte Klassen“ mit Quick-Fix „Exclusion einfügen“). **In `runIde` noch nicht durchgeklickt** |
-| A5 Ungenutzte/undeklarierte Dependencies | fertig in Kern, CLI (`analyze`, `--declare`, `--remove`) und IDE (Tab „Dependencies“ → „Nutzung“, Inspection „Import aus nicht deklarierter Dependency“ live im Editor). **In `runIde` noch nicht durchgeklickt** |
-| A6 Upgrade-Simulator | fertig in Kern, CLI (`upgrade`, `--manage`, `--fetch`, `--apply`) und IDE (Tab „Dependencies“ → „Upgrade-Simulator“, Ergebnis als Editor-Tab mit Diff, Rechtsklick in der `pom.xml` „Upgrade simulieren…“). **In `runIde` noch nicht durchgeklickt** |
+## Why Maven Detective?
+
+Every Java developer knows the feeling: `BUILD FAILURE`, followed by a wall of stack traces, download noise and
+`-e`/`-X` hints. The real reason is usually one of a dozen classics – a cached failed download, a missing
+`<server>` in `settings.xml`, the wrong JDK, a corrupt JAR, a dependency that lost a version fight. Maven Detective
+knows these classics, **proves** which one hit you and fixes it.
+
+- **Cause, not symptoms.** A card with one sentence of cause, the log lines and files that prove it, and a confidence level (`certain` / `likely`).
+- **One-click fixes.** Rebuild with `-U`, switch the runner JDK, delete broken files, pin a version, add an exclusion – every `pom.xml` change is shown as a diff first and is a single undo step.
+- **What changed?** Every green build becomes the reference. When a later build fails, you see exactly what changed since: JDK, Maven, profiles, parent, plugins, dependencies.
+- **Dependency X-ray.** *Why This Version?*, conflicts across modules, duplicate classes, dead exclusions, unused and undeclared dependencies – and an upgrade simulator that shows the consequences *before* you touch the POM.
+- **Same brain everywhere.** One dependency-free Java 8 core powers the IntelliJ plugin, a Maven core extension for terminal and CI, and a command line tool.
+- **Local by default.** Checks only read local files and settings. The network is used only when you explicitly ask for it.
+- **English and German** for the user interface and every diagnosis.
 
 ## Installation
 
-- **IntelliJ-Plugin:** *Settings | Plugins | Marketplace* → „Maven Detective“ (IntelliJ IDEA 2025.3 oder neuer). Ohne Marketplace: `maven-detective-<version>.zip` aus den [Releases](https://github.com/BitShiftDev/maven-detective/releases) laden und über *Install Plugin from Disk…* einspielen.
-- **Kommandozeile:** `maven-detective-cli-<version>.jar` aus den Releases, läuft ab Java 8: `java -jar maven-detective-cli-<version>.jar diagnose build.log`. Dasselbe JAR liegt in Maven Central als `io.github.bitshiftdev.mavendetective:maven-detective-core` (auch als Bibliothek nutzbar, ohne Abhängigkeiten).
-- **Maven-Extension:** am einfachsten aus Maven Central über `.mvn/extensions.xml` im Projekt (Maven 3.9, Java 8 oder neuer) – siehe [Extension in Maven-Läufen](#extension-in-maven-läufen). Ohne Projektänderung: `maven-detective-extension-<version>.jar` aus den Releases, dann `mvn -Dmaven.ext.class.path=/pfad/maven-detective-extension-<version>.jar verify`; dauerhaft für alle Läufe: JAR nach `$MAVEN_HOME/lib/ext/` legen.
+| You want… | Do this |
+| --- | --- |
+| **The IntelliJ plugin** | *Settings → Plugins → Marketplace* → search for **Maven Detective** (IntelliJ IDEA 2025.3 or newer).<br>Offline: download `maven-detective-<version>.zip` from the [releases](https://github.com/BitShiftDev/maven-detective/releases) and use *Install Plugin from Disk…* |
+| **The diagnosis in every `mvn` run** (terminal, CI) | Add the Maven extension – see [Maven extension](#maven-extension). |
+| **The command line tool** | Download `maven-detective-cli-<version>.jar` from the [releases](https://github.com/BitShiftDev/maven-detective/releases) and run `java -jar maven-detective-cli-<version>.jar diagnose build.log` (Java 8+). |
 
-Die Veröffentlichung nach Maven Central ist vorbereitet (`./gradlew centralBundle`, Ablauf in [RELEASING.md](RELEASING.md)). Bis die erste Version dort liegt, gilt der Weg über die GitHub-Releases.
+Every release ships `SHA256SUMS`. What changed per version: [CHANGELOG.md](CHANGELOG.md).
 
-Prüfsummen stehen in `SHA256SUMS` am Release. Was sich je Version geändert hat: [CHANGELOG.md](CHANGELOG.md).
+## Build Doctor
 
-## Schnellstart
+Build Doctor reads the failed run (structured Maven events or the plain log), matches it against its error catalog,
+then **verifies** the suspicion against your actual files: the local repository, `settings.xml`, the JDK, the POMs.
+Only a confirmed cause is called `certain`.
 
-Voraussetzung: JDK 21 für den Build (erzeugt wird Java-8-Bytecode für Kern und Extension).
+### What it recognises
 
-```bash
-./gradlew :core:test                    # Unit-Tests
-./gradlew :maven-extension:jar          # build/libs/maven-detective-extension-<version>.jar
-./gradlew :maven-extension:fixtureTest  # löst jeden Fehler mit echtem Maven aus (mvn im PATH nötig),
-                                        # inkl. „grün → Version geändert → rot“ für den Schnappschuss-Diff
-./gradlew :intellij-plugin:runIde       # IntelliJ mit Plugin starten
+| # | Problem | What Build Doctor checks |
+| --- | --- | --- |
+| 1 | Artifact cannot be resolved | Cached failed downloads (`*.lastUpdated`), offline mode, unknown hosts, unbuilt reactor siblings |
+| 2 | Access denied (401/403) | `<server>` entry for the repository id, missing `settings.xml` |
+| 3 | HTTP repository blocked | Mirrors and repositories using `http://` (blocked since Maven 3.8.1) |
+| 4 | Corrupt JAR in the local repo | Opens the JAR from the local repository |
+| 5 | JDK does not fit | Required release vs. the JDK Maven actually runs on, toolchains |
+| 6 | Plugin missing or without version | Unknown prefixes, missing plugin versions and declarations |
+| 7 | Invalid POM | XML errors with line numbers, parent location, `relativePath` |
+| 8 | Reactor problem | Missing child modules, cycles |
+| 9 | Compiler error caused by a dependency | Which JAR has the package, scope `test`/`runtime`, `javax` → `jakarta` |
+| 10 | Runtime conflict | Which JAR the JVM loads and whether it has the method |
+| 11 | Enforcer rule violated | Which rule failed and why |
+| 12 | Memory | Maven JVM vs. forked test JVM |
+| 13 | Tests failed | Tells a genuine test failure apart from a build problem |
+| 14 | EAR/WAR/EJB packaging | Modules missing from the EAR, WAR dependency without `<type>war</type>`, missing descriptors |
+
+Missing a classic? The catalog is plain YAML – [add your own rule](#extend-the-error-catalog).
+
+### Where did that class come from?
+
+For `NoSuchMethodError`, `NoClassDefFoundError` and `package … does not exist`, Build Doctor rebuilds the classpath
+of the failed module and reads the class files themselves:
+
+```
+Cause (certain): org.x.Util comes from util:1.0, which lacks Util.newMethod(). org.n:mid:1.0 requires
+version 2.0, which has it, but loses against 1.0 (nearest wins).
+  Loaded:    util:1.0 (compile) – without Util.newMethod() – via org.o:old-user:1.0
+  Displaced: util:2.0, requested by org.n:mid:1.0, 1.0 wins – has Util.newMethod()
+  Caller org.n.NewUser comes from new-user:1.0
+Fix: Pin org.x:util:2.0 in app under dependencyManagement
 ```
 
-### Kommandozeile
+### What changed since the last green build?
 
-```bash
-# Log aus Datei, CI oder Pipe
-java -jar core/build/libs/maven-detective-core-*.jar diagnose build.log --project .
-mvn verify 2>&1 | java -jar core/build/libs/maven-detective-core-*.jar diagnose -
-# Markdown für Ticket oder Chat
-java -jar core/build/libs/maven-detective-core-*.jar diagnose build.log --markdown
-# Was hat sich seit dem letzten grünen Build geändert?
-java -jar core/build/libs/maven-detective-core-*.jar changes --project .
-# Woher kommt die Version dieser Dependency? (Modul A1)
-java -jar core/build/libs/maven-detective-core-*.jar why com.fasterxml.jackson.core:jackson-databind --project .
-# Welche Module nutzen welche Version? (Modul A2)
-mvn dependency:tree -Dverbose > tree.txt
-java -jar core/build/libs/maven-detective-core-*.jar matrix --project . --tree tree.txt
-# … und die Version im gemeinsamen Parent festlegen (ohne Version: die höchste)
-java -jar core/build/libs/maven-detective-core-*.jar matrix --project . --pin com.google.guava:guava
-# Welche Exclusions schließen nichts mehr aus? (Modul A4; Exit-Code 3 = es gibt welche)
-java -jar core/build/libs/maven-detective-core-*.jar exclusions --project .
-# … und veraltete/doppelte entfernen
-java -jar core/build/libs/maven-detective-core-*.jar exclusions --project . --remove
-# Welche Klassen liegen in mehreren JARs? (Modul A3; Exit-Code 3 = verschiedene Fassungen zur Laufzeit)
-java -jar core/build/libs/maven-detective-core-*.jar duplicates --project . --tree tree.txt
-# … und die empfohlenen Exclusions einfügen
-java -jar core/build/libs/maven-detective-core-*.jar duplicates --project . --exclude
-# Was nutzt der Code, ohne es zu deklarieren – und was ist deklariert, ohne genutzt zu werden? (Modul A5; Exit-Code 3 = Befunde)
-java -jar core/build/libs/maven-detective-core-*.jar analyze --project . --tree tree.txt
-# … undeklarierte deklarieren und sicher ungenutzte entfernen
-java -jar core/build/libs/maven-detective-core-*.jar analyze --project . --declare --remove
-# Was ändert sich im Baum, wenn ich jackson-databind auf 2.18.2 hebe? (Modul A6; Exit-Code 3 = Versionen sinken oder neue Konflikte)
-java -jar core/build/libs/maven-detective-core-*.jar upgrade com.fasterxml.jackson.core:jackson-databind:2.18.2 --project .
-# … genauso für BOM, Parent oder Property; fehlende POMs mit Maven nachladen, danach übernehmen
-java -jar core/build/libs/maven-detective-core-*.jar upgrade org.springframework.boot:spring-boot-starter-parent:3.5.0 --fetch
-java -jar core/build/libs/maven-detective-core-*.jar upgrade jackson-bom.version=2.18.2 --apply
-# Vor dem Build: kann er so überhaupt laufen? (Exit-Code 3 = rot); --network fragt die Repositories an
-java -jar core/build/libs/maven-detective-core-*.jar preflight --project .
-java -jar core/build/libs/maven-detective-core-*.jar preflight --project . --network --markdown
-# Log-Navigator: Module, gescheitertes Modul, erster echter Fehler mit Umfeld; --strip = Log ohne Downloads
-java -jar core/build/libs/maven-detective-core-*.jar outline build.log --context 5
-mvn verify 2>&1 | java -jar core/build/libs/maven-detective-core-*.jar outline - --strip
+```
+[ERROR] | Since the last green build (2026-11-12 07:45):
+[ERROR] |   - JDK 21.0.4 → 17.0.12
+[ERROR] |   - Parent org.springframework.boot:spring-boot-starter-parent 3.4.1 → 3.5.0 (2 modules)
+[ERROR] |   - Dependency com.fasterxml.jackson.core:jackson-databind 2.18.2 → 2.19.0 (2 modules)
 ```
 
-### Extension in Maven-Läufen
+Snapshots live in `~/.maven-detective/snapshots/`, never in your working tree, and record Maven and JDK version,
+profiles, mirrors, parents, plugins, version properties and dependencies per module.
 
-```bash
-mvn -Dmaven.ext.class.path=/pfad/maven-detective-extension.jar verify
-# optional: strukturierte Events mitschreiben (macht später die IDE)
-mvn -Dmaven.ext.class.path=… -DmavenDetective.eventsFile=target/md-events.jsonl verify
+### More help around the build
+
+- **IDE vs. command line** – *"works in the terminal, fails in IntelliJ"*: a side-by-side table of Maven installation, JDK, `settings.xml`, profiles, VM options and `.mvn/` configuration, with every difference explained.
+- **Preflight** – a traffic light *before* you build: `settings.xml`, JDK, Maven, project structure, local repository and, on request, every remote repository (DNS, certificates behind corporate proxies, 401/403, proxy settings).
+- **Log navigator** – modules, plugin steps, the failed module and the *first real* error, with download noise folded away (also in the IDE console).
+- **Fix-and-check loop** – after a fix the plugin rebuilds and tells you *Fixed ✓* or shows the next diagnosis.
+- **Right in your `pom.xml`** – a banner on the file the last build failed on.
+
+## Dependency X-ray
+
+### Why This Version?
+
+<kbd>Alt</kbd>+<kbd>Enter</kbd> on any `<dependency>` shows the full decision chain – every step links to the POM line
+that caused it:
+
+```
+Why com.fasterxml.jackson.core:jackson-databind 2.18.2 in com.acme:api:1.0?
+Version 2.18.2: from the BOM com.fasterxml.jackson:jackson-bom:2.18.2, imported via org.springframework.boot:spring-boot-dependencies:3.4.1
+  1. Declared without a version in api – the version comes from dependencyManagement            → api/pom.xml:21
+  2. Imports BOM org.springframework.boot:spring-boot-dependencies:3.4.1 in api                      → api/pom.xml:14
+  3. Imports BOM com.fasterxml.jackson:jackson-bom:2.18.2 <version>${jackson-bom.version}</version>  → …/spring-boot-dependencies-3.4.1.pom:2199
+       ${jackson-bom.version} = 2.18.2 set in spring-boot-dependencies:3.4.1                         → …/spring-boot-dependencies-3.4.1.pom:79
+  4. dependencyManagement: jackson-databind <version>${jackson.version.databind}</version>           → …/jackson-bom-2.18.2.pom:96
+Notes
+  - ${jackson-bom.version} = 2.17.0 in api has no effect here: the BOM is imported, not inherited,
+    and resolves its properties in its own context.
 ```
 
-Für CI und alle im Team: `.mvn/extensions.xml` im Projekt anlegen, Maven lädt die Extension dann aus Maven Central:
+It follows Maven's own model-builder rules – inheritance, interpolation, BOM imports, nearest wins – and tells you
+when a property you set has *no* effect.
+
+### Conflict matrix
+
+One table for the whole reactor: artifact × module, resolved version in every cell, deviations on top. One click pins
+the version in the common parent and names every declaration that would still override it.
+
+```
+com.google.guava:guava  – 2 versions
+    32.1.3-jre: billing (declared directly)
+    33.3.1-jre: api (dependencyManagement), web (transitive, depth 2)
+    Suggestion: pin 33.3.1-jre in parent under dependencyManagement
+      ! <version>32.1.3-jre</version> in billing overrides dependencyManagement – remove it after pinning  → billing/pom.xml:31
+```
+
+### Duplicate classes
+
+Classes that sit in more than one JAR – also under different coordinates (`commons-logging` next to `jcl-over-slf4j`,
+`javax.xml.bind` next to `jakarta.xml.bind-api` 2.x). Shows which copy wins, whether the contents differ, and inserts the
+exclusion that removes the redundant JAR.
+
+### Exclusion hygiene
+
+After an upgrade, many `<exclusion>`s exclude nothing anymore. An inspection greys them out right in `pom.xml`;
+<kbd>Alt</kbd>+<kbd>Enter</kbd> removes them.
+
+### Unused and undeclared dependencies
+
+Based on the classes your sources actually name (resolved through the IDE's code index): dependencies you use but only get
+transitively, declared dependencies nobody uses, and `compile` dependencies only tests need – with one-click *declare*,
+*remove* and *change scope*. JDBC drivers, logging backends and JARs that register services are never flagged as
+"surely unused".
+
+### Upgrade simulator
+
+*"What happens if I raise X to version Y?"* – answered **before** you change anything:
+
+```
+Upgrade simulation: org.apache.maven:maven-model 3.1.1 → 3.2.5 (POMs unchanged)
+
+Change to the POMs:
+  1. Set property ${maven.version} in demo to 3.2.5 – everything that uses it changes too  → pom.xml:7
+
+Module demo: 5 upgraded
+  ↑ org.apache.maven:maven-model 3.1.1 → 3.2.5 (direct)
+  ↑ org.apache.maven:maven-plugin-api 3.1.1 → 3.2.5 (direct)
+  ↑ org.codehaus.plexus:plexus-utils 3.0.15 → 3.0.20 via org.apache.maven:maven-model:3.2.5
+  ↑ org.apache.maven:maven-artifact 3.1.1 → 3.2.5 via org.apache.maven:maven-plugin-api:3.2.5
+  ↑ org.eclipse.sisu:org.eclipse.sisu.plexus 0.0.0.M5 → 0.3.0.M1 via …
+```
+
+The simulator finds the place that sets the version today – property, BOM import, parent, direct declaration or
+`dependencyManagement` – applies the change in memory, rebuilds every module's tree and shows what goes up (`↑`), down
+(`↓`), appears (`+`) or disappears (`−`), plus new conflicts. One more click applies exactly the simulated change.
+
+### Answers right in your `pom.xml`
+
+- `2.18.2 · jackson-bom` as an inlay behind every dependency without a version
+- `3 modules · 2 versions` above dependencies whose version differs across modules
+- a gutter icon where a dependency brings duplicate classes or loses a higher requested version
+- *Why This Version?* and *Simulate Upgrade…* on right-click – also in the Maven tool window and under *External Libraries*
+
+> Maven Detective complements Maven Helper and IntelliJ's Dependency Analyzer: they show you the facts,
+> Maven Detective shows you the cause and the fix.
+
+## Maven extension
+
+Put the diagnosis card into **every** Maven run – on your machine and in CI – without changing the build itself.
+
+**Per project** (everyone on the team and CI get it), in `.mvn/extensions.xml`:
 
 ```xml
 <extensions>
@@ -129,138 +218,70 @@ Für CI und alle im Team: `.mvn/extensions.xml` im Projekt anlegen, Maven lädt 
 </extensions>
 ```
 
-Das JAR bringt den Kern mit und hat keine Abhängigkeiten; dasselbe JAR funktioniert per `-Dmaven.ext.class.path` und in `$MAVEN_HOME/lib/ext/`. `fixtureTest` prüft den Weg über `extensions.xml` mit einem lokalen Repository. `-DmavenDetective.report=false` schaltet die Karte ab.
+> Maven Central coordinates are available starting with the next release. Until then, use the JAR from the
+> [releases](https://github.com/BitShiftDev/maven-detective/releases):
 
-**Sprache:** Karte, Kommandozeile und Berichte gibt es auf Englisch und Deutsch. Gewählt wird `-DmavenDetective.language=en|de` (in der Kommandozeile auch `--lang en|de`), sonst die Umgebungsvariable `MAVEN_DETECTIVE_LANGUAGE`, sonst die Sprache des Systems (Deutsch nur bei `de`, sonst Englisch). Im Plugin gilt die Einstellung *Sprache*. Texte stehen in `core/…/texts.properties` (Englisch) und `texts_de.properties`. Die Extension ändert nie etwas am Build; jeder interne Fehler wird geschluckt.
-
-## Was hat sich geändert?
-
-Nach jedem Lauf legt Maven Detective einen Schnappschuss ab: Maven- und JDK-Version, Profile, Mirrors und je Modul Parent, Plugins, Versions-Properties (`*.version`, `maven.compiler.release` …), Dependencies und ein Hash der Effective POM. Ein grüner Lauf wird die neue Referenz. Scheitert ein späterer Lauf, steht auf der Karte, was sich seitdem geändert hat:
-
-```
-[ERROR] | Seit dem letzten grünen Build (2026-11-12 07:45):
-[ERROR] |   - JDK 21.0.4 → 17.0.12
-[ERROR] |   - Parent org.springframework.boot:spring-boot-starter-parent 3.4.1 → 3.5.0 (2 Module)
-[ERROR] |   - Dependency com.fasterxml.jackson.core:jackson-databind 2.18.2 → 2.19.0 (2 Module)
-```
-
-- **Wo:** `~/.maven-detective/snapshots/<projekt>-<hash>/` (`green-*.json`, `latest-*.json`), also nie im Git-Status. Verlegen mit `-DmavenDetective.home=…` oder `MAVEN_DETECTIVE_HOME`, abschalten mit `-DmavenDetective.snapshots=false`.
-- **Wer schreibt:** die Extension bei jedem Lauf auf Kommandozeile und in CI; die IDE nach jedem Maven-Lauf aus ihrem eigenen Maven-Modell. Kurze grüne Läufe (`validate`, `-pl`) dünnen die Referenz nicht aus.
-- **Rauschen vermeiden:** Gleiche Änderungen in mehreren Modulen werden zusammengefasst. Zwischen IDE- und Extension-Schnappschuss zählt nur, was beide gleich messen (JDK-Hauptversion, Maven, Profile, Parent, Versionen).
-
-## Warum diese Version?
-
-Modul A1 beantwortet „Warum steht genau diese Version im Classpath?“ als Kette von Stationen, jede mit Datei und Zeile:
-
-```
-Warum com.fasterxml.jackson.core:jackson-databind 2.18.2 in com.acme:api:1.0?
-Version 2.18.2: aus dem BOM com.fasterxml.jackson:jackson-bom:2.18.2, importiert über org.springframework.boot:spring-boot-dependencies:3.4.1.
-  1. Deklariert ohne Version in api (api/pom.xml) – die Version kommt aus dependencyManagement  → api/pom.xml:21
-  2. Importiert BOM org.springframework.boot:spring-boot-dependencies:3.4.1 <version>3.4.1</version> in api (api/pom.xml)  → api/pom.xml:14
-  3. Importiert BOM com.fasterxml.jackson:jackson-bom:2.18.2 <version>${jackson-bom.version}</version> in …spring-boot-dependencies:3.4.1  → …/spring-boot-dependencies-3.4.1.pom:2199
-       ${jackson-bom.version} = 2.18.2 gesetzt in org.springframework.boot:spring-boot-dependencies:3.4.1  → …/spring-boot-dependencies-3.4.1.pom:79
-  4. dependencyManagement: com.fasterxml.jackson.core:jackson-databind <version>${jackson.version.databind}</version> in …jackson-bom:2.18.2  → …/jackson-bom-2.18.2.pom:96
-       …
-Hinweise:
-  - Die Property ${jackson-bom.version} = 2.17.0 in api (api/pom.xml) wirkt hier nicht: Das BOM wird importiert, nicht geerbt, …
-```
-
-- **Stationen:** direkte Angabe (gewinnt immer), `dependencyManagement` im Modul oder geerbt aus dem Parent (mit der Parent-Kette), importierte BOMs (auch verschachtelt, auch aus dem Parent eines BOMs), die setzende Property samt überschriebener Werte weiter oben – und ohne Management der Pfad im Baum (nearest wins), die deklarierende POM der transitiven Dependency und jede verdrängte Version mit Grund.
-- **Regeln wie Mavens Model-Builder:** Erst erben (Kind gewinnt), dann im Kontext des Kindes interpolieren, dann BOMs importieren (erster Import gewinnt; ein BOM löst seine Properties im eigenen Kontext auf). Deshalb wirkt `jackson-bom.version` unter `spring-boot-starter-parent`, aber nicht bei importiertem `spring-boot-dependencies` – genau darauf weist die Erklärung hin.
-- **Quellen:** POMs aus dem Projekt und dem lokalen Repository, nie das Netz. Fehlt ein BOM lokal, nennt die Erklärung das wahrscheinlich zuständige. Profile werden nicht ausgewertet; setzt eines Properties oder `dependencyManagement`, steht das als Hinweis da.
-- **Baum:** Die IDE nimmt ihren aufgelösten Baum (Stand des letzten Imports). Auf der Kommandozeile: `mvn dependency:tree -Dverbose > tree.txt`, dann `why g:a --tree tree.txt` (oder `--tree -` aus der Pipe). Weicht der Baum von den POMs ab, sagt die Erklärung das.
-- **In der IDE:** Alt+Enter oder Rechtsklick auf eine `<dependency>` in der `pom.xml` → „Warum diese Version?“ zeigt die Kette als Popup am Cursor (Stationen springen zur POM-Zeile; Pin oder „Im Tool-Window öffnen“ führt zur Seite mit Liste und Baum). Im Maven-Tool-Window und unter *External Libraries* öffnet der Rechtsklick auf eine Dependency direkt die Seite. Hinter jeder `<dependency>` ohne `<version>` steht als Inlay, welche Version `dependencyManagement` ihr gibt und woher („2.18.2 · jackson-bom“; Klick springt zum Eintrag, abschaltbar unter *Settings | Editor | Inlay Hints | Other | XML*). Oder im Tab „Dependencies“ unter „Warum diese Version?“ ein Modul und eine Dependency wählen (mit Suche und Markierung „× verdrängt“): Die Antwort steht dort als senkrechte Zeitleiste – je Station ein Knoten mit Icon für die Art (Modul, Parent, BOM, Property), Datei:Zeile als Link, verdrängte Versionen durchgestrichen –, darüber der Pfad im Baum als Breadcrumb (Klick auf ein Glied erklärt dessen Version). „Als Markdown kopieren“ für Ticket oder Chat.
-
-## IDE gegen Kommandozeile
-
-„Im Terminal geht es, in der IDE nicht“: Die Aktion **IDE gegen Kommandozeile** im Tab „Build Doctor“ stellt als Tabelle gegenüber, womit IntelliJ baut (Maven-Installation, Runner-JDK, settings.xml, explizite Profile, VM-Optionen) und was `./mvnw` bzw. `mvn` im Terminal nehmen würde (`.mvn/wrapper`, `JAVA_HOME`/`PATH`, `.mvn/maven.config`, `.mvn/jvm.config`, `MAVEN_OPTS`). Jede Abweichung ist mit Warn-Icon und „≠“ markiert und bekommt einen Satz, warum sie zählt. Gibt es Abweichungen, nennt die Diagnose-Karte sie im Abschnitt „IDE und Terminal unterscheiden sich“.
-
-Nennt die Diagnose eines roten Laufs aus der IDE eine Datei (Beleg oder Quick-Fix, z. B. die `pom.xml` mit dem fehlenden Parent), zeigt der Editor dieser Datei ein Banner: „Der letzte Build scheiterte an dieser Datei (Zeile 7): #3 …“ mit „Diagnose anzeigen“ und „Ausblenden“. Es verschwindet mit dem nächsten Lauf, der die Datei nicht mehr nennt.
-
-Die Terminal-Seite wird aus den Umgebungsvariablen der IDE abgeleitet. Eine Shell mit anderem `JAVA_HOME` kann abweichen; das steht auch so im Fenster.
-
-**Warum die IDE die Extension nicht selbst anhängt:** IntelliJ 2025.x startet Maven über das `mvn`-Skript (Registry `maven.use.scripts`) und setzt dabei `-Dmaven.ext.class.path` für den eigenen Event-Listener. Ein zweiter Wert würde ihn überschreiben und den Build-View der IDE leeren. Die IDE nimmt deshalb den Text-Log und ihr Maven-Modell; die Extension bleibt für Terminal und CI.
-
-## Preflight vor dem Build
-
-Bevor ein Build zehn Minuten Downloads zieht, um dann an einer kaputten `settings.xml` zu scheitern: **Preflight** (Build Doctor, Toolbar des Maven-Tool-Windows, Kachel in der Übersicht oder `preflight` in der Kommandozeile) prüft mit dem Setup, mit dem gebaut wird – in der IDE Maven, Runner-JDK und settings.xml der IDE, in der Kommandozeile das, was `./mvnw` bzw. `mvn` nähme. Ergebnis ist eine Ampel und je Thema eine Zeile mit Belegen und Quick-Fixes:
-
-| Thema | Was geprüft wird |
-| --- | --- |
-| settings.xml | Benutzer- und globale `settings.xml` gültiges XML (mit Zeile), eingestellte Datei vorhanden, Offline-Modus (`<offline>` oder `-o` in `.mvn/maven.config`), Mirrors mit `http://` (seit Maven 3.8.1 gesperrt; Fix: auf https umstellen) |
-| JDK | JDK gefunden, JDK statt JRE (`javac`), verlangtes Release (`maven.compiler.release/target/source`, auch über `${java.version}` aus dem Parent, und `<release>`) gegen das JDK des Builds, Enforcer `requireJavaVersion`, Toolchains ohne `~/.m2/toolchains.xml` |
-| Maven | Maven gefunden, Wrapper ohne `mvnw`, Maven 4 mit Java < 17, Maven < 3.6.3, Enforcer `requireMavenVersion` |
-| Projekt | `pom.xml` vorhanden und lesbar (Zeile des XML-Fehlers), Module aus `<modules>` vorhanden, `relativePath` auf den falschen Parent, Dependencies ohne Version und ohne dependencyManagement, Parents/BOMs, die lokal fehlen (offline: Fehler) |
-| Lokales Repository | beschreibbar, gespeicherte Fehlversuche (`*.lastUpdated` ohne Artifact) zu Parents, BOMs und direkten Dependencies – Fix: löschen |
-| Remote-Repositories | Maven Central plus `<repositories>`/`<pluginRepositories>` der Projekt-POMs, nach den Mirrors umgelenkt: von Maven gesperrt (http, `maven-default-http-blocker`). Mit Netz („Repositories prüfen“ bzw. `--network`): erreichbar, DNS, Zeitüberschreitung, Zertifikat (Firmen-Proxy), 401/403 mit oder ohne `<server>` in settings.xml, Proxy aus settings.xml samt `nonProxyHosts`; fehlende Parents/BOMs, die in keinem Repository liegen |
-
-Netzprüfungen schicken nur `HEAD`-Anfragen und nie Zugangsdaten; ob hinterlegte Zugangsdaten stimmen, bleibt ungeprüft. Zertifikate prüft der Preflight mit dem Truststore der JVM, in der er läuft (IDE bzw. CLI) – das JDK des Builds kann einen anderen haben.
-
-## Log-Navigator
-
-Ein Maven-Log mit Hunderten Download-Zeilen versteckt den eigentlichen Fehler. **Log öffnen** auf der Diagnose-Karte (bzw. die Aktion „Log-Navigator“) zeigt das Log des Laufs in einem Editor: links die Gliederung (erster echter Fehler, gescheitertes Modul mit dem Plugin-Schritt, in dem es scheiterte, alle Module mit Ergebnis und Zeit aus dem Reactor Summary und ihren Plugin-Schritten), rechts das Log mit eingeklappten Downloads und markierten Fehlerzeilen (auch im Scrollbalken), dazu „Vorheriger/Nächster Fehler“. „Erster Fehler“ überspringt Maven-Textbausteine wie `COMPILATION ERROR :` oder `Tests run:` und landet auf der Fundstelle.
-
-In Konsole und Build-Fenster klappt das Plugin Download-Zeilen (`Downloading from …`, `Downloaded from …`, `Progress (1): …`) zu einer Zeile zusammen; abschaltbar unter *Settings | Tools | Maven Detective*. In der Kommandozeile liefert `outline` dieselbe Gliederung, `outline --strip` das Log ohne Downloads.
-
-## Woher kommt die Klasse?
-
-Bei Laufzeit- und Compiler-Fehlern rund um Klassen (Regeln 9 und 10) fragt Build Doctor Modul A. Er baut den Classpath des gescheiterten Moduls aus den lokalen POMs nach (`DependencyResolver`, wie `dependency:tree`) und sucht die Klasse aus der Meldung in jedem JAR. Bei `NoSuchMethodError` und `NoSuchFieldError` liest er zusätzlich die Klassendatei und prüft, ob die Methode mit genau dieser Signatur darin steht:
-
-```
-Ursache (sicher): org.x.Util kommt aus util:1.0, dort fehlt Util.newMethod(). org.n:mid:1.0 verlangt
-Version 2.0, die sie hat, verliert aber gegen 1.0 (nearest wins).
-  Geladen: util:1.0 (compile) – ohne Util.newMethod() – über org.o:old-user:1.0
-  Verdrängt: util:2.0, verlangt von org.n:mid:1.0, 1.0 gewinnt – hat Util.newMethod()
-  Aufrufer org.n.NewUser stammt aus new-user:1.0
-Behebung: org.x:util:2.0 in app unter dependencyManagement festlegen
-```
-
-| Befund | Quick-Fix |
-| --- | --- |
-| Klasse mehrfach im Classpath, die geladene Fassung hat die Methode nicht (oder die Fassungen unterscheiden sich) | `add-exclusion` an der direkten Dependency, die das falsche JAR mitbringt (Empfehlung wie bei „Doppelte Klassen“) |
-| Nur eine Fassung im Classpath, eine verdrängte Version (nearest wins oder `dependencyManagement`) hat die Methode bzw. die Klasse | Version heben an der Stelle, die der Upgrade-Simulator findet (direkte Version, Management, Property, BOM, sonst Pin in der obersten Projekt-POM); nur wenn ein einziger Schritt genügt und die Version im Modul ankommt |
-| Klasse liegt in einem Artifact, das eine `<exclusion>` des Projekts entfernt | `remove-exclusion` |
-| Compiler: Paket liegt in einer Dependency mit Scope `test` oder `runtime` | `set-scope` auf `compile` (geerbt: zur Deklaration springen; transitiv: im Modul deklarieren) |
-| Compiler: Paket fehlt im Classpath, liegt aber im lokalen Repository | `add-dependency` mit der höchsten lokalen Version (ohne Version, wenn verwaltet) |
-| `NoClassDefFoundError: Could not initialize class` | kein Classpath-Problem: Hinweis auf den ersten `ExceptionInInitializerError` |
-
-Das Modul kommt aus der Quelldatei des Compiler-Fehlers, aus `on project …` oder ist das einzige Modul mit Code. Gelesen werden nur lokale POMs und JARs; was fehlt, steht als Hinweis auf der Karte. Die Suche im lokalen Repository bleibt unter dem Verzeichnis, das zum Paketnamen passt (z. B. `org/apache/commons` für `org.apache.commons.lang3`), und gibt bei mehr als 600 JARs auf.
-
-## Java EE: EAR, WAR, EJB
-
-Build Doctor hängt nicht am packaging; Reactors mit `ear`-, `war`- und `ejb`-Modulen werden wie jedes andere Projekt diagnostiziert. Dazu kommen Regeln für die typischen Fehler der Packaging-Plugins (Kategorie 14):
-
-- `Artifact[war:…] is not a dependency of the project`: Modul im `maven-ear-plugin` eingetragen, aber nicht in den `<dependencies>` der EAR-POM. Die Prüfung `ear-module` zeigt Modul-Eintrag, EAR-POM und das Zielmodul im Reactor.
-- Dependency auf ein WAR-Modul ohne `<type>war</type>`: Maven sucht dann `…:jar:…` und findet nichts. `reactor-sibling` erkennt das am packaging des Reactor-Moduls und springt zur Dependency.
-- `maven-war-plugin` 2.x auf Java 16+, fehlende `web.xml`, fehlender `ejb-jar.xml` bei `ejbVersion` 2.x, unbekannte Plattform-Version im `maven-ear-plugin`.
-- Fehlende `javax.*`/`jakarta.*`-Pakete beim Kompilieren: `ee-namespace` erkennt den Wechsel javax → jakarta (Jakarta EE 9) und Pakete, die Java 11 aus dem JDK entfernt hat (`javax.xml.bind`, `javax.annotation`, …).
-
-Grenzen: Die Konflikt-Matrix (A2) vergleicht den Maven-Classpath je Modul, nicht die Classloader im Server. Sie kennt weder `lib/` im EAR gegenüber `WEB-INF/lib` noch `skinnyWars` oder die Bibliotheken des Applikationsservers. Zeilen sind nach `groupId:artifactId` geschlüsselt, `ejb` und `ejb-client` desselben Moduls fallen zusammen.
-
-## Gate 1: mit echten Logs messen
-
-1. Logs der letzten 30 gescheiterten Builds in einen Ordner legen (`*.log` oder `*.txt`).
-2. Optional `labels.properties` anlegen: `dateiname.log=regel-id` mit der Ursache, die es *wirklich* war.
-3. Auswerten:
+**Without touching the project:**
 
 ```bash
-java -jar core/build/libs/maven-detective-core-*.jar evaluate gate1-logs/
+mvn -Dmaven.ext.class.path=/path/to/maven-detective-extension-<version>.jar verify
 ```
 
-Die Ausgabe zeigt pro Datei die erkannte Regel und am Ende die Quote „eingeordnet“ sowie – mit Labels – „richtig“. Was als `unknown` endet oder falsch erkannt wird, ist der Kandidat für die nächste Regel.
+**For all your builds:** copy the JAR to `$MAVEN_HOME/lib/ext/`.
 
-## Fehlerkatalog erweitern
+The extension has no dependencies, runs on Maven 3.9 with Java 8 or newer, never changes the outcome of the build and
+swallows its own errors.
 
-Der Katalog liegt in [`core/src/main/resources/…/catalog/build-doctor-v1.yaml`](core/src/main/resources/io/github/bitshiftdev/mavendetective/core/catalog/build-doctor-v1.yaml). Eine neue Regel braucht keinen Java-Code, solange sie vorhandene Prüfungen und Quick-Fix-Typen nutzt:
+| Option | Effect |
+| --- | --- |
+| `-DmavenDetective.language=en\|de` | Language of the card (also env `MAVEN_DETECTIVE_LANGUAGE`; default: system language) |
+| `-DmavenDetective.report=false` | No card in the log |
+| `-DmavenDetective.snapshots=false` | No snapshots for *What changed?* |
+| `-DmavenDetective.home=…` | Where snapshots live (also env `MAVEN_DETECTIVE_HOME`; default `~/.maven-detective`) |
+| `-DmavenDetective.eventsFile=target/md-events.jsonl` | Also write structured build events as JSON lines |
+
+## Command line
+
+```bash
+# Explain a failed build – from a file, from CI, or straight from a pipe
+java -jar maven-detective-cli.jar diagnose build.log --project .
+mvn verify 2>&1 | java -jar maven-detective-cli.jar diagnose -
+
+# Paste-ready Markdown for a ticket or chat
+java -jar maven-detective-cli.jar diagnose build.log --markdown
+```
+
+| Command | What it answers |
+| --- | --- |
+| `diagnose <log\|->` | Why did this build fail? (`--markdown`, `--catalog extra.yaml`) |
+| `changes` | What changed since the last green build? |
+| `preflight` | Can this build run at all? (`--network` also checks the repositories) |
+| `outline <log\|->` | Modules, failed step, first real error (`--strip` drops download noise) |
+| `why <g:a>` | Why this version? |
+| `matrix` | Which module uses which version? (`--pin <g:a>` pins it in the parent) |
+| `duplicates` | Which classes live in more than one JAR? (`--exclude` adds exclusions) |
+| `exclusions` | Which exclusions exclude nothing? (`--remove`) |
+| `analyze` | Used but undeclared, declared but unused (`--declare`, `--remove`) |
+| `upgrade <g:a:v\|prop=value>` | What happens if I upgrade? (`--fetch`, `--manage`, `--apply`) |
+| `evaluate <dir>` | Run the diagnosis over a folder of logs and report the hit rate |
+| `validate-catalog <file>` | Check a custom rule file |
+
+All commands accept `--project <dir>` and `--lang en|de`. Dependency commands take the resolved tree via
+`--tree tree.txt` (from `mvn dependency:tree -Dverbose`) and otherwise rebuild it from the POMs in your local
+repository. Exit code `3` means "findings" – handy as a CI gate.
+
+## Extend the error catalog
+
+Rules live in a YAML catalog. A new rule needs no Java code as long as it reuses existing checks and fix types:
 
 ```yaml
   - id: my-new-rule
     number: 15
-    category: Kurzer Titel der Karte
-    category_en: 'Short card title'
-    priority: 60            # höher gewinnt, wenn mehrere Regeln passen
+    category: Kurzer Titel der Karte     # German text …
+    category_en: 'Short card title'      # … and its English counterpart
+    priority: 60                         # higher wins when several rules match
     patterns:
-      - 'Regex mit (?<artifact>benannter Gruppe)'
+      - 'Regex with a (?<artifact>named group)'
     cause: 'Ursache in einem Satz mit {artifact|Ersatztext}.'
     cause_en: 'Cause in one sentence with {artifact|fallback text}.'
     checks: [last-updated-files]
@@ -272,193 +293,51 @@ Der Katalog liegt in [`core/src/main/resources/…/catalog/build-doctor-v1.yaml`
         args: '-U'
 ```
 
-`category`, `cause` und `label` sind deutsch, `*_en` liefert den englischen Text (fehlt er, gilt der Grundtext); im Standardkatalog prüft `TextsTest`, dass zu jedem Text die englische Fassung da ist. Dazu gehört immer ein Testlog unter `core/src/test/resources/logs/<regel-id>__<beschreibung>.log`. `LogCatalogTest` prüft automatisch, dass jede Datei als die Regel im Dateinamen erkannt wird und dass jede Regel mindestens einen Testlog hat. Eigene Kataloge lassen sich mit `--catalog extra.yaml` dazuladen und mit `validate-catalog extra.yaml` prüfen.
+Load it with `diagnose … --catalog my-rules.yaml`, validate it with `validate-catalog my-rules.yaml`.
+The built-in catalog is [`build-doctor-v1.yaml`](core/src/main/resources/io/github/bitshiftdev/mavendetective/core/catalog/build-doctor-v1.yaml).
 
-Vorhandene Prüfungen: `offline-mode`, `network-failure`, `last-updated-files`, `reactor-sibling`, `requested-repository`, `server-id`, `http-repository`, `corrupt-jar`, `pom-location`, `parent-relative-path`, `child-module`, `plugin-prefix`, `plugin-version`, `plugin-declaration`, `ear-module`, `ee-namespace`, `jdk-version`, `source-location`, `enforcer-rule`, `memory-settings`, `class-origin`, `class-location`. Prüfungen lesen nur Dateien und Einstellungen und gehen nie ins Netz.
+Available checks: `offline-mode`, `network-failure`, `last-updated-files`, `reactor-sibling`, `requested-repository`,
+`server-id`, `http-repository`, `corrupt-jar`, `pom-location`, `parent-relative-path`, `child-module`, `plugin-prefix`,
+`plugin-version`, `plugin-declaration`, `ear-module`, `ee-namespace`, `jdk-version`, `source-location`, `enforcer-rule`,
+`memory-settings`, `class-origin`, `class-location`.
 
-## Konflikt-Matrix
-
-Modul A2 zeigt für den ganzen Reactor, welches Modul welche Version im Classpath hat – Zeile = Artifact, Spalte = Modul. Abweichungen stehen oben, mit Herkunft je Zelle und einem Vorschlag:
-
-```
-Konflikt-Matrix: 3 Module, 41 Artifacts, 1 mit abweichenden Versionen
-
-com.google.guava:guava  – 2 Versionen
-    32.1.3-jre: billing (direkt angegeben)
-    33.3.1-jre: api (dependencyManagement), web (transitiv (Tiefe 2))
-    Vorschlag: 33.3.1-jre in parent (/…/pom.xml) unter dependencyManagement festlegen
-      ! Direkte Angabe <version>32.1.3-jre</version> in billing überstimmt dependencyManagement – nach dem Pin dort die Version entfernen  → /…/billing/pom.xml:31
-```
-
-- **Vorschlag:** die höchste Version (Vergleich nach Mavens Regeln: `rc < SNAPSHOT < Release < sp`) im nächsten gemeinsamen Parent unter `dependencyManagement`. Ein Eintrag dort gilt auch für transitive Vorkommen und gewinnt gegen jedes importierte BOM.
-- **Was den Pin überstimmt**, steht dabei: direkte `<version>`-Angaben in Modulen und `dependencyManagement` in Modulen oder Zwischen-Parents – jeweils mit Datei und Zeile.
-- **Quick-Fix `pin-version`** ändert genau eine Stelle und lässt Formatierung und Kommentare stehen: vorhandenen Eintrag anpassen (steht dort `${prop}` aus derselben POM, die Property), sonst Eintrag ergänzen, sonst `<dependencyManagement>` anlegen. Haben die Module keinen gemeinsamen Parent im Projekt, sagt die Matrix das statt zu raten.
-- **Ohne Baum** (CLI ohne `--tree`, IDE vor dem ersten Import) enthält die Matrix nur direkt deklarierte Dependencies und sagt das.
-- **In der IDE:** Tab „Dependencies“ → „Konflikte“ mit Suche und „Nur Abweichungen“. Die Artifact-Spalte bleibt beim waagrechten Scrollen stehen; in einer abweichenden Zeile hat jede Version ihre eigene Hintergrundfarbe (die Version steht trotzdem als Text da, die vom Vorschlag abweichende fett). Unten Herkunft (klickbar), Versionsauswahl und „In <parent> festlegen“; dasselbe im Kontextmenü einer Zelle („2.17.0 in parent festlegen“) – mit Diff-Vorschau, als ein Undo-Schritt, danach lädt IntelliJ das Maven-Projekt neu. Doppelklick oder Enter auf einer Zelle öffnet „Warum diese Version?“ für dieses Modul. Nach jedem Maven-Import rechnet die Matrix von selbst neu.
-- **In der `pom.xml`:** Über jeder Dependency, deren Version über die Module abweicht, steht als Code Vision „3 Module · 2 Versionen“; Klick öffnet „Konflikte“ mit dieser Zeile. Ein Gutter-Icon markiert Dependencies, über die eine höhere Version verdrängt wird (sie verlangt 2.5, im Classpath landet 2.0 – Gefahr von `NoSuchMethodError`); Klick zeigt den Befund mit „2.5 in dieser POM festlegen“ und „Warum diese Version?“. Grundlage ist der Baum des letzten Maven-Imports, gerechnet im Hintergrund – Tippen kostet nichts.
-
-## Exclusion-Hygiene
-
-Modul A4 findet Exclusions, die nichts mehr ausschließen – typisch nach einem Upgrade, wenn die Dependency das ausgeschlossene Artifact gar nicht mehr mitbringt:
+## How it works
 
 ```
-Exclusion-Hygiene: 7 Exclusions in 4 POMs – 2 veraltet, 1 doppelt, 0 nicht prüfbar
-
-veraltet  /…/web/pom.xml:42
-    Exclusion commons-logging:commons-logging schließt nichts aus: org.springframework:spring-core:6.2.1 bringt commons-logging:commons-logging nicht (mehr) transitiv mit – kann weg.
-doppelt  /…/web/pom.xml:46
-    Exclusion org.deep:deep ist doppelt: org.deep:deep käme nur über org.web:web:1.0 → org.mid:mid:1.0 → org.deep:deep:1.0, und den Pfad kappt schon org.mid:mid.
+ Maven events / log ──▶ error lines ──▶ catalog rules match ──▶ checks verify against your files ──▶ card + quick fix
+                                                                 (local repo, settings.xml, JDK, POMs)
 ```
 
-- **So wird geprüft:** Der transitive Baum der Dependency wird aus den POMs im lokalen Repository nachgebaut – ohne die geprüfte Exclusion. Regeln wie bei Maven: nur `compile`/`runtime`, keine `optional`en Dependencies, Exclusions tiefer im Baum gelten weiter, der erste Fund gewinnt, Versionen aus dem `dependencyManagement` des Moduls gehen vor. Parents, Properties und BOM-Importe der Dependency-POMs werden aufgelöst.
-- **Befunde:** *veraltet* (Artifact kommt nicht vor), *doppelt* (kommt nur über einen Pfad, den eine andere Exclusion derselben Dependency schon kappt), *wirkt* (mit Pfad; mit `--tree` auch der Hinweis, wenn das Artifact über einen anderen Pfad trotzdem im Classpath landet), *offen* (POMs fehlen lokal – keine Aussage statt einer falschen). Geprüft werden Exclusions unter `dependencies` und `dependencyManagement`, Platzhalter `*` inklusive.
-- **Quick-Fix `remove-exclusion`** entfernt genau das `<exclusion>` (bei der letzten samt `<exclusions>`) und lässt den Rest der Datei stehen; Profile bleiben unberührt. `--remove` entfernt eine nach der anderen und prüft nach jeder Änderung neu.
-- **In der IDE:** Inspection „Veraltete Exclusion“ (Gruppe Maven Detective) graut veraltete Exclusions in der `pom.xml` aus, doppelte werden schwach markiert; Alt+Enter → „Exclusion … entfernen“ als ein Undo-Schritt. Repository-POMs werden zwischen den Läufen gecacht (`PomCache`, prüft Änderungszeit). Projektweit: Tab „Dependencies“ → „Exclusions“ – Baum POM → Exclusion mit Art als Icon und Wort (veraltet, doppelt; per Filter auch wirkt und nicht prüfbar), Befund und Pfad darunter; die angekreuzten (anfangs alle entfernbaren) entfernt „Entfernen“ in einem Undo-Schritt mit Diff-Vorschau. Rechnet nach jedem Maven-Import von selbst neu (liest nur POMs).
+A diagnosis is `certain` only when the pattern is unambiguous or a check confirmed the cause on a file, a setting or the
+JDK. The core has no runtime dependencies and targets Java 8, so the very same code runs inside Maven's class loader,
+inside IntelliJ and on the command line.
 
-## Doppelte Klassen
+| Module | Contents |
+| --- | --- |
+| [`core/`](core) | Log parser, rule engine, checks, fixes, snapshots, dependency analysis, CLI |
+| [`maven-extension/`](maven-extension) | Maven `EventSpy` that prints the card into the Maven log |
+| [`intellij-plugin/`](intellij-plugin) | Tool window, diagnosis card, inspections, inlays, quick fixes |
+| [`fixtures/`](fixtures) | One Maven project per error category that triggers the failure on purpose |
 
-Modul A3 findet Klassen, die in mehr als einem JAR eines Moduls liegen – auch unter verschiedenen Koordinaten. Welche Fassung geladen wird, entscheidet die Reihenfolge im Classpath; bei abweichendem Inhalt sind das die `NoSuchMethodError`s, die nur in manchen Umgebungen auftreten:
+## Building from source
 
-```
-Doppelte Klassen: 3 Funde in 2 Modulen – 2 mit verschiedenem Inhalt, 3 im Laufzeit-Classpath
+Requires JDK 21 (core and extension are still compiled to Java 8 bytecode).
 
-Modul app (84 Einträge)
-  verschieden  2 Klassen in commons-logging:1.2 und jcl-over-slf4j:1.7.36 – alle verschieden; geladen wird die aus commons-logging:1.2.
-      1. commons-logging:1.2  (über org.web:web:1.0, compile)
-         jcl-over-slf4j:1.7.36  (direkt, compile)
-      Empfehlung: commons-logging:1.2 entfernen: bekanntes Paar – jcl-over-slf4j bzw. spring-jcl ersetzen commons-logging absichtlich …
-        → Exclusion commons-logging:commons-logging bei org.web:web einfügen
-```
-
-- **Classpath:** mit Baum (IDE-Modell oder `--tree`) genau die Knoten, die Maven aufgenommen hat, in Mavens Reihenfolge (Tiefe zuerst); ohne Baum aus den POMs im lokalen Repository nachgebaut (nearest wins, bei Gleichstand die zuerst deklarierte) – dann ist die Reihenfolge geschätzt. Dazu `target/classes` des Moduls selbst und anderer Reactor-Module. JARs, die lokal fehlen, werden genannt statt geraten.
-- **Vergleich:** Klassennamen und CRC32 aus dem Zentralverzeichnis der JARs (nichts wird entpackt; gecacht nach Änderungszeit und Größe). Innere Klassen, `module-info`, `package-info` und `META-INF/` zählen nicht. Funde sind nach JAR-Gruppe zusammengefasst, mit Anzahl gleicher und verschiedener Klassen; *nur Tests*, wenn höchstens ein beteiligtes JAR zur Laufzeit dabei ist.
-- **Empfehlung:** zuerst eine Tabelle bekannter Paare (`commons-logging`/`jcl-over-slf4j`/`spring-jcl`, `log4j`/`log4j-over-slf4j`, `javax.xml.bind`/`jakarta.xml.bind-api` 2.x, `javax.activation`, `javax.annotation`, `javax.validation`, `servlet-api`, `jsr311-api`, `google-collections`/`guava`, `asm:asm`, `hamcrest-core`, `bcprov-jdk15on`, `stax-api`). Sonst: ein JAR, dessen Klassen alle auch in anderen liegen, kann ohne Verlust weg – bei gleichem Umfang das, das heute verliert (die Laufzeit ändert sich nicht). Bringen beide eigene Klassen mit, bleibt es eine Entscheidung; angezeigt wird, welches heute gewinnt.
-- **Quick-Fix `add-exclusion`** fügt die Exclusion bei jeder direkten Dependency ein, über die das JAR kommt (auch über verdrängte Pfade, sonst käme es dort wieder hoch) – in vorhandene `<exclusions>` oder neu vor `</dependency>`, Einrückung wie in der Datei. Steht die Dependency im Parent, kommt die Exclusion dorthin (gilt dann für alle erbenden Module). Ist das JAR direkt deklariert, springt der Fix zur Deklaration.
-- **In der IDE:** Tab „Dependencies“ → „Doppelte Klassen“ – prüft erst auf Klick „Prüfen“ (öffnet alle JARs); nach einem Maven-Import steht oben „veraltet – Neu prüfen“. Funde als Baum Modul → Fund, Art als Icon und Wort (verschieden, inhaltsgleich, nur Tests); Filter für nur-Test und inhaltsgleiche Funde, Suche auch nach Klassennamen; unten Reihenfolge, Pfade, Klassen und „Aus dem Classpath nehmen“ mit freier Wahl des JARs (vorbelegt mit der Empfehlung). Angekreuzte Funde setzt „Markierte bereinigen“ gemäß Empfehlung auf einmal um. Alle Exclusions eines Klicks sind ein Undo-Schritt mit Diff-Vorschau, danach Maven-Import.
-
-Nach einer Prüfung trägt jede `<dependency>`, über die doppelte Klassen in den Classpath kommen, ein Gutter-Icon in der `pom.xml`; Klick zeigt den Fund mit „Exclusion einfügen“ und „In ‚Doppelte Klassen‘ zeigen“. Die Prüfung selbst läuft nie vom Editor aus (sie öffnet alle JARs), und nach einem Maven-Import verschwinden die Icons bis zur nächsten Prüfung.
-
-## Ungenutzte und undeklarierte Dependencies
-
-Modul A5 vergleicht, welche Klassen der Quelltext eines Moduls **beim Namen nennt**, mit dem, was die `pom.xml` deklariert. Jede genannte Klasse wird dem Classpath-Eintrag zugeordnet, aus dem der Compiler sie nimmt (Classpath wie bei A3):
-
-```
-Dependency-Nutzung: 1 undeklariert, 1 ungenutzt, 1 nur in Tests – 2 Module
-Grundlage: Klassen, die der Quelltext beim Namen nennt (Imports, voll qualifizierte Namen).
-
-Modul app (42 Quell-, 17 Testdateien)
-  undeklariert  slf4j-api:2.0.16 ist nicht deklariert, wird aber genannt: org.slf4j.Logger und 1 weitere Klasse – kommt nur transitiv über web:1.0.
-      Pfad: org.web:web:1.0 → org.slf4j:slf4j-api:2.0.16
-      genannt: org.slf4j.Logger (App.java:5)
-      genannt: org.slf4j.LoggerFactory (App.java:5)
-        → org.slf4j:slf4j-api in app deklarieren
-  nur in Tests  assertj-core:3.26.3 (Scope compile) wird nur in Tests genannt, z. B. org.assertj.core.api.Assertions – Scope test genügt.
-        → Scope von org.assertj:assertj-core auf test setzen
-  ungenutzt     commons-lang3:3.17.0 ist deklariert, aber keine seiner Klassen wird im Code genannt.
-        → org.apache.commons:commons-lang3 aus app entfernen
+```bash
+./gradlew :core:test                    # unit tests incl. the error catalog
+./gradlew :intellij-plugin:runIde       # start IntelliJ IDEA with the plugin
+./gradlew :maven-extension:fixtureTest  # trigger every fixture with a real Maven (mvn on PATH)
 ```
 
-- **undeklariert:** genannt, aber nur transitiv da – fällt die vermittelnde Dependency weg oder ändert sie ihre Abhängigkeiten, bricht der Build, ohne dass sich die eigene POM geändert hat. Quick-Fix `add-dependency` deklariert sie im Modul: ohne Version, wenn sie verwaltet ist (Parent, BOM), mit Scope `test`, wenn nur Tests sie nennen. Kommt die Klasse über einen **Starter ohne eigene Klassen** (`spring-boot-starter-web` → `spring-web`), wird das nur mit `--all` bzw. „Auch über Starter“ gezeigt – dort ist Deklarieren üblich nicht nötig.
-- **ungenutzt:** deklariert, aber keine Klasse daraus genannt. Starter zählen als genutzt, wenn etwas genannt wird, das sie mitbringen. Nie gemeldet werden Scope `runtime` und bekannte Laufzeit-Bibliotheken (JDBC-Treiber, Logging-Backends und -Brücken, Test-Engines, Annotation-Prozessoren, `spring-boot-devtools` …). Bringt das JAR Registrierungen mit (`META-INF/services`, `spring.factories`, `META-INF/spring/*.imports`, `web-fragment.xml`, `beans.xml`), wirkt es womöglich ohne Nennung – dann *unsicher* (`?`), ohne Exit-Code 3 und ohne `--remove`. Quick-Fix `remove-dependency`; ist die Dependency im Parent deklariert, springt der Fix nur dorthin (gilt für alle erbenden Module).
-- **nur in Tests:** Scope `compile`/`provided`, aber nur Testquellen nennen sie. Quick-Fix `set-scope` setzt `test`.
-- **Was „genannt“ heißt:** Imports (auch statische und `import a.b.*` samt der Namen der Datei), voll qualifizierte Namen, in der IDE jede aufgelöste Typ-Referenz. Nicht gezählt: Kommentare, Zeichenketten, Reflection, Klassen, die nur über Typinferenz vorkommen. Reactor-Module, die noch nicht gebaut sind, werden aus ihren Quelldateien erschlossen. Ohne Quelldateien wird „ungenutzt“ nicht geprüft.
-- **Kommandozeile:** Text-Scanner über `src/{main,test}/{java,kotlin,groovy}` und `target/generated(-test)-sources` – ohne Compiler. `--declare` deklariert die undeklarierten (ohne Starter-Fälle), `--remove` entfernt sicher ungenutzte aus dem eigenen POM; ein Durchgang, danach neu prüfen.
-- **In der IDE:** Tab „Dependencies“ → „Nutzung“ – prüft auf Klick (nach einem Maven-Import als veraltet markiert), löst die Referenzen über den Code-Index auf (Java über die PSI, Kotlin/Groovy über den Text-Scanner), Befunde als Baum Modul → Befund mit Art als Icon und Wort, Belege mit Sprung zur Zeile; „Beheben“ wendet die Vorschläge der angekreuzten (sonst der gewählten) Befunde als ein Undo-Schritt mit Diff-Vorschau an, danach Maven-Import. Live im Editor markiert die Inspection „Import aus nicht deklarierter Dependency“ (Gruppe Maven Detective) solche Imports, Alt+Enter deklariert die Dependency; Starter-Fälle per Option.
+## Contributing
 
-## Upgrade-Simulator
+Misdiagnosed a build? That is the most valuable report you can send: open a
+[*Wrong diagnosis* issue](https://github.com/BitShiftDev/maven-detective/issues/new/choose) with an anonymised log
+excerpt around `BUILD FAILURE` and what the real cause was. The plugin's *Wrong diagnosis?* link saves the log for you.
 
-Modul A6 beantwortet „Was passiert, wenn ich X auf Version Y hebe?“ – **bevor** die POM geändert wird:
+Bug reports, new rules and pull requests are welcome in English or German – see [CONTRIBUTING.md](CONTRIBUTING.md).
+Please report security issues privately as described in [SECURITY.md](SECURITY.md).
 
-```
-Upgrade-Simulation: org.apache.maven:maven-model 3.1.1 → 3.2.5 (POMs unverändert)
+## License
 
-Änderung an den POMs:
-  1. Property ${maven.version} von 3.1.1 auf 3.2.5 gesetzt (wirkt auf alle Stellen, die sie nutzen)  → /…/pom.xml:7
-     Direkt angegeben in demo über die Property ${maven.version}, definiert in demo – alles, was sie nutzt, ändert sich mit
-
-Modul demo: 5 gehoben
-  ↑ org.apache.maven:maven-model 3.1.1 → 3.2.5 (direkt)
-  ↑ org.apache.maven:maven-plugin-api 3.1.1 → 3.2.5 (direkt)
-  ↑ org.codehaus.plexus:plexus-utils 3.0.15 → 3.0.20 über org.apache.maven:maven-model:3.2.5 → org.codehaus.plexus:plexus-utils:3.0.20
-  ↑ org.apache.maven:maven-artifact 3.1.1 → 3.2.5 über org.apache.maven:maven-plugin-api:3.2.5 → org.apache.maven:maven-artifact:3.2.5
-  ↑ org.eclipse.sisu:org.eclipse.sisu.plexus 0.0.0.M5 → 0.3.0.M1 über …
-
-Unvollständig – lokal fehlen 2 POMs: org.codehaus.plexus:plexus-utils:3.0.20, org.eclipse.sisu:org.eclipse.sisu.plexus:0.3.0.M1
-  Was darunter hängt, fehlt in der Simulation. Laden mit --fetch (mvn dependency:collect) und erneut simulieren.
-```
-
-- **Die richtige Stelle:** Zuerst sucht der Simulator, was die Version heute festlegt, und ändert genau das – wie man es von Hand täte: die Property (auch eine aus einem Parent außerhalb des Projekts, etwa `spring-boot-starter-parent` – dann wird sie im Projekt überschrieben), die direkte `<version>`, den Eintrag im `dependencyManagement`, den BOM-Import (kommt das Artifact aus einem BOM mit derselben Versionsnummer, wird das BOM gehoben, z. B. `jackson-bom`) oder den `<parent>`. Kommt das Artifact nur transitiv, wird es im `dependencyManagement` der obersten Projekt-POM festgelegt; `--manage` bzw. „Im dependencyManagement festlegen“ erzwingt das. Ziel kann auch direkt ein BOM, ein Parent oder eine Property (`name=wert`) sein.
-- **Vorher und nachher gleich gerechnet:** Die Änderung wird nur im Speicher auf den POM-Text angewendet (derselbe `PomEditor` wie beim Übernehmen). Dann baut der Kern den kompletten Baum jedes Moduls zweimal aus POMs nach – mit den Regeln von Mavens Collector: nearest wins, bei gleicher Tiefe die erste Deklaration, `dependencyManagement` für Version, Scope und Exclusions transitiver Dependencies, Scope-Ableitung, `optional`/`test`/`provided` nicht transitiv. Weil beide Bäume mit demselben Verfahren entstehen, kommen Unterschiede nur von der Änderung.
-- **Was gezeigt wird:** je Modul gehobene (`↑`), gesenkte (`↓`), neue (`+`), wegfallende (`−`) Artifacts und geänderte Scopes, jeweils mit Pfad; dazu **neue Konflikte**, bei denen eine verlangte höhere Version verliert (Gefahr von `NoSuchMethodError`). Bleibt das Artifact in einem Modul trotzdem alt (etwa weil dort eine direkte `<version>` steht), sagt ein Hinweis warum. Liegt der echte Baum vor (IDE-Modell oder `--tree`), meldet der Simulator, wo er schon heute davon abweicht (Profile, Versionsbereiche).
-- **Fehlende POMs:** Die neue Version liegt oft noch nicht im lokalen Repository. Dann ist das Ergebnis als unvollständig markiert und nennt die Koordinaten. `--fetch` bzw. „Fehlende POMs laden“ ruft Maven (`./mvnw` oder die Maven-Installation der IDE) mit `dependency:collect` auf einer temporären POM auf – lädt nur POMs, übernimmt die `<repositories>` des Projekts – und simuliert erneut, bis nichts mehr fehlt (höchstens vier Runden). Das ist der einzige Netzzugriff in Modul A und passiert nur auf ausdrücklichen Wunsch.
-- **Übernehmen:** `--apply` bzw. „Übernehmen“ schreibt genau die simulierte Änderung (Quick-Fix `set-version` bzw. `pin-version`); in der IDE als ein Undo-Schritt mit anschließendem Maven-Import.
-- **In der IDE:** Tab „Dependencies“ → „Upgrade-Simulator“ – Artifact eintippen mit Autovervollständigung (Vorschläge aus den Bäumen, Parents und BOM-Importen), Zielversion aus den lokal vorhandenen (markiert: heute, neuer, älter, Major-Sprung) oder eintippen. Das Ergebnis öffnet zusätzlich als Editor-Tab „Upgrade X → Y“: oben „Übernehmen“, „Fehlende POMs laden“, „Erneut simulieren“ und ein Warnbalken bei neuen Konflikten oder gesenkten Versionen, darunter die POM-Änderung im Diff-Viewer der IDE und der Baum-Unterschied je Modul mit farbigen Zeichen ↑ ↓ + − (und Wort). „Übernehmen“ im Tab schreibt genau den gezeigten Diff; hat sich die POM inzwischen geändert, schreibt er nichts. Rechtsklick oder Alt+Enter in der `pom.xml` auf eine `<dependency>` oder den `<parent>` (auch Rechtsklick im Maven-Tool-Window und unter *External Libraries*) → „Upgrade simulieren…“ belegt beides vor und simuliert gleich, wenn lokal eine neuere Version liegt.
-- **Grenzen:** Profile, Versionsbereiche und Relocations werden nicht ausgewertet; `${revision}` als Parent-Version und zusammengesetzte Versionen (`${a}.${b}`) ändert der Simulator nicht selbst, er meldet die Stelle.
-
-## Aufbau
-
-```
-core/              Modell, Log-Parser, Event-Format, YAML-Subset, Regel-Engine, Prüfungen, Fix-Ausführung, CLI,
-                   Schnappschüsse + Diff (snapshot/), IDE-gegen-Kommandozeile (env/BuildSetup, SetupComparison),
-                   Preflight (preflight/: Preflight, PreflightChecks, RemoteRepositories, RepositoryProbe),
-                   Log-Navigator (io/LogOutline),
-                   Modul A (deps/: PomFile mit Zeilen, PomLocator, EffectiveModel, VersionExplainer, DependencyTreeParser,
-                   ConflictMatrix, ExclusionAudit, ModuleClasspath, JarIndex, DuplicateClasses,
-                   ClassUsages, SourceScanner, DependencyUsage, DependencyResolver, UpgradeSimulator, PomFetcher,
-                   PomEditor für textgenaue POM-Änderungen, MavenVersion, PomCache, ClassOrigin + ClassFile für
-                   die Klassen-Herkunft auf der Karte – Prüfungen check/ClasspathChecks)
-maven-extension/   EventSpy: Events als JSON-Zeilen + Diagnose-Karte im Maven-Log (bettet den Kern ein)
-intellij-plugin/   Tool-Window „Maven Detective“ mit drei Tabs: Übersicht (Kacheln, „Alles prüfen“), Build Doctor,
-                   Dependencies (Navigation: Warum diese Version? als Zeitleiste, Konflikte, Doppelte Klassen,
-                   Exclusions, Nutzung, Upgrade-Simulator mit Ergebnis als Editor-Tab; AnalysisResults hält den
-                   Stand, Navigator springt), Fix-Vorschau als Diff (PomChanges, PomChangePreviewDialog), Listener auf Maven-Läufe,
-                   Diagnose-Karte (DiagnosisCard) mit Verlauf, Fix-und-Prüf-Schleife, SetupComparisonView,
-                   PreflightView und LogNavigatorView, Download-Faltung in der Konsole (DownloadConsoleFolding),
-                   Konsolen-Link hinter BUILD FAILURE (BuildFailureConsoleFilter), „Falsch erkannt?“-Dialog,
-                   Quick-Fixes, Editor-Aktionen und Intentions „Warum diese Version?“ (Popup am Cursor) und
-                   „Upgrade simulieren…“ (auch im Maven-Tool-Window und unter External Libraries),
-                   Editor-Hinweise in der pom.xml (PomInsights: Inlay verwaltete Version, Code Vision Konflikte,
-                   Gutter-Icon verdrängte Version/doppelte Klassen) und Banner zur letzten Diagnose, Inspections „Veraltete Exclusion“
-                   und „Import aus nicht deklarierter Dependency“ (IdeUsages löst Referenzen über den Code-Index auf);
-                   IdeMaven kapselt alle Zugriffe auf IntelliJs Maven-API (Adapter-Schicht);
-                   ui/: DetectivePanel (Basis aller Seiten: Toolbar aus Aktionen, Ladeanzeige, Statuszeile,
-                   Hintergrund mit Abbruch, F4/Strg+C/Kontextmenü auf Zeilen), DetectiveActions, HtmlView, FixBar,
-                   Tile, Badge, Section (aufklappbar), TrackingPanel, FindingTree (Gruppe → Befund mit Checkboxen);
-                   Texte in messages/MavenDetectiveBundle.properties
-fixtures/          Je Fehlerkategorie ein Projekt, das den Fehler absichtlich auslöst (fixtures.txt),
-                   dazu 09-changed-since-green für den Schnappschuss-Diff
-```
-
-So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel prüft ihre Muster und sammelt Variablen → die Prüfungen der Regel laufen → die erste bestätigende Prüfung mit eigener Ursache bestimmt Ursache und ersten Quick-Fix, sonst gilt der Text der Regel. Sicherheit „sicher“ heißt: das Muster ist eindeutig oder eine Prüfung hat die Ursache an einer Datei, Einstellung oder am JDK bestätigt.
-
-## Nächste Schritte
-
-- **Gate 1:** die eigenen 30 Logs mit `evaluate` messen; daraus fehlende Regeln ableiten. Laut Roadmap hätte Gate 1 vor Phase 2 liegen sollen – die Messung steht noch aus.
-- Plugin in `runIde` durchklicken: grüner Lauf → POM ändern → roter Lauf, Quick-Fixes `-U`, Runner-JDK, Plugin-Version. Dabei U3 abnehmen: Karte #4 Kaputtes JAR in Light/Dark, Link „Ursache anzeigen“ in der Konsole von Maven-Läufen (Build-Fenster nutzt `ConsoleViewImpl` – prüfen, ob der Filter dort greift), nach dem Fix „Neu bauen läuft …“ und danach „Behoben ✓“.
-- U4 in `runIde` abnehmen (Spring-Boot-Multi-Modul-Projekt): Inlays hinter Dependencies ohne Version, Code Vision über abweichenden Dependencies (erscheint die Code Vision in XML-Dateien überhaupt?), Gutter-Icons nach „Doppelte Klassen“ → Prüfen, Banner nach einem roten Lauf mit fehlendem Parent, Popup per Alt+Enter, Rechtsklick im Maven-Tool-Window und unter External Libraries; Tipp-Latenz in einer großen `pom.xml` messen. Aktionen und Inlays mit `BasePlatformTestCase` testen (braucht das Test-Framework der Plattform, in der Sandbox nicht offline verfügbar).
-- U5 in `runIde` abnehmen: Zeitleiste und Breadcrumb in „Warum diese Version?“, fixierte Spalte und Versionsfarben der Matrix in Light/Dark/High Contrast, Pin über das Kontextmenü (auch per Shift+F10), Checkbox-Bäume in „Doppelte Klassen“, „Exclusions“ und „Nutzung“ (Leertaste), Diff-Vorschau vor jedem POM-Fix, Upgrade-Ergebnis als Editor-Tab (Diff-Viewer, „Übernehmen“ nach Änderung an der POM verweigert). Jede Seite einmal nur mit der Tastatur bedienen.
-- U6 in `runIde` abnehmen: Einstellungsseite (Schalter wirken ohne Neustart; Schnappschüsse aus → Karte ohne „Seit dem letzten grünen Build“; eigener Ordner landet unter `<ordner>/snapshots/`; Neubau aus → Meldung mit „Neu bauen“), „Got it“ beim ersten roten Build und beim ersten Öffnen einer `pom.xml` („Hinweise erneut zeigen“ auf der Einstellungsseite), New-UI-Icon (16 × 16 und 20 × 20 über `MavenDetectiveIconMappings.json`, auch im Kompaktmodus), Screenreader (NVDA/Orca) über Karte, Badges und Kacheln, High-Contrast-Theme. Sprache umschalten (Automatisch/English/Deutsch, nach Neustart überall, auch Karte und Befunde aus dem Kern; Toolbar-Tooltips und Kontextmenüs folgen der Einstellung, Inspection-Namen der IDE); englische Texte von einer Person mit Englisch als Muttersprache gegenlesen lassen. Offen aus U6: Marketplace-Screenshots „nachher“, Test mit einem Nutzer ohne Projektkenntnis.
-- **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
-- Preflight und Log-Navigator in `runIde` abnehmen: Preflight aus der Toolbar des Maven-Tool-Windows (Ampel, Kachel in der Übersicht), „Repositories prüfen“ hinter einem Firmen-Proxy (Zertifikat, 401 mit/ohne `<server>`), Quick-Fixes (settings.xml öffnen, https umstellen, `.lastUpdated` löschen – ohne Neubau danach); „Log öffnen“ auf der Karte eines Multi-Modul-Laufs (Gliederung, Sprünge, Fehlermarken im Scrollbalken, Downloads ein-/ausklappen), Download-Faltung in Konsole **und** Build-Fenster prüfen (greift `console.folding` im Build-Fenster von Maven-Läufen?).
-- Preflight erweitern: Repositories aus aktiven Profilen der settings.xml, Zugangsdaten auf Wunsch prüfen (verschlüsselte Passwörter über `settings-security.xml`), Wrapper-Distribution erreichbar; Ergebnis als Beleg auf der Karte, wenn ein Lauf an etwas scheitert, das der Preflight schon gemeldet hätte.
-- Ersten Release nach Maven Central schicken (Namespace `io.github.bitshiftdev` verifizieren, Secrets anlegen – RELEASING.md); danach den Hinweis „Bis die erste Version dort liegt …“ unter Installation entfernen und `VERSION` im `extensions.xml`-Beispiel durch die echte Version ersetzen.
-- A6 in `runIde` an einem Spring-Boot-Projekt durchklicken: Parent 3.4 → 3.5 simulieren, fehlende POMs laden, Unterschied prüfen, übernehmen, nach dem Import erneut simulieren (kein Unterschied mehr).
-- A6 schärfen: Simulation gegen `mvn dependency:tree -Dverbose` an echten Projekten vergleichen (Abweichungen zeigt der Simulator schon an); Upgrade-Kandidaten aus den Repository-Metadaten vorschlagen (nur auf Klick, Netz); Simulator als Beleg auf der Build-Doctor-Karte („nach dem Upgrade von X kam Y 2.0 → 1.4“).
-- A1 in `runIde` an einem Spring-Boot-Projekt durchklicken (Abnahme laut Konzept: Herkunft jeder Dependency korrekt).
-- A2 in `runIde` an einem Multi-Modul-Projekt durchklicken: Abweichung pinnen, Re-Import, Matrix aktualisieren.
-- A4 in `runIde` an einem Spring-Boot-Projekt durchklicken: eine bekannte veraltete Exclusion (z. B. `commons-logging` bei `spring-core` 6) wird ausgegraut, Quick-Fix entfernt sie.
-- A3 in `runIde` an einem Spring-Boot-Projekt durchklicken: z. B. `commons-logging` neben `spring-jcl` erzwingen, Fund erscheint mit Empfehlung, „Exclusion einfügen“ ändert die POM, nach dem Import ist der Fund weg.
-- A3 erweitern: Versionspaare in die Tabelle (z. B. `plexus-utils` < 4 neben `plexus-xml` 3 → plexus-utils heben statt ausschließen).
-- A5 in `runIde` an einem Spring-Boot-Projekt durchklicken: Import aus `spring-web` ohne Deklaration (mit „Auch über Starter“), ungenutzte Dependency entfernen, compile → test; prüfen, wie lange „Prüfen“ bei großen Modulen braucht.
-- A5 erweitern: Kotlin über die Kotlin-PSI statt Text-Scanner; die Liste bekannter Laufzeit-Bibliotheken an echten Projekten schärfen; „ungenutzt“ live in der `pom.xml` (braucht einen modulweiten Cache der Nennungen).
-- Konflikt-Matrix mit Deployment-Sicht für EARs: `lib/` gegen `WEB-INF/lib`, `skinnyWars`, `provided` vom Server; `ejb-client` als eigene Zeile.
-- Klassen-Herkunft (Phase 5) schärfen: in der IDE den echten Baum des Maven-Imports statt des nachgebauten übergeben (`Environment` um Bäume erweitern); A2-Pin über alle Module, wenn das Artifact auch in anderen Modulen abweicht (heute nur Hebel für das gescheiterte Modul); „seit dem letzten grünen Build kam util 2.0 → 1.0“ aus dem Schnappschuss-Diff als Beleg; Fixture mit echtem `mvn` für Regel 10 (Surefire aus einem vorbereiteten Repository); an echten `NoSuchMethodError`-Logs messen (Gate 1).
-- Klassen-Herkunft in `runIde` abnehmen: Karte nach einem roten Testlauf mit `NoSuchMethodError` (Fix „unter dependencyManagement festlegen“ mit Diff-Vorschau, danach neu bauen → „Behoben ✓“) und nach `package … does not exist` mit Scope `test`.
-
-## Mitmachen
-
-Fehlerberichte, falsch erkannte Builds und neue Regeln sind willkommen – siehe [CONTRIBUTING.md](CONTRIBUTING.md). Sicherheitslücken bitte nicht öffentlich melden, sondern wie in [SECURITY.md](SECURITY.md) beschrieben. Wie ein Release entsteht: [RELEASING.md](RELEASING.md).
-
-## Lizenz
-
-Apache License 2.0, siehe [LICENSE](LICENSE).
+[Apache License 2.0](LICENSE)

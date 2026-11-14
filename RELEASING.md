@@ -101,10 +101,12 @@ Ohne Signatur bricht `centralBundle` ab; `-SNAPSHOT`-Versionen nimmt es nicht. D
 
 ## Repository öffentlich stellen
 
-Vorbereitet sind README (mit englischer Kurzfassung und Installation), `CONTRIBUTING.md`, `SECURITY.md`, Issue- und PR-Vorlagen. Vor dem Umschalten von Hand:
+Vorbereitet sind README (Englisch, mit Installation), `CONTRIBUTING.md`, `SECURITY.md`, Issue- und PR-Vorlagen. Vor dem Umschalten von Hand:
 
 - [ ] **Autor-Adresse in der Git-Historie:** Alle bisherigen Commits tragen die private Mail-Adresse, die mit dem Umschalten öffentlich wird. Ausweg: künftig die GitHub-`noreply`-Adresse verwenden (`git config user.email …@users.noreply.github.com`); die alten Commits ließen sich nur durch Umschreiben der Historie ändern (Force-Push, alle Commit-IDs ändern sich).
-- [ ] Planungsdokumente (`Maven Detective – Plugin-Konzept.md`, `… – UI-Plan.md`) und `.claude/skills/` durchsehen: Sollen sie öffentlich sein?
+- [x] Planungsdokumente (`Maven Detective – Plugin-Konzept.md`, `… – UI-Plan.md`) und der interne Stand (`STATUS.local.md`, früher in der README) liegen nur noch lokal (`.gitignore`).
+- [ ] **Alte Fassungen in der Git-Historie:** Frühere Commits enthalten die Planungsdokumente und die README mit offenen Abnahmen. Sollen sie nicht öffentlich werden, Historie vor dem Umschalten bereinigen (z. B. `git filter-repo --path "Maven Detective – Plugin-Konzept.md" --path "Maven Detective – UI-Plan.md" --invert-paths`; die alte README ließe sich nur durch Umschreiben jedes Commits entfernen) – oder mit einem frischen Commit ohne Historie starten.
+- [ ] `.claude/skills/maven-detective/SKILL.md` durchsehen: Abschnitt „Offene Punkte“ und Verweise auf Plan-Dateien und README-„Nächste Schritte“ (jetzt `STATUS.local.md`) – öffentlich lassen, kürzen oder aus Git nehmen?
 - [ ] *Settings → General*: Beschreibung „Explains why a Maven build fails – IntelliJ plugin, Maven extension and CLI“, Topics (`maven`, `intellij-plugin`, `build-tools`, `dependency-analysis`), Website = Marketplace-Seite.
 - [ ] *Settings → Code security*: Private Vulnerability Reporting, Dependabot Alerts und Secret Scanning einschalten.
 - [ ] *Settings → Branches*: Schutzregel für `main` (CI muss grün sein).
