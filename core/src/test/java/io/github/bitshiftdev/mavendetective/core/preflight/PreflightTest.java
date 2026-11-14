@@ -378,6 +378,57 @@ class PreflightTest {
     }
 
     @Test
+    void eigenerNexusErsetztAlleRepositories() throws IOException {
+        pom("""
+                <parent><groupId>org.example</groupId><artifactId>gone</artifactId><version>1.0</version><relativePath/></parent>
+                <repositories>
+                  <repository><id>private</id><url>https://repo.private.example/maven</url></repository>
+                </repositories>""");
+        List<String> asked = new ArrayList<>();
+        RepositoryProbe probe = (url, proxy, timeout) -> {
+            asked.add(url);
+            return RepositoryProbe.Response.status(url.endsWith(".pom") ? 404 : 200, 4);
+        };
+        Report r = run(new Preflight.Options().network(true).nexus(" https://nexus.corp.example/repository/public/ ").probe(probe));
+        // nur der Nexus wird gefragt, Basis und fehlender Parent je einmal
+        assertEquals(List.of("https://nexus.corp.example/repository/public/",
+                "https://nexus.corp.example/repository/public/org/example/gone/1.0/gone-1.0.pom"), asked);
+        List<Item> remote = items(r, Topic.REPOSITORY);
+        Item notice = remote.get(0);
+        assertEquals(Status.INFO, notice.getStatus());
+        assertTrue(notice.getText().contains("keine settings.xml"), notice.getText());
+        assertTrue(remote.stream().anyMatch(i -> i.getStatus() == Status.OK && i.getText().startsWith("Eigener Nexus")));
+        assertTrue(first(r, Topic.REPOSITORY, Status.ERROR).getText().contains("org.example:gone:1.0"));
+
+        // ohne Mirror-Eintrag gibt es keine Server-ID → Anmeldung nur als Hinweis
+        RepositoryProbe login = (url, proxy, timeout) -> RepositoryProbe.Response.status(401, 2);
+        Report locked = run(new Preflight.Options().network(true).nexus("https://nexus.corp.example/repository/public").probe(login));
+        assertTrue(items(locked, Topic.REPOSITORY).stream().noneMatch(i -> i.getStatus() == Status.ERROR), locked.getItems().toString());
+
+        // steht er als Mirror in settings.xml, gilt dessen ID für <server>
+        write(home.resolve(".m2").resolve("settings.xml"), """
+                <settings>
+                  <mirrors><mirror><id>corp</id><mirrorOf>*</mirrorOf><url>https://nexus.corp.example/repository/public/</url></mirror></mirrors>
+                </settings>
+                """);
+        Report mirrored = run(new Preflight.Options().network(true).nexus("https://nexus.corp.example/repository/public").probe(login));
+        assertTrue(items(mirrored, Topic.REPOSITORY).get(0).getText().contains("corp"));
+        assertTrue(first(mirrored, Topic.REPOSITORY, Status.ERROR).getText().contains("'corp'"));
+    }
+
+    @Test
+    void eigenerNexusOhneNetzNurAufgelistet() throws IOException {
+        pom("");
+        Report r = run(new Preflight.Options().nexus("https://nexus.corp.example/maven"));
+        Item list = items(r, Topic.REPOSITORY).get(1);
+        assertTrue(list.getEvidence().get(0).getText().endsWith("→ https://nexus.corp.example/maven"), list.getEvidence().toString());
+        assertEquals(Light.GREEN, r.getLight());
+        assertTrue(Preflight.isRepositoryUrl("https://nexus.corp.example:8443/repository/maven-public"));
+        assertFalse(Preflight.isRepositoryUrl("nexus.corp.example"));
+        assertFalse(Preflight.isRepositoryUrl("ftp://nexus"));
+    }
+
+    @Test
     void versionsbereicheWieDerEnforcer() {
         assertTrue(VersionRange.contains("17", "21.0.1"));
         assertFalse(VersionRange.contains("17", "11.0.2"));

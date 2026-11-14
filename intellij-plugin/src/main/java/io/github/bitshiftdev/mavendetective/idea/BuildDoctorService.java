@@ -294,7 +294,8 @@ public final class BuildDoctorService {
     }
 
     /**
-     * Preflight mit dem Setup, mit dem die IDE baut (Maven, Runner-JDK, settings.xml der IDE). Liest
+     * Preflight mit dem Setup, mit dem die IDE baut (Maven, Runner-JDK, settings.xml der IDE), über den
+     * eigenen Nexus aus den Einstellungen, falls eingetragen. Liest
      * Dateien, mit {@code network} auch das Netz – nicht auf dem EDT aufrufen.
      */
     public @NotNull Preflight.Report preflight(boolean network, @NotNull Cancellation cancellation) {
@@ -311,7 +312,8 @@ public final class BuildDoctorService {
             String base = project.getBasePath();
             root = base == null ? Paths.get("").toAbsolutePath() : Paths.get(base);
         }
-        return Preflight.run(root, setup, new Preflight.Options().network(network).cancellation(cancellation));
+        String nexus = DetectiveSettings.getInstance().getPreflightNexus();
+        return Preflight.run(root, setup, new Preflight.Options().network(network).nexus(nexus).cancellation(cancellation));
     }
 
     /** Ergebnis eines Preflights merken und melden (EDT). */

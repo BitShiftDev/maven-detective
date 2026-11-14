@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### Preflight
+
+- New setting to switch the preflight check off: the action, the overview tile and the view disappear.
+- New setting **Custom Nexus** (CLI: `--nexus URL`): the network check asks every repository through your own repository manager, like a mirror with `mirrorOf *`. The preflight notes whether a `settings.xml` mirror points there too.
+
 ### Distribution
 
 - Core/CLI and the Maven extension are published to Maven Central as `io.github.bitshiftdev.mavendetective:maven-detective-core` and `io.github.bitshiftdev.mavendetective:maven-detective-extension`. The extension can now be added to a project via `.mvn/extensions.xml`.

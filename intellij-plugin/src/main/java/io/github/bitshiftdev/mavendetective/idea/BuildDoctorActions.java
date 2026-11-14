@@ -103,6 +103,13 @@ public final class BuildDoctorActions {
      */
     public static final class Preflight extends ProjectAction {
         @Override
+        public void update(@NotNull AnActionEvent e) {
+            super.update(e);
+            // abgeschaltet: auch aus der Toolbar des Maven-Tool-Windows verschwinden
+            e.getPresentation().setEnabledAndVisible(e.getProject() != null && DetectiveSettings.getInstance().isPreflight());
+        }
+
+        @Override
         public void actionPerformed(@NotNull AnActionEvent e) {
             withPanel(e, BuildDoctorPanel::showPreflight);
         }

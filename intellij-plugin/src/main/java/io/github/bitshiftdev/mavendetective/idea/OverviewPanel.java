@@ -2,6 +2,7 @@ package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.AnimatedIcon;
 import com.intellij.ui.components.JBScrollPane;
@@ -91,6 +92,8 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         showChanges();
         showSetup();
         showPreflight(service.getLastPreflight());
+        ApplicationManager.getApplication().getMessageBus().connect(this).subscribe(DetectiveSettings.Listener.TOPIC,
+                (DetectiveSettings.Listener) () -> showPreflight(service.getLastPreflight()));
         for (Analysis a : List.of(Analysis.CONFLICTS, Analysis.DUPLICATES, Analysis.USAGE, Analysis.EXCLUSIONS)) {
             changed(a, results.get(a));
         }
@@ -242,8 +245,19 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         showPreflight(report);
     }
 
-    /** Ampel des letzten Preflights; ohne Preflight der Hinweis, was er prüft. */
+    /** Ampel des letzten Preflights; ohne Preflight der Hinweis, was er prüft. Abgeschaltet: keine Kachel. */
     private void showPreflight(@Nullable Preflight.Report report) {
+        boolean enabled = DetectiveSettings.getInstance().isPreflight();
+        if (preflight.isVisible() != enabled) {
+            preflight.setVisible(enabled);
+            if (preflight.getParent() != null) {
+                preflight.getParent().revalidate();
+                preflight.getParent().repaint();
+            }
+        }
+        if (!enabled) {
+            return;
+        }
         Runnable open = () -> Navigator.buildDoctor(project, BuildDoctorPanel::showPreflight);
         if (report == null) {
             preflight.update(AllIcons.RunConfigurations.TestNotRan, MavenDetectiveBundle.message("state.not.checked"),

@@ -233,8 +233,25 @@ public final class Preflight {
         Map<String, String> env = new HashMap<String, String>(System.getenv());
         Cancellation cancellation = Cancellation.NONE;
         RepositoryProbe probe;
+        String nexus;
 
         public Options network(boolean on) { this.network = on; return this; }
+
+        /**
+         * Eigener Repository-Manager (Nexus, Artifactory …): der Preflight fragt alle Repositories über
+         * diese URL an, als stünde sie in der settings.xml als Mirror mit {@code mirrorOf *}. Leer oder
+         * {@code null} = wie Maven über die Mirrors der settings.xml. Zugangsdaten werden auch hier nie
+         * gesendet.
+         */
+        public Options nexus(String url) {
+            String u = url == null ? "" : url.trim();
+            while (u.endsWith("/")) {
+                u = u.substring(0, u.length() - 1);
+            }
+            this.nexus = u.isEmpty() ? null : u;
+            return this;
+        }
+
         public Options timeoutMillis(int ms) { this.timeoutMillis = ms; return this; }
         public Options userHome(Path p) { this.userHome = p; return this; }
         public Options env(Map<String, String> e) { this.env = new HashMap<String, String>(e); return this; }
@@ -244,6 +261,20 @@ public final class Preflight {
     }
 
     private Preflight() {
+    }
+
+    /** Taugt der Text als Repository-URL für {@link Options#nexus(String)}? ({@code http(s)://host…}) */
+    public static boolean isRepositoryUrl(String url) {
+        if (url == null) {
+            return false;
+        }
+        String u = url.trim();
+        String lower = u.toLowerCase(java.util.Locale.ROOT);
+        if (!lower.startsWith("https://") && !lower.startsWith("http://")) {
+            return false;
+        }
+        String host = io.github.bitshiftdev.mavendetective.core.check.Text.host(u);
+        return host != null && !host.isEmpty() && u.indexOf(' ') < 0;
     }
 
     /**

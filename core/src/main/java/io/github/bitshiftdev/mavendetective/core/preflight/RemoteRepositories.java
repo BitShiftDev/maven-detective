@@ -20,12 +20,15 @@ import java.util.regex.Pattern;
  * Remote-Repositories des Builds: Maven Central plus die {@code <repositories>} und
  * {@code <pluginRepositories>} der Projekt-POMs, nach den Mirrors der settings.xml umgelenkt. Ohne
  * Netz wird nur geprüft, ob Maven ein Repository sperrt (http); mit Netz zusätzlich, ob es antwortet
- * und ob fehlende Parents/BOMs dort liegen.
+ * und ob fehlende Parents/BOMs dort liegen. Mit eigenem Nexus ({@link Preflight.Options#nexus(String)})
+ * gehen alle Anfragen dorthin, wie bei einem Mirror mit {@code mirrorOf *}.
  */
 final class RemoteRepositories {
 
     static final String CENTRAL_ID = "central";
     static final String CENTRAL_URL = "https://repo.maven.apache.org/maven2";
+    /** ID des eigenen Nexus, wenn ihn keine settings.xml als Mirror kennt. */
+    static final String NEXUS_ID = "maven-detective-nexus";
     private static final Pattern ID = Pattern.compile("<id>\\s*([^<]+?)\\s*</id>");
     private static final Pattern URL = Pattern.compile("<url>\\s*([^<]+?)\\s*</url>");
     private static final int MAX_MISSING_PROBES = 10;
@@ -39,6 +42,8 @@ final class RemoteRepositories {
         final int line;
         MavenSettings.Mirror mirror;
         MavenSettings mirrorSettings;
+        /** Über den eigenen Nexus des Preflights umgelenkt. */
+        boolean viaNexus;
 
         Repo(String id, String url, ProjectPoms.Pom pom, int line) {
             this.id = id;
@@ -55,8 +60,17 @@ final class RemoteRepositories {
             return mirror != null && mirror.url != null ? mirror.url : url;
         }
 
+        /** Name in Ergebniszeilen; beim eigenen Nexus steht eine Zeile für alle Repositories. */
         String label() {
+            if (viaNexus) {
+                return Texts.t("preflight.remote.nexus");
+            }
             return mirror == null ? id : Texts.t("preflight.remote.via.mirror", id, mirror.id);
+        }
+
+        /** Name in der Liste der Repositories (ohne Netz). */
+        String listLabel() {
+            return viaNexus ? Texts.t("preflight.remote.via.nexus", id) : label();
         }
     }
 
@@ -76,6 +90,18 @@ final class RemoteRepositories {
                 }
             }
         }
+        String nexus = ctx.options.nexus;
+        if (nexus != null) {
+            MavenSettings known = settingsWithMirror(ctx, nexus);
+            MavenSettings.Mirror mirror = known != null ? mirrorWithUrl(known, nexus)
+                    : MavenSettings.Mirror.of(NEXUS_ID, nexus, "*");
+            for (Repo r : repos.values()) {
+                r.mirror = mirror;
+                r.mirrorSettings = known;
+                r.viaNexus = true;
+            }
+            return new ArrayList<Repo>(repos.values());
+        }
         for (Repo r : repos.values()) {
             for (MavenSettings s : ctx.settings()) {
                 MavenSettings.Mirror m = s.mirrorFor(r.id, r.url);
@@ -87,6 +113,37 @@ final class RemoteRepositories {
             }
         }
         return new ArrayList<Repo>(repos.values());
+    }
+
+    /** Erste settings.xml mit einem Mirror auf diese URL (dessen ID gilt dann für {@code <server>}). */
+    static MavenSettings settingsWithMirror(PreflightContext ctx, String url) {
+        for (MavenSettings s : ctx.settings()) {
+            if (mirrorWithUrl(s, url) != null) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    private static MavenSettings.Mirror mirrorWithUrl(MavenSettings s, String url) {
+        for (MavenSettings.Mirror m : s.getMirrors()) {
+            if (m.url != null && sameUrl(m.url, url)) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    static boolean sameUrl(String a, String b) {
+        return trim(a).equalsIgnoreCase(trim(b));
+    }
+
+    private static String trim(String url) {
+        String u = url.trim();
+        while (u.endsWith("/")) {
+            u = u.substring(0, u.length() - 1);
+        }
+        return u;
     }
 
     /** {@code <repository>}/{@code <pluginRepository>} einer POM mit Zeile der URL. */
@@ -137,6 +194,9 @@ final class RemoteRepositories {
         List<Repo> repos = collect(ctx);
         boolean blocks = PreflightChecks.blocksHttp(ctx.setup.getMavenVersion());
         List<Repo> usable = new ArrayList<Repo>();
+        if (ctx.options.nexus != null) {
+            items.add(nexusNotice(ctx));
+        }
         for (Repo r : repos) {
             Item blocked = blocked(r, blocks);
             if (blocked != null) {
@@ -152,7 +212,7 @@ final class RemoteRepositories {
             }
             Item item = Item.info(Topic.REPOSITORY, Texts.t("preflight.remote.not.checked", usable.size()));
             for (Repo r : usable) {
-                item.evidence(Evidence.hint(r.label() + " → " + r.effectiveUrl()));
+                item.evidence(Evidence.hint(r.listLabel() + " → " + r.effectiveUrl()));
             }
             items.add(item);
             return items;
@@ -173,6 +233,28 @@ final class RemoteRepositories {
         return items;
     }
 
+    /**
+     * Hinweis zum eigenen Nexus: ob ihn eine settings.xml als Mirror kennt – sonst prüft der Preflight
+     * einen anderen Weg als den, den der Build nimmt.
+     */
+    private static Item nexusNotice(PreflightContext ctx) {
+        String nexus = ctx.options.nexus;
+        MavenSettings known = settingsWithMirror(ctx, nexus);
+        if (known != null) {
+            MavenSettings.Mirror m = mirrorWithUrl(known, nexus);
+            int line = Math.max(1, known.lineOf(m.url));
+            return Item.info(Topic.REPOSITORY, Texts.t("preflight.remote.nexus.mirror", nexus, m.id))
+                    .evidence(Evidence.setting(Texts.t("preflight.remote.nexus.mirror.evidence", m.id), known.getFile().toString(), line));
+        }
+        Item item = Item.info(Topic.REPOSITORY, Texts.t("preflight.remote.nexus.unlisted", nexus));
+        MavenSettings user = ctx.userSettings();
+        if (user != null) {
+            int line = user.lineOf("<mirrors>");
+            item.fix(PreflightChecks.open(user.getFile(), Math.max(1, line), Texts.t("preflight.open.settings")));
+        }
+        return item;
+    }
+
     /** Zeile für ein Repository, das Maven gar nicht erst anfragt (http seit 3.8.1). */
     private static Item blocked(Repo r, boolean blocks) {
         boolean blocker = r.mirror != null && PreflightChecks.HTTP_BLOCKER.equals(r.mirror.id);
@@ -183,8 +265,8 @@ final class RemoteRepositories {
             }
             return null;
         }
-        Item item = Item.error(Topic.REPOSITORY, Texts.t("preflight.remote.http", r.label(), r.url));
-        if (r.pom != null && PreflightChecks.isRemoteHttp(r.url)) {
+        Item item = Item.error(Topic.REPOSITORY, Texts.t("preflight.remote.http", r.label(), r.viaNexus ? r.effectiveUrl() : r.url));
+        if (!r.viaNexus && r.pom != null && PreflightChecks.isRemoteHttp(r.url)) {
             String https = "https://" + r.url.substring("http://".length());
             item.evidence(Evidence.file(Texts.t("check.http.pom.evidence"), r.pom.file.toString(), r.line))
                     .fix(FixAction.of(FixAction.REPLACE_IN_FILE, Texts.t("preflight.switch.https"),
@@ -221,6 +303,11 @@ final class RemoteRepositories {
             return item;
         }
         int code = response.code;
+        if ((code == 401 || code == 403) && r.viaNexus && r.mirrorSettings == null) {
+            // ohne Mirror-Eintrag gibt es keine ID, unter der ein <server> stehen könnte
+            return Item.info(Topic.REPOSITORY, Texts.t("preflight.remote.nexus.login", r.label(), code))
+                    .evidence(Evidence.hint(url));
+        }
         if (code == 401 || code == 403) {
             MavenSettings withServer = serverFor(ctx, r.effectiveId());
             if (withServer != null) {
@@ -264,6 +351,7 @@ final class RemoteRepositories {
             boolean found = false;
             boolean allAnswered = true;
             List<String> asked = new ArrayList<String>();
+            java.util.Set<String> askedUrls = new java.util.HashSet<String>();
             for (Repo r : repos) {
                 ctx.options.cancellation.check();
                 RepositoryProbe.Response base = reachable.get(r.effectiveUrl());
@@ -272,6 +360,9 @@ final class RemoteRepositories {
                     continue;
                 }
                 String url = slash(r.effectiveUrl()) + path;
+                if (!askedUrls.add(url)) {
+                    continue;   // mehrere Repositories hinter demselben Mirror: einmal fragen reicht
+                }
                 RepositoryProbe.Response resp = probe.head(url, proxyFor(ctx, url), ctx.options.timeoutMillis);
                 asked.add(r.label());
                 if (resp.failure == null && resp.code >= 200 && resp.code < 300) {

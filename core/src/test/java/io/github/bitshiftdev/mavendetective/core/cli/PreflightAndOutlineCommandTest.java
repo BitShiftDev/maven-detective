@@ -38,6 +38,15 @@ class PreflightAndOutlineCommandTest {
     }
 
     @Test
+    void preflightMitEigenemNexus() {
+        String[] bad = run("", "preflight", "--project", tmp.toString(), "--nexus", "nexus.corp");
+        assertEquals("2", bad[0]);
+        assertTrue(bad[2].contains("nexus.corp"), bad[2]);
+        String[] ok = run("", "preflight", "--project", tmp.toString(), "--nexus", "https://nexus.corp.example/maven");
+        assertTrue(ok[1].contains("über den eigenen Nexus https://nexus.corp.example/maven"), ok[1]);
+    }
+
+    @Test
     void outlineAusStdin() {
         String log = String.join("\n",
                 "[INFO] Building app 1.0",

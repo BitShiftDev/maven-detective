@@ -5,6 +5,7 @@ import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
+import com.intellij.util.messages.Topic;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotStore;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -22,6 +23,13 @@ import java.nio.file.Paths;
 @State(name = "MavenDetectiveSettings", storages = @Storage("mavenDetective.xml"))
 public final class DetectiveSettings implements PersistentStateComponent<DetectiveSettings.State> {
 
+    /** Meldet geänderte Einstellungen (Application-Bus), damit offene Seiten sich anpassen. */
+    public interface Listener {
+        Topic<Listener> TOPIC = new Topic<>(Listener.class, Topic.BroadcastDirection.NONE);
+
+        void settingsChanged();
+    }
+
     /** Gespeicherter Zustand; öffentliche Felder, damit die Plattform ihn als XML ablegt. */
     public static final class State {
         /** Sprechblase bei rotem Build, wenn das Tool-Window nicht zu sehen ist (das Badge kommt immer). */
@@ -36,6 +44,10 @@ public final class DetectiveSettings implements PersistentStateComponent<Detecti
         public boolean snapshots = true;
         /** Basisordner wie {@code -DmavenDetective.home} (Schnappschüsse in {@code snapshots/}); leer = wie die Maven-Extension. */
         public String snapshotDir = "";
+        /** Preflight anbieten (Aktion, Kachel, Ansicht im Build Doctor). */
+        public boolean preflight = true;
+        /** Eigener Repository-Manager (Nexus), über den der Preflight alle Repositories prüft; leer = wie settings.xml. */
+        public String preflightNexus = "";
         /** Seite „Ungenutzt/undeklariert“: auch Klassen zeigen, die nur über einen Starter kommen. */
         public boolean usageViaStarters;
         /** Sprache der Oberfläche ({@link MavenDetectiveBundle.Language}); AUTO = wie die IDE. */
@@ -104,6 +116,27 @@ public final class DetectiveSettings implements PersistentStateComponent<Detecti
 
     public void setFoldDownloads(boolean v) {
         state.foldDownloads = v;
+    }
+
+    public boolean isPreflight() {
+        return state.preflight;
+    }
+
+    public void setPreflight(boolean v) {
+        state.preflight = v;
+    }
+
+    public @NotNull String getPreflightNexus() {
+        return state.preflightNexus == null ? "" : state.preflightNexus.trim();
+    }
+
+    public void setPreflightNexus(@Nullable String v) {
+        state.preflightNexus = v == null ? "" : v.trim();
+    }
+
+    /** Alle offenen Seiten benachrichtigen (nach „Übernehmen“ auf der Einstellungsseite). */
+    public static void fireChanged() {
+        ApplicationManager.getApplication().getMessageBus().syncPublisher(Listener.TOPIC).settingsChanged();
     }
 
     public boolean isUsageViaStarters() {

@@ -111,7 +111,7 @@ profiles, mirrors, parents, plugins, version properties and dependencies per mod
 ### More help around the build
 
 - **IDE vs. command line** – *"works in the terminal, fails in IntelliJ"*: a side-by-side table of Maven installation, JDK, `settings.xml`, profiles, VM options and `.mvn/` configuration, with every difference explained.
-- **Preflight** – a traffic light *before* you build: `settings.xml`, JDK, Maven, project structure, local repository and, on request, every remote repository (DNS, certificates behind corporate proxies, 401/403, proxy settings).
+- **Preflight** – a traffic light *before* you build: `settings.xml`, JDK, Maven, project structure, local repository and, on request, every remote repository (DNS, certificates behind corporate proxies, 401/403, proxy settings) – optionally all through your own Nexus. It can be switched off under *Settings → Tools → Maven Detective*.
 - **Log navigator** – modules, plugin steps, the failed module and the *first real* error, with download noise folded away (also in the IDE console).
 - **Fix-and-check loop** – after a fix the plugin rebuilds and tells you *Fixed ✓* or shows the next diagnosis.
 - **Right in your `pom.xml`** – a banner on the file the last build failed on.
@@ -255,7 +255,7 @@ java -jar maven-detective-cli.jar diagnose build.log --markdown
 | --- | --- |
 | `diagnose <log\|->` | Why did this build fail? (`--markdown`, `--catalog extra.yaml`) |
 | `changes` | What changed since the last green build? |
-| `preflight` | Can this build run at all? (`--network` also checks the repositories) |
+| `preflight` | Can this build run at all? (`--network` also checks the repositories, `--nexus URL` routes them through your own repository manager) |
 | `outline <log\|->` | Modules, failed step, first real error (`--strip` drops download noise) |
 | `why <g:a>` | Why this version? |
 | `matrix` | Which module uses which version? (`--pin <g:a>` pins it in the parent) |

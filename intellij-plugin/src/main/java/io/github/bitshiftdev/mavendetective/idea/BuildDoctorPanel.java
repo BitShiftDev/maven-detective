@@ -4,6 +4,7 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
@@ -148,6 +149,12 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         setBody(split);
 
         service.addListener(this, this);
+        ApplicationManager.getApplication().getMessageBus().connect(this).subscribe(DetectiveSettings.Listener.TOPIC,
+                (DetectiveSettings.Listener) () -> {
+                    if (VIEW_PREFLIGHT.equals(view) && !DetectiveSettings.getInstance().isPreflight()) {
+                        showCardView();
+                    }
+                });
         reloadHistory(true);
         updateRunning();
     }
@@ -305,6 +312,10 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
 
     /** Preflight anzeigen: letztes Ergebnis sofort, dann ohne Netz neu prüfen (liest nur Dateien). */
     void showPreflight() {
+        if (!DetectiveSettings.getInstance().isPreflight()) {
+            showCardView();   // abgeschaltet (z. B. Sprung von einer alten Kachel)
+            return;
+        }
         showView(VIEW_PREFLIGHT);
         Preflight.Report known = service.getLastPreflight();
         if (known != null) {

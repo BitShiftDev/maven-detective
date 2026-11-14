@@ -31,6 +31,11 @@ public final class MavenSettings {
             this.mirrorOf = mirrorOf;
         }
 
+        /** Mirror, der nicht aus einer settings.xml stammt (z. B. der eigene Nexus des Preflights). */
+        public static Mirror of(String id, String url, String mirrorOf) {
+            return new Mirror(id, url, mirrorOf);
+        }
+
         /** Mavens mirrorOf-Logik: {@code *}, {@code external:*}, {@code external:http:*}, Listen, {@code !id}. */
         public boolean matches(String repositoryId, String repositoryUrl) {
             if (mirrorOf == null || repositoryId == null) {

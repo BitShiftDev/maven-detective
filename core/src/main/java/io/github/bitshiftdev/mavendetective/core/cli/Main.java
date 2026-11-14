@@ -68,7 +68,7 @@ import java.util.TreeMap;
  * java -jar maven-detective-core.jar analyze [--project DIR] [--tree tree.txt | -] [--all] [--markdown] [--declare] [--remove]
  * java -jar maven-detective-core.jar upgrade groupId:artifactId:version | property=wert [--project DIR] [--tree tree.txt | -]
  *     [--all] [--markdown] [--manage] [--fetch] [--apply] [--local-repo DIR]
- * java -jar maven-detective-core.jar preflight [--project DIR] [--network] [--markdown]
+ * java -jar maven-detective-core.jar preflight [--project DIR] [--network] [--nexus URL] [--markdown]
  * java -jar maven-detective-core.jar outline build.log | - [--strip] [--context N]
  * </pre>
  *
@@ -125,7 +125,7 @@ public final class Main {
                 return upgrade(o, out, err, stdin);
             }
             if ("preflight".equals(command)) {
-                return preflight(o, out);
+                return preflight(o, out, err);
             }
             if ("outline".equals(command) && o.target != null) {
                 return outline(o, out, stdin);
@@ -183,14 +183,19 @@ public final class Main {
 
     /**
      * Preflight vor dem Build: settings.xml, JDK, Maven, Projekt, lokales Repository, Repositories –
-     * mit dem Setup, das {@code ./mvnw} bzw. {@code mvn} hier nähme. Netz nur mit {@code --network}.
+     * mit dem Setup, das {@code ./mvnw} bzw. {@code mvn} hier nähme. Netz nur mit {@code --network};
+     * {@code --nexus URL} fragt alle Repositories über den eigenen Repository-Manager an.
      * Exit-Code 3, wenn der Build so nicht laufen kann (Ampel rot).
      */
-    private static int preflight(Options o, PrintStream out) {
+    private static int preflight(Options o, PrintStream out, PrintStream err) {
+        if (o.nexus != null && !Preflight.isRepositoryUrl(o.nexus)) {
+            err.println(Texts.t("cli.nexus.invalid", o.nexus));
+            return 2;
+        }
         Path root = Paths.get(o.project != null ? o.project : o.target != null ? o.target : "").toAbsolutePath().normalize();
         Path home = Paths.get(System.getProperty("user.home"));
         BuildSetup setup = BuildSetup.detectCommandLine(root, home, System.getenv());
-        Preflight.Report report = Preflight.run(root, setup, new Preflight.Options().network(o.network));
+        Preflight.Report report = Preflight.run(root, setup, new Preflight.Options().network(o.network).nexus(o.nexus));
         if (o.markdown) {
             out.print(report.markdown());
         } else {
@@ -778,6 +783,7 @@ public final class Main {
         boolean apply;
         boolean idOnly;
         boolean network;
+        String nexus;
         boolean strip;
         int context = 3;
 
@@ -817,6 +823,8 @@ public final class Main {
                     o.markdown = true;
                 } else if ("--network".equals(a)) {
                     o.network = true;
+                } else if ("--nexus".equals(a) && i + 1 < args.length) {
+                    o.nexus = args[++i];
                 } else if ("--strip".equals(a)) {
                     o.strip = true;
                 } else if ("--context".equals(a) && i + 1 < args.length) {

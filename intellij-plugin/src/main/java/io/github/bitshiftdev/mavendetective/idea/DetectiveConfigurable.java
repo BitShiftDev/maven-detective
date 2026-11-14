@@ -17,6 +17,7 @@ import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import io.github.bitshiftdev.mavendetective.core.preflight.Preflight;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -48,6 +49,8 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
     private TextFieldWithBrowseButton snapshotDir;
     private JBCheckBox usageViaStarters;
     private JBCheckBox foldDownloads;
+    private JBCheckBox preflight;
+    private JBTextField preflightNexus;
     private JBLabel firstStepsDone;
     private JPanel panel;
 
@@ -80,6 +83,11 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
         snapshotDir.getAccessibleContext().setAccessibleName(MavenDetectiveBundle.message("settings.snapshots.dir"));
         snapshots.addItemListener(e -> snapshotDir.setEnabled(snapshots.isSelected()));
         usageViaStarters = new JBCheckBox(MavenDetectiveBundle.message("settings.starters"));
+        preflight = new JBCheckBox(MavenDetectiveBundle.message("settings.preflight"));
+        preflightNexus = new JBTextField();
+        preflightNexus.getEmptyText().setText(MavenDetectiveBundle.message("settings.preflight.nexus.empty"));
+        preflightNexus.getAccessibleContext().setAccessibleName(MavenDetectiveBundle.message("settings.preflight.nexus"));
+        preflight.addItemListener(e -> preflightNexus.setEnabled(preflight.isSelected()));
         firstStepsDone = new JBLabel();
         firstStepsDone.setForeground(UIUtil.getContextHelpForeground());
 
@@ -103,6 +111,11 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
                 .addComponent(comment(MavenDetectiveBundle.message("settings.rebuild.comment")))
                 .addComponent(indent(foldDownloads))
                 .addComponent(comment(MavenDetectiveBundle.message("settings.fold.downloads.comment")))
+                .addComponent(new TitledSeparator(MavenDetectiveBundle.message("settings.group.preflight")))
+                .addComponent(indent(preflight))
+                .addComponent(comment(MavenDetectiveBundle.message("settings.preflight.comment")))
+                .addLabeledComponent(indent(new JBLabel(MavenDetectiveBundle.message("settings.preflight.nexus"))), preflightNexus)
+                .addComponent(comment(MavenDetectiveBundle.message("settings.preflight.nexus.comment")))
                 .addComponent(new TitledSeparator(MavenDetectiveBundle.message("settings.group.snapshots")))
                 .addComponent(indent(snapshots))
                 .addLabeledComponent(indent(new JBLabel(MavenDetectiveBundle.message("settings.snapshots.dir"))), snapshotDir)
@@ -135,6 +148,8 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
                 || snapshots.isSelected() != s.isSnapshots()
                 || !Objects.equals(snapshotDir.getText().trim(), s.getSnapshotDir())
                 || usageViaStarters.isSelected() != s.isUsageViaStarters()
+                || preflight.isSelected() != s.isPreflight()
+                || !Objects.equals(preflightNexus.getText().trim(), s.getPreflightNexus())
                 || foldDownloads.isSelected() != s.isFoldDownloads();
     }
 
@@ -143,6 +158,10 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
         String dir = snapshotDir.getText().trim();
         if (!dir.isEmpty() && DetectiveSettings.parseDir(dir) == null) {
             throw new ConfigurationException(MavenDetectiveBundle.message("settings.snapshots.dir.invalid", dir));
+        }
+        String nexus = preflightNexus.getText().trim();
+        if (!nexus.isEmpty() && !Preflight.isRepositoryUrl(nexus)) {
+            throw new ConfigurationException(MavenDetectiveBundle.message("settings.preflight.nexus.invalid", nexus));
         }
         DetectiveSettings s = DetectiveSettings.getInstance();
         if (language.getItem() != null && language.getItem() != s.getLanguage()) {
@@ -156,6 +175,9 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
         s.setSnapshotDir(dir);
         s.setUsageViaStarters(usageViaStarters.isSelected());
         s.setFoldDownloads(foldDownloads.isSelected());
+        s.setPreflight(preflight.isSelected());
+        s.setPreflightNexus(nexus);
+        DetectiveSettings.fireChanged();
     }
 
     @Override
@@ -170,6 +192,9 @@ public final class DetectiveConfigurable implements SearchableConfigurable {
         snapshotDir.setEnabled(s.isSnapshots());
         usageViaStarters.setSelected(s.isUsageViaStarters());
         foldDownloads.setSelected(s.isFoldDownloads());
+        preflight.setSelected(s.isPreflight());
+        preflightNexus.setText(s.getPreflightNexus());
+        preflightNexus.setEnabled(s.isPreflight());
         firstStepsDone.setText("");
     }
 

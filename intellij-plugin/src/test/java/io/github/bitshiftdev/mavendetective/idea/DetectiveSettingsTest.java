@@ -9,6 +9,7 @@ import java.nio.file.Paths;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Logik der Einstellungen und Erste Schritte ohne laufende IDE. */
 class DetectiveSettingsTest {
@@ -32,6 +33,19 @@ class DetectiveSettingsTest {
         SnapshotStore store = DetectiveSettings.snapshotStore(true, base.toString());
         assertNotNull(store);
         assertEquals(base.resolve("snapshots"), store.getRoot());
+    }
+
+    @Test
+    void preflightStandardmaessigAnOhneEigenenNexus() {
+        DetectiveSettings.State state = new DetectiveSettings.State();
+        assertTrue(state.preflight);
+        assertEquals("", state.preflightNexus);
+        DetectiveSettings s = new DetectiveSettings();
+        s.loadState(state);
+        s.setPreflightNexus("  https://nexus.corp.example/maven  ");
+        assertEquals("https://nexus.corp.example/maven", s.getPreflightNexus());
+        state.preflightNexus = null;   // alte XML ohne Feld
+        assertEquals("", s.getPreflightNexus());
     }
 
     @Test
