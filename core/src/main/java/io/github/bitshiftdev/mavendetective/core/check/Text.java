@@ -1,5 +1,8 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -66,6 +69,34 @@ public final class Text {
         }
         int max = Math.max(1, Math.min(a.length(), b.length()) / 4);
         return a.equalsIgnoreCase(b) || levenshtein(a, b) <= Math.min(2, max + 1);
+    }
+
+    /**
+     * Pfad aus Logtext oder Session-Angaben, wenn er lokal ist; {@code null} für Netzwerkpfade
+     * ({@code \\\\host\\share}, {@code //host/share}, {@code \\\\?\\UNC\\…}) und ungültige Pfade. Unter Windows
+     * baut schon {@code Files.exists} auf einen UNC-Pfad eine SMB-Verbindung auf und sendet dabei den
+     * NTLM-Hash des Nutzers – ein fremdes Log darf das nicht auslösen.
+     */
+    public static Path localPath(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.trim();
+        if (t.isEmpty() || isNetworkPath(t)) {
+            return null;
+        }
+        Path p;
+        try {
+            p = Paths.get(t);
+        } catch (InvalidPathException e) {
+            return null;
+        }
+        Path root = p.getRoot();
+        return root != null && isNetworkPath(root.toString()) ? null : p;
+    }
+
+    private static boolean isNetworkPath(String t) {
+        return t.length() >= 2 && (t.charAt(0) == '\\' || t.charAt(0) == '/') && (t.charAt(1) == '\\' || t.charAt(1) == '/');
     }
 
     public static String truncate(String s, int max) {

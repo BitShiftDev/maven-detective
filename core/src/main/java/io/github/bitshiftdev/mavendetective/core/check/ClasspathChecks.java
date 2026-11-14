@@ -21,9 +21,7 @@ import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.model.ErrorRecord;
 
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -48,7 +46,7 @@ final class ClasspathChecks {
     private static final int MAX_REPOSITORY_JARS = 600;
 
     private static final Pattern ON_PROJECT = Pattern.compile("on project ([\\w.\\-]+)");
-    private static final Pattern SOURCE = Pattern.compile("((?:[A-Za-z]:)?[^\\s:\\[]+\\.(?:java|kt|groovy)):\\[\\d+,\\d+\\]");
+    private static final Pattern SOURCE = Pattern.compile("(?<![^\\s:\\[(])((?:[A-Za-z]:)?[^\\s:\\[]+\\.(?:java|kt|groovy)):\\[\\d+,\\d+\\]");
     private static final Pattern NO_SUCH_METHOD = Pattern.compile("NoSuchMethodError: (.+)$");
     private static final Pattern NO_SUCH_FIELD = Pattern.compile("NoSuchFieldError: (.+)$");
     private static final Pattern ABSTRACT = Pattern.compile("AbstractMethodError: .*of interface ([\\w.$]+)");
@@ -518,10 +516,8 @@ final class ClasspathChecks {
 
         /** Nächste {@code pom.xml} über der Quelldatei, die zum Projekt gehört. */
         private PomFile byPath(String source) {
-            Path p;
-            try {
-                p = Paths.get(source);
-            } catch (InvalidPathException e) {
+            Path p = Text.localPath(source);
+            if (p == null) {
                 return null;
             }
             if (!p.isAbsolute()) {

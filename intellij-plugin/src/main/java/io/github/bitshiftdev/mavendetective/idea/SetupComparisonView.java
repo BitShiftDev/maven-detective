@@ -139,7 +139,7 @@ final class SetupComparisonView extends JPanel {
 
     private static final class Model extends AbstractTableModel {
         private final List<SetupComparison.Row> rows = new ArrayList<>();
-        private String left = "IDE";
+        private String left = MavenDetectiveBundle.message("setup.ide");
         private String right = MavenDetectiveBundle.message("setup.command.line");
 
         void set(@Nullable SetupComparison c) {

@@ -1,0 +1,16 @@
+2026-11-12 06:48:01 [INFO] Running com.acme.user.UserApiIT
+2026-11-12 06:48:03 [ERROR] Tests run: 4, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 2.113 s <<< FAILURE! -- in com.acme.user.UserApiIT
+2026-11-12 06:48:03 [ERROR] com.acme.user.UserApiIT.readsProfile -- Time elapsed: 0.412 s <<< ERROR!
+org.springframework.web.reactive.function.client.WebClientResponseException$Forbidden: 403 Forbidden from GET http://localhost:8080/api/user
+	at org.springframework.web.reactive.function.client.WebClientResponseException.create(WebClientResponseException.java:315)
+	at com.acme.user.UserApiIT.readsProfile(UserApiIT.java:57)
+2026-11-12 06:48:03 [INFO]
+2026-11-12 06:48:03 [INFO] Results:
+2026-11-12 06:48:03 [INFO]
+2026-11-12 06:48:03 [ERROR] Errors:
+2026-11-12 06:48:03 [ERROR]   UserApiIT.readsProfile:57 » Forbidden 403 Forbidden from GET http://localhost:8080/api/user
+2026-11-12 06:48:03 [INFO]
+2026-11-12 06:48:03 [ERROR] Tests run: 4, Failures: 0, Errors: 1, Skipped: 0
+2026-11-12 06:48:03 [INFO]
+2026-11-12 06:48:03 [INFO] BUILD FAILURE
+2026-11-12 06:48:03 [ERROR] Failed to execute goal org.apache.maven.plugins:maven-failsafe-plugin:3.5.2:verify (default) on project user-service: There are test failures.

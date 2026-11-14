@@ -84,7 +84,7 @@ final class PreflightView extends JPanel {
         links.setOpaque(false);
         links.add(again);
         links.add(repos);
-        network.setForeground(JBColor.GRAY);
+        network.setForeground(DetectiveColors.SECONDARY);
 
         JPanel head = new JPanel(new VerticalLayout(JBUI.scale(6)));
         head.add(back);

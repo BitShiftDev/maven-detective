@@ -14,9 +14,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Prüfungen gegen echte Dateien in temporären Verzeichnissen. */
@@ -337,5 +339,66 @@ class ChecksTest {
         assertEquals(8, Text.javaFeatureVersion("1.8.0_392"));
         assertEquals(25, Text.javaFeatureVersion("25-ea"));
         assertEquals(21, Text.javaForClassVersion(65));
+    }
+
+    /** Review #7: eine sehr lange Zeile ohne Leerzeichen darf die Diagnose nicht aufhalten. */
+    @Test
+    void longLinesDoNotSlowDownTheDiagnosis() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        StringBuilder blob = new StringBuilder();
+        for (int i = 0; i < 6000; i++) {
+            blob.append("/opt/x").append(i % 10).append("abc");
+        }
+        String log = "[ERROR] Failed to execute goal on project web: Could not resolve dependencies for project com.acme:web:jar:1.0: "
+                + "The following artifacts could not be resolved: org.acme:lib:jar:1.0 (absent): Could not transfer artifact org.acme:lib:jar:1.0 "
+                + "from/to central (https://repo.maven.apache.org/maven2): " + blob + "\n"
+                + blob + "\n"
+                + "[ERROR] error reading " + blob + "; zip END header not found\n";
+        long start = System.nanoTime();
+        doctor.diagnose(MavenLogParser.parse(log), env);
+        long millis = (System.nanoTime() - start) / 1_000_000L;
+        assertTrue(millis < 2000, "Diagnose dauerte " + millis + " ms");
+    }
+
+    /** Review #4: Netzwerkpfade aus dem Log werden nie geöffnet. */
+    @Test
+    void uncPathsFromTheLogAreNeverOpened() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        Diagnosis d = diagnose(env, "[ERROR] error reading \\\\attacker.example\\share\\evil.jar; zip END header not found");
+        assertEquals("corrupt-jar", d.getRuleId());
+        for (FixAction f : d.getFixes()) {
+            assertTrue(!FixAction.DELETE_FILES.equals(f.getType()) && !FixAction.OPEN_FILE.equals(f.getType()), f.getType());
+        }
+        for (Evidence e : d.getEvidence()) {
+            assertTrue(e.getFile() == null || !e.getFile().contains("attacker"), e.getFile());
+        }
+        assertNull(Text.localPath("\\\\attacker\\share\\x.jar"));
+        assertNull(Text.localPath("//attacker/share/x.jar"));
+        assertNull(Text.localPath("\\\\?\\UNC\\attacker\\share"));
+        assertEquals(java.nio.file.Paths.get("/home/dev/x.jar"), Text.localPath("/home/dev/x.jar"));
+        assertEquals(java.nio.file.Paths.get("pom.xml"), Text.localPath("pom.xml"));
+    }
+
+    /** Review #9: 403 und ZipException aus Tests sind keine Maven-Probleme. */
+    @Test
+    void failuresFromTestsDoNotBecomeRepositoryOrJarProblems() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        String log = String.join("\n",
+                "[ERROR] Tests run: 2, Failures: 0, Errors: 2, Skipped: 0, Time elapsed: 0.1 s <<< FAILURE! -- in a.ApiIT",
+                "[ERROR] a.ApiIT.read -- Time elapsed: 0.1 s <<< ERROR!",
+                "org.springframework.web.reactive.function.client.WebClientResponseException$Forbidden: 403 Forbidden from GET http://localhost:8080/api",
+                "[ERROR] a.ApiIT.unzip -- Time elapsed: 0.1 s <<< ERROR!",
+                "java.util.zip.ZipException: invalid LOC header (bad signature)",
+                "[INFO]",
+                "[ERROR] Errors: ",
+                "[ERROR]   ApiIT.read:12 » Forbidden 403 Forbidden from GET http://localhost:8080/api",
+                "[ERROR]   ApiIT.unzip:20 » Zip invalid LOC header (bad signature)",
+                "[ERROR] Tests run: 2, Failures: 0, Errors: 2, Skipped: 0",
+                "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-failsafe-plugin:3.5.2:verify (default) on project a: There are test failures.");
+        List<Diagnosis> all = doctor.diagnose(MavenLogParser.parse(log), env);
+        assertEquals("test-failures", all.get(0).getRuleId());
+        for (Diagnosis d : all) {
+            assertTrue(!d.getRuleId().equals("repository-access-denied") && !d.getRuleId().equals("corrupt-jar"), d.getRuleId());
+        }
     }
 }

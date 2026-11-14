@@ -107,6 +107,7 @@ public final class Rule {
     private final FixSpec fix;
     private final Map<String, String> categoryI18n;
     private final Map<String, String> causeI18n;
+    private final boolean outsideTests;
 
     public Rule(String id, int number, String category, int priority, Confidence confidence,
                 List<PatternSpec> patterns, List<PatternSpec> extract, List<Pattern> unless,
@@ -119,6 +120,15 @@ public final class Rule {
     public Rule(String id, int number, String category, Map<String, String> categoryI18n, int priority, Confidence confidence,
                 List<PatternSpec> patterns, List<PatternSpec> extract, List<Pattern> unless,
                 String cause, Map<String, String> causeI18n, List<String> checks, FixSpec fix) {
+        this(id, number, category, categoryI18n, priority, confidence, patterns, extract, unless, cause, causeI18n,
+                checks, fix, false);
+    }
+
+    /** @param outsideTests Muster und Prüfungen sehen keine Zeilen aus Testausgaben ({@link #isOutsideTests()}) */
+    public Rule(String id, int number, String category, Map<String, String> categoryI18n, int priority, Confidence confidence,
+                List<PatternSpec> patterns, List<PatternSpec> extract, List<Pattern> unless,
+                String cause, Map<String, String> causeI18n, List<String> checks, FixSpec fix, boolean outsideTests) {
+        this.outsideTests = outsideTests;
         this.categoryI18n = categoryI18n;
         this.causeI18n = causeI18n;
         this.id = id;
@@ -151,6 +161,12 @@ public final class Rule {
     public List<PatternSpec> getExtract() { return extract; }
 
     public List<Pattern> getUnless() { return unless; }
+
+    /**
+     * Regel beschreibt ein Maven-Problem, dessen Muster auch in Meldungen der Anwendung vorkommen
+     * ({@code 403 Forbidden}, {@code ZipException}): Zeilen aus gescheiterten Tests zählen dann nicht.
+     */
+    public boolean isOutsideTests() { return outsideTests; }
 
     public String getCause() { return Texts.pick(cause, causeI18n); }
 

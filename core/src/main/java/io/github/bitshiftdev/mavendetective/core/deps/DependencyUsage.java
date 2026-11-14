@@ -49,15 +49,9 @@ public final class DependencyUsage {
     private static final int MAX_EXAMPLES = 5;
 
     public enum Kind {
-        UNDECLARED("undeklariert"),
-        TEST_ONLY("nur in Tests"),
-        UNUSED("ungenutzt");
-
-        private final String label;
-
-        Kind(String label) {
-            this.label = label;
-        }
+        UNDECLARED,
+        TEST_ONLY,
+        UNUSED;
 
         public String label() {
             return Texts.t("usage.kind." + name().toLowerCase(java.util.Locale.ROOT));

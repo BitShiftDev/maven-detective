@@ -423,7 +423,7 @@ public final class ConflictMatrix {
         if (shown.isEmpty()) {
             return sb.append(Texts.t("matrix.all.same")).append("\n").toString();
         }
-        sb.append("| Artifact |");
+        sb.append("| ").append(Texts.t("matrix.md.artifact")).append(" |");
         for (Module m : modules) {
             sb.append(' ').append(m.getName()).append(" |");
         }

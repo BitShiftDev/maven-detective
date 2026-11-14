@@ -3,6 +3,8 @@ package io.github.bitshiftdev.mavendetective.core.env;
 import io.github.bitshiftdev.mavendetective.core.model.BuildFailure;
 import io.github.bitshiftdev.mavendetective.core.model.SessionInfo;
 
+import io.github.bitshiftdev.mavendetective.core.check.Text;
+
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -65,16 +67,17 @@ public final class Environment {
         if (projectDirectory != null) {
             b.projectDirectory(projectDirectory);
         } else if (s.getProjectDirectory() != null) {
-            b.projectDirectory(Paths.get(s.getProjectDirectory()));
+            b.projectDirectory(Text.localPath(s.getProjectDirectory()));
         }
+        // Angaben der Session können aus einem fremden Log stammen: Netzwerkpfade nie öffnen
         if (s.getLocalRepository() != null) {
-            b.localRepository(Paths.get(s.getLocalRepository()));
+            b.localRepository(Text.localPath(s.getLocalRepository()));
         }
         if (s.getUserSettings() != null) {
-            b.userSettingsFile(Paths.get(s.getUserSettings()));
+            b.userSettingsFile(Text.localPath(s.getUserSettings()));
         }
         if (s.getGlobalSettings() != null) {
-            b.globalSettingsFile(Paths.get(s.getGlobalSettings()));
+            b.globalSettingsFile(Text.localPath(s.getGlobalSettings()));
         }
         if (setup != null) {
             if (s.getLocalRepository() == null && notEmpty(setup.getLocalRepository())) {

@@ -612,7 +612,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             return switch (c.getSource()) {
                 case DIRECT -> MavenDetectiveBundle.message("upgrade.editor.direct");
                 case MANAGED -> MavenDetectiveBundle.message("matrix.source.managed");
-                case BOM -> "BOM";
+                case BOM -> MavenDetectiveBundle.message("matrix.source.bom");
                 case TRANSITIVE -> MavenDetectiveBundle.message("matrix.source.transitive");
                 default -> "";
             };

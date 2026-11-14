@@ -36,11 +36,28 @@ public final class BuildFailure {
 
     public boolean hasErrors() { return !errors.isEmpty(); }
 
+    /**
+     * Längste durchsuchte Zeile. Längere (Classpath, Base64, minifizierter Text) werden gekürzt: Regex mit
+     * {@code find()} wachsen sonst quadratisch mit der Länge, und die Extension diagnostiziert am Build-Ende.
+     */
+    public static final int MAX_LINE_LENGTH = 4000;
+
     /** Alle Fehlertexte zeilenweise und ohne Duplikate – das ist der Suchraum der Regeln. */
     public List<String> searchableLines() {
+        return searchableLines(true);
+    }
+
+    /** Wie {@link #searchableLines()}; ohne {@code withTestOutput} fehlen Zeilen aus gescheiterten Tests. */
+    public List<String> searchableLines(boolean withTestOutput) {
         Set<String> seen = new LinkedHashSet<String>();
         for (ErrorRecord e : errors) {
+            if (!withTestOutput && e.isTestOutput()) {
+                continue;
+            }
             for (String line : e.lines()) {
+                if (line.length() > MAX_LINE_LENGTH) {
+                    line = line.substring(0, MAX_LINE_LENGTH);
+                }
                 // Exception-Texte von Maven enthalten selbst "[ERROR] "-Präfixe
                 String t = line.trim().replaceFirst("^(?:\\[(?:ERROR|FATAL|WARNING)\\]\\s*)+", "").trim();
                 if (!t.isEmpty() && !t.equals("@")) {

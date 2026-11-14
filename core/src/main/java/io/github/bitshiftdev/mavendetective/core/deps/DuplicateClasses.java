@@ -137,7 +137,7 @@ public final class DuplicateClasses {
             List<String> out = new ArrayList<String>();
             for (String c : classes) {
                 int dot = c.lastIndexOf('.');
-                String p = dot < 0 ? "(Standardpaket)" : c.substring(0, dot);
+                String p = dot < 0 ? Texts.t("duplicates.default.package") : c.substring(0, dot);
                 if (!out.contains(p)) {
                     out.add(p);
                 }

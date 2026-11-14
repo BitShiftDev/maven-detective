@@ -1,0 +1,18 @@
+[main] [INFO] Running com.acme.archive.ImporterTest
+[main] [ERROR] Tests run: 3, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.08 s <<< FAILURE! -- in com.acme.archive.ImporterTest
+[main] [ERROR] com.acme.archive.ImporterTest.readsUpload -- Time elapsed: 0.02 s <<< ERROR!
+java.util.zip.ZipException: invalid LOC header (bad signature)
+	at java.base/java.util.zip.ZipFile$ZipFileInputStream.initDataOffset(ZipFile.java:1071)
+	at com.acme.archive.Importer.read(Importer.java:44)
+[main] [INFO]
+[main] [INFO] Results:
+[main] [INFO]
+[main] [ERROR] Errors:
+[main] [ERROR]   ImporterTest.readsUpload:31 » Zip invalid LOC header (bad signature)
+[main] [INFO]
+[main] [ERROR] Tests run: 3, Failures: 0, Errors: 1, Skipped: 0
+[main] [INFO]
+[main] [INFO] BUILD FAILURE
+[main] [ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project archive: There are test failures.
+[main] [ERROR]
+[main] [ERROR] Please refer to /home/dev/archive/target/surefire-reports for the individual test results.

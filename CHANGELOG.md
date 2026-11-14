@@ -26,6 +26,13 @@
 - Unused dependencies: if a named class lies in a declared dependency and also in a transitive JAR, it counts for the declared one – no more "unused" with a remove fix for it.
 - The plugin version check only suggests "Insert version" for a `<plugin>` that really has no `<version>`; dependencies, configuration and comments with the same artifactId no longer count.
 - Builds run from the IDE are diagnosed with the IDE's Maven settings (user `settings.xml`, local repository, runner JDK) instead of `~/.m2`. Deleting `.lastUpdated` files works with a custom local repository, including `<localRepository>` from `settings.xml`.
+- Logs with common CI and logger prefixes are understood: date and time with a space (`2026-11-12 06:48:01`), GitLab timestamps with stream marker, thread names (`[main]`) and milliseconds before `[ERROR]`. Maven and Java version from `mvn -V` are read behind such prefixes too. If the CLI finds no error line although the log says `BUILD FAILURE`, it reports an unknown line format (exit code 4) instead of "no errors".
+- A `403 Forbidden` or `ZipException` from a failed test no longer becomes the main diagnosis "check credentials" or "corrupt JAR"; lines from Surefire/Failsafe test output only count for test-related rules. Catalog rules can opt in with `outsideTests: true`.
+- Very long log lines (class paths, Base64) no longer delay the end of the build: path and host patterns only start at word boundaries, and searched lines are cut at 4,000 characters. A 60,000-character line took about 15 s before.
+- The Maven extension writes the events file thread-safe; under `-T` lines no longer get mixed up and lost.
+- Network paths from a log (`\\host\share\…`) are never opened, so a foreign log cannot trigger an SMB connection on Windows.
+- The preflight network check never sends credentials, not even through the IDE's own authenticator.
+- Notifications show texts with angle brackets such as `<server>` instead of swallowing them. The English UI no longer shows German leftovers such as "→ guava raus".
 
 ### Distribution
 

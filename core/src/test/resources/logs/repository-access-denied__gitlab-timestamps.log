@@ -1,0 +1,8 @@
+2026-11-12T06:48:00.912345Z 01O Apache Maven 3.9.11 (3e54c93a704957b63ee3494413a2b544fd3d825b)
+2026-11-12T06:48:00.912401Z 01O Maven home: /usr/share/maven
+2026-11-12T06:48:00.912420Z 01O Java version: 21.0.5, vendor: Eclipse Adoptium, runtime: /opt/java/openjdk
+2026-11-12T06:48:01.104512Z 01O [INFO] Scanning for projects...
+2026-11-12T06:48:04.220011Z 01O [INFO] BUILD FAILURE
+2026-11-12T06:48:04.220311Z 01O [ERROR] Failed to execute goal on project billing: Could not resolve dependencies for project com.acme:billing:jar:1.0.0: The following artifacts could not be resolved: com.acme.internal:tax-rules:jar:5.2.0 (absent): Could not transfer artifact com.acme.internal:tax-rules:jar:5.2.0 from/to gitlab-maven (https://gitlab.example/api/v4/groups/7/-/packages/maven): status code: 403, reason phrase: Forbidden (403) -> [Help 1]
+2026-11-12T06:48:04.220398Z 01O [ERROR]
+2026-11-12T06:48:04.220401Z 01O [ERROR] Re-run Maven using the -X switch to enable full debug logging.

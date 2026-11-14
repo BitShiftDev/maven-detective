@@ -11,24 +11,18 @@ public final class Change {
 
     /** Bereich der Änderung; die Reihenfolge ist zugleich die Wichtigkeit (oben = zuerst zeigen). */
     public enum Area {
-        JDK("JDK"),
-        MAVEN("Maven"),
-        OFFLINE("Offline-Modus"),
-        SETTINGS("settings.xml"),
-        PROFILES("Profile"),
-        MIRRORS("Mirror"),
-        PARENT("Parent"),
-        PROPERTY("Property"),
-        PLUGIN("Plugin"),
-        DEPENDENCY("Dependency"),
-        MODULES("Modul"),
-        EFFECTIVE_POM("Effective POM");
-
-        private final String label;
-
-        Area(String label) {
-            this.label = label;
-        }
+        JDK,
+        MAVEN,
+        OFFLINE,
+        SETTINGS,
+        PROFILES,
+        MIRRORS,
+        PARENT,
+        PROPERTY,
+        PLUGIN,
+        DEPENDENCY,
+        MODULES,
+        EFFECTIVE_POM;
 
         public String label() {
             return Texts.t("change.area." + name().toLowerCase(java.util.Locale.ROOT));

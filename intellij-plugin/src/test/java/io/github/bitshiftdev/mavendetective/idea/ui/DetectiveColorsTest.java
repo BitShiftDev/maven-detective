@@ -41,6 +41,19 @@ class DetectiveColorsTest {
     }
 
     @Test
+    void nebentextAufPanelsLesbar() {
+        List<String> low = new ArrayList<>();
+        int[] c = DetectiveColors.palette().get("secondaryForeground");
+        for (int panel : LIGHT_PANELS) {
+            check(low, "secondaryForeground hell auf " + Integer.toHexString(panel), c[0], panel, TEXT);
+        }
+        for (int panel : DARK_PANELS) {
+            check(low, "secondaryForeground dunkel auf " + Integer.toHexString(panel), c[1], panel, TEXT);
+        }
+        assertEquals(List.of(), low);
+    }
+
+    @Test
     void aenderungszeichenLesbar() {
         List<String> low = new ArrayList<>();
         int[] warning = DetectiveColors.palette().get("warningBackground");

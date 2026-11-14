@@ -83,7 +83,7 @@ final class RuntimeChecks {
     // ------------------------------------------------------------------ source-location
 
     static final class SourceLocation implements Check {
-        private static final Pattern LOCATION = Pattern.compile("((?:[A-Za-z]:)?[^\\s:\\[]+\\.(?:java|kt|groovy)):\\[(\\d+),(\\d+)\\]");
+        private static final Pattern LOCATION = Pattern.compile("(?<![^\\s:\\[(])((?:[A-Za-z]:)?[^\\s:\\[]+\\.(?:java|kt|groovy)):\\[(\\d+),(\\d+)\\]");
 
         @Override
         public String id() { return "source-location"; }
@@ -96,6 +96,9 @@ final class RuntimeChecks {
             }
             String file = m.group(1);
             String line = m.group(2);
+            if (Text.localPath(file) == null) {
+                return CheckResult.notApplicable();
+            }
             CheckResult r = CheckResult.info().var("sourceFile", file).var("sourceLine", line)
                     .evidence(Evidence.file(Texts.t("check.compile.location"), file, Integer.parseInt(line)))
                     .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.compile.goto"), "file", file, "line", line));
@@ -188,7 +191,7 @@ final class RuntimeChecks {
             String forkXmx = null;
             for (ProjectPoms.Location l : argLines) {
                 String text = l.pom.lines.get(l.line - 1).trim();
-                r.evidence(Evidence.file("Surefire argLine: " + Text.truncate(text, 120), l.pom.file.toString(), l.line));
+                r.evidence(Evidence.file(Texts.t("check.memory.argline.found", Text.truncate(text, 120)), l.pom.file.toString(), l.line));
                 forkXmx = xmx(text, forkXmx);
             }
             if (fork && forkXmx == null) {

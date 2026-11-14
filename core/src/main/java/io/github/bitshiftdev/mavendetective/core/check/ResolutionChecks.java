@@ -80,7 +80,7 @@ final class ResolutionChecks {
 
     static final class NetworkFailure implements Check {
         private static final Pattern UNKNOWN_HOST = Pattern.compile(
-                "(?:Unknown host (\\S+?)[:\\s]|(\\S+?): (?:Name or service not known|nodename nor servname provided|No such host is known|Temporary failure in name resolution))");
+                "(?:Unknown host (\\S+?)[:\\s]|(?<!\\S)(\\S+?): (?:Name or service not known|nodename nor servname provided|No such host is known|Temporary failure in name resolution))");
         private static final Pattern REFUSED = Pattern.compile(
                 "(?:Connect to (\\S+?) .*failed|Connection refused|No route to host|Network is unreachable)");
         private static final Pattern TIMEOUT = Pattern.compile("(?:connect timed out|Connection timed out|Read timed out|ConnectTimeoutException)");

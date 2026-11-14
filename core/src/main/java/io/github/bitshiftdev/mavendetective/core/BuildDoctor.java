@@ -103,7 +103,8 @@ public final class BuildDoctor {
         return all.isEmpty() ? null : all.get(0);
     }
 
-    private Diagnosis apply(Rule rule, BuildFailure failure, Environment env, List<String> lines, ProjectPoms poms) {
+    private Diagnosis apply(Rule rule, BuildFailure failure, Environment env, List<String> allLines, ProjectPoms poms) {
+        List<String> lines = rule.isOutsideTests() ? failure.searchableLines(false) : allLines;
         for (Pattern unless : rule.getUnless()) {
             for (String line : lines) {
                 if (unless.matcher(line).find()) {

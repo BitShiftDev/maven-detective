@@ -254,7 +254,7 @@ class ConflictMatrixTest {
         assertTrue(String.join("\n", m.lines(true)).contains("org.x:x"));
 
         String md = m.markdown(false);
-        assertTrue(md.contains("| Artifact | a | b | c | Vorschlag |"), md);
+        assertTrue(md.contains("| Artefakt | a | b | c | Vorschlag |"), md);
         assertTrue(md.contains("| `org.lib:lib` | **1.0** | 2.0 | **1.5** | 2.0 in `parent` (2 Stellen überstimmen ihn) |"), md);
     }
 }

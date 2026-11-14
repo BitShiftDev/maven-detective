@@ -44,7 +44,10 @@ public final class MavenRunListener implements ExecutionListener {
      */
     static final int HEAD_CHARS = 200_000;
 
-    static final String CUT_MARKER = "\n[INFO] … Maven Detective: Mitte des Logs gekürzt …\n";
+    /** Platzhalter für die weggefallene Mitte; eine eigene Zeile, damit der Log-Parser sie als INFO liest. */
+    static String cutMarker() {
+        return "\n[INFO] … " + MavenDetectiveBundle.message("log.cut") + " …\n";
+    }
 
     private final Project project;
     private final Map<ProcessHandler, Run> runs = new ConcurrentHashMap<>();
@@ -110,7 +113,7 @@ public final class MavenRunListener implements ExecutionListener {
     static void append(StringBuilder log, String text) {
         log.append(text);
         if (log.length() > MAX_CHARS) {
-            log.replace(HEAD_CHARS, log.length() - MAX_CHARS / 2, CUT_MARKER);
+            log.replace(HEAD_CHARS, log.length() - MAX_CHARS / 2, cutMarker());
         }
     }
 

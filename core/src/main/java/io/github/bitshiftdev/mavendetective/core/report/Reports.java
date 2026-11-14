@@ -169,10 +169,10 @@ public final class Reports {
         appendIf(sb, "Maven", s.getMavenVersion());
         appendIf(sb, "JDK", s.getJavaVersion() == null ? null
                 : s.getJavaVersion() + (s.getJavaHome() == null ? "" : " (" + s.getJavaHome() + ")"));
-        appendIf(sb, "Offline", s.getOffline() == null ? null : String.valueOf(s.getOffline()));
+        appendIf(sb, Texts.t("report.offline"), s.getOffline() == null ? null : String.valueOf(s.getOffline()));
         appendIf(sb, "settings.xml", s.getUserSettings());
         appendIf(sb, Texts.t("report.profiles"), s.getActiveProfiles().isEmpty() ? null : String.valueOf(s.getActiveProfiles()));
-        appendIf(sb, "Goals", s.getGoals().isEmpty() ? null : String.join(" ", s.getGoals()));
+        appendIf(sb, Texts.t("report.goals"), s.getGoals().isEmpty() ? null : String.join(" ", s.getGoals()));
         appendIf(sb, "OS", System.getProperty("os.name") + " " + System.getProperty("os.version"));
         sb.append(footer());
         return sb.toString();

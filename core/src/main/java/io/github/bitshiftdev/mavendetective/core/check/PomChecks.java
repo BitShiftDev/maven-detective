@@ -13,7 +13,6 @@ import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -81,8 +80,11 @@ final class PomChecks {
             if (file == null || line < 1) {
                 return CheckResult.notApplicable();
             }
+            Path p = Text.localPath(file);
+            if (p == null) {
+                return CheckResult.notApplicable();
+            }
             CheckResult r = CheckResult.info().var("pomFile", file).var("pomLine", String.valueOf(line));
-            Path p = Paths.get(file);
             String snippet = null;
             if (Files.isRegularFile(p)) {
                 ProjectPoms.Pom pom = ctx.projectPoms().read(p);
@@ -107,7 +109,7 @@ final class PomChecks {
             Path childFile = null;
             Matcher m = ctx.find(Pattern.compile("The project \\S+ \\(([^)]+\\.xml)\\) has"));
             if (m != null) {
-                childFile = Paths.get(m.group(1));
+                childFile = Text.localPath(m.group(1));
             } else if (ctx.var("project") != null) {
                 Coordinates c = Coordinates.parse(ctx.var("project"));
                 ProjectPoms.Pom pom = c == null ? null : ctx.projectPoms().find(c.groupId, c.artifactId);
@@ -161,8 +163,11 @@ final class PomChecks {
             if (module == null || parentFile == null) {
                 return CheckResult.notApplicable();
             }
-            Path moduleDir = Paths.get(module);
-            Path parentPath = Paths.get(parentFile);
+            Path moduleDir = Text.localPath(module);
+            Path parentPath = Text.localPath(parentFile);
+            if (moduleDir == null || parentPath == null) {
+                return CheckResult.notApplicable();
+            }
             if (Files.isDirectory(moduleDir) && Files.isRegularFile(moduleDir.resolve("pom.xml"))) {
                 return CheckResult.info().evidence(Evidence.file(Texts.t("check.module.exists.now"), module, -1));
             }

@@ -11,6 +11,8 @@
 #               Benannte Gruppen (?<name>…) werden zu Variablen für cause und fix.
 #   extract     Regex nur zum Auslesen von Variablen (lösen die Regel nicht aus)
 #   unless      Regex, bei deren Treffer die Regel nicht greift
+#   outsideTests true = Zeilen aus gescheiterten Tests (Surefire/Failsafe-Ausgabe) zählen nicht. Für
+#               Maven-Probleme, deren Muster auch in Meldungen der Anwendung stehen (403, ZipException).
 #   checks      Prüfungen (Java, siehe core/check), in Reihenfolge. Die erste bestätigende
 #               Prüfung mit eigener Ursache ersetzt cause und liefert den ersten Quick-Fix.
 #   cause       Ursache in einem Satz. Platzhalter: {var}, {var|Ersatztext}, {a,b|Ersatz}
@@ -61,6 +63,7 @@ rules:
     category: Zugriff verweigert
     category_en: 'Access denied'
     priority: 92
+    outsideTests: true
     patterns:
       - 'status code: (?<status>40[13])'
       - 'reason phrase: (?:Unauthorized|Forbidden) \((?<status>40[13])\)'
@@ -85,6 +88,7 @@ rules:
     category: Kaputtes JAR im lokalen Repo
     category_en: 'Corrupt JAR in the local repo'
     priority: 90
+    outsideTests: true
     patterns:
       - 'zip END header not found'
       - 'invalid LOC header'
@@ -95,7 +99,7 @@ rules:
       - 'ZipException'
       - 'Checksum validation failed'
     extract:
-      - '(?<file>(?:[A-Za-z]:)?[\\/][^\s;:''"]*\.jar)'
+      - '(?<![^\s;:''"=(\[,])(?<file>(?:[A-Za-z]:)?[\\/][^\s;:''"]*\.jar)'
       - '(?:artifact|for) (?<artifact>[^\s:,]+:[^\s:,]+:jar(?::[^\s:,]+)?:[^\s:,()]+)'
       - 'descriptor for (?<artifact>[^\s:,]+:[^\s:,]+:[^\s:,()]+)[:\s]'
     cause: 'Ein JAR im lokalen Repository ist beschädigt ({file|Datei unbekannt}) – meist ein abgebrochener Download.'

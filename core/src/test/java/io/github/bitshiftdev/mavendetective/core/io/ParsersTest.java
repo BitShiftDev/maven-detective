@@ -145,4 +145,94 @@ class ParsersTest {
         assertEquals("x y", Template.render("x {a} y", vars));
         assertEquals("$1 \\ B", Template.render("$1 \\ {b}", vars));
     }
+
+    /** Review #8: verbreitete CI- und Logger-Präfixe vor dem Level. */
+    @Test
+    void ciPrefixesBeforeTheLevelAreRecognised() {
+        // {Präfix vor Level-Zeilen, Präfix vor allen anderen Zeilen}: CI-Zeitstempel stehen vor jeder Zeile,
+        // Logger-Angaben (Thread, Millisekunden) nur vor Zeilen des Loggers
+        String[][] prefixes = {
+            {"", ""},
+            {"12:01:02 ", "12:01:02 "},
+            {"2026-11-12T06:48:01.1234567Z ", "2026-11-12T06:48:01.1234567Z "},
+            {"[2026-11-12T06:48:01.123Z] ", "[2026-11-12T06:48:01.123Z] "},
+            {"2026-11-12 06:48:01 ", "2026-11-12 06:48:01 "},
+            {"2026-11-12 06:48:01,123 ", "2026-11-12 06:48:01,123 "},
+            {"2026-11-12T06:48:01.123456Z 01O ", "2026-11-12T06:48:01.123456Z 01O "},
+            {"2026-11-12T06:48:01.123456Z 00E+ ", "2026-11-12T06:48:01.123456Z 00E+ "},
+            {"[main] ", ""},
+            {"06:48:01 [main] ", "06:48:01 "},
+            {"1234 ", ""},
+            {"1234 [main] ", ""},
+            {"2026-11-12T06:48:01Z 1234 [main] ", "2026-11-12T06:48:01Z "},
+        };
+        for (String[] p : prefixes) {
+            String prefix = p[0];
+            String other = p[1];
+            String log = other + "Apache Maven 3.9.11 (3e54c93a704957b63ee3494413a2b544fd3d825b)\n"
+                    + other + "Java version: 21.0.5, vendor: Eclipse Adoptium, runtime: /opt/java/openjdk\n"
+                    + prefix + "[INFO] BUILD FAILURE\n"
+                    + prefix + "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project shop: Compilation failure\n"
+                    + other + "\tat org.example.Foo.bar(Foo.java:1)\n";
+            BuildFailure f = MavenLogParser.parse(log);
+            assertEquals(2, f.getErrors().size(), "Präfix '" + prefix + "'");
+            assertTrue(f.getErrors().get(0).getText().startsWith("Failed to execute goal"), prefix);
+            assertEquals("at org.example.Foo.bar(Foo.java:1)", f.getErrors().get(1).getText(), prefix);
+            assertEquals("shop", f.getErrors().get(0).getProject(), prefix);
+            // Review #39: mvn -V auch mit Präfix
+            assertEquals("3.9.11", f.getSession().getMavenVersion(), prefix);
+            assertEquals("21.0.5", f.getSession().getJavaVersion(), prefix);
+
+            LogOutline outline = LogOutline.of(Arrays.asList(log.split("\n")));
+            assertEquals(3, outline.getFirstError(), prefix);
+            assertEquals(LogOutline.Result.FAILURE, outline.getBuildResult(), prefix);
+        }
+    }
+
+    @Test
+    void prefixIsOnlyStrippedWhenItLooksLikeOne() {
+        assertEquals("3 errors", LogPrefix.parse("3 errors").getText());
+        assertNull(LogPrefix.parse("3 errors").getLevel());
+        assertEquals("Downloading from central: x", LogPrefix.parse("2026-11-12T06:48:01Z Downloading from central: x").getText());
+        // Ein Level im Text ist kein Präfix: "[INFO] [ERROR] x" bleibt INFO
+        assertEquals("INFO", LogPrefix.parse("[INFO] [ERROR] x").getLevel());
+        assertEquals("[ERROR] x", LogPrefix.parse("[INFO] [ERROR] x").getText());
+        assertNull(LogPrefix.parse("some text [ERROR] x").getLevel());
+        assertEquals("ERROR", LogPrefix.parse("[ERROR]").getLevel());
+        assertEquals("", LogPrefix.parse("[ERROR]").getText());
+    }
+
+    /** Review #9: Zeilen aus gescheiterten Tests werden markiert, Maven-Meldungen danach nicht mehr. */
+    @Test
+    void testOutputIsMarked() {
+        BuildFailure f = MavenLogParser.parse(String.join("\n",
+                "[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.1 s <<< FAILURE! -- in a.FooTest",
+                "[ERROR] a.FooTest.x -- Time elapsed: 0.1 s <<< ERROR!",
+                "java.util.zip.ZipException: invalid LOC header (bad signature)",
+                "\tat a.Foo.read(Foo.java:3)",
+                "[INFO]",
+                "[ERROR] Errors: ",
+                "[ERROR]   FooTest.x:3 » Zip invalid LOC header (bad signature)",
+                "[INFO]",
+                "[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0",
+                "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project a: There are test failures."));
+        boolean[] expected = {true, true, true, true, true, true, false, false};
+        assertEquals(expected.length, f.getErrors().size());
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], f.getErrors().get(i).isTestOutput(), f.getErrors().get(i).getText());
+        }
+        assertTrue(f.searchableLines(false).stream().noneMatch(l -> l.contains("ZipException")));
+        assertTrue(f.searchableLines().stream().anyMatch(l -> l.contains("ZipException")));
+    }
+
+    /** Review #7: durchsuchte Zeilen sind gekürzt. */
+    @Test
+    void searchableLinesAreCapped() {
+        StringBuilder sb = new StringBuilder("[ERROR] x ");
+        for (int i = 0; i < 10000; i++) {
+            sb.append("abcdefghij");
+        }
+        BuildFailure f = MavenLogParser.parse(sb.toString());
+        assertEquals(BuildFailure.MAX_LINE_LENGTH, f.searchableLines().get(0).length());
+    }
 }

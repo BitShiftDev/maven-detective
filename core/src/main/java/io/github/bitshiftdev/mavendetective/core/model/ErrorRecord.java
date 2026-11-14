@@ -13,6 +13,7 @@ public final class ErrorRecord {
     private String mojo;
     private String execution;
     private String text;
+    private boolean testOutput;
     private final List<ExceptionInfo> chain = new ArrayList<ExceptionInfo>();
     private final List<PomProblem> problems = new ArrayList<PomProblem>();
 
@@ -34,6 +35,13 @@ public final class ErrorRecord {
 
     public String getText() { return text; }
     public void setText(String text) { this.text = text; }
+
+    /**
+     * Stammt aus der Ausgabe eines gescheiterten Tests (Surefire/Failsafe): Meldungen der Anwendung,
+     * keine von Maven. Regeln mit {@code outsideTests} sehen solche Zeilen nicht.
+     */
+    public boolean isTestOutput() { return testOutput; }
+    public void setTestOutput(boolean testOutput) { this.testOutput = testOutput; }
 
     public List<ExceptionInfo> getChain() { return chain; }
 

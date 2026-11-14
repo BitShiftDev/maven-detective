@@ -108,7 +108,7 @@ public final class BuildSetup {
             Properties p = load(wrapperProps);
             Matcher m = WRAPPER_VERSION.matcher(p.getProperty("distributionUrl", ""));
             s.mavenVersion = m.find() ? m.group(1) : null;
-            s.mavenSource = hasWrapperScript ? "Wrapper (./mvnw)" : Texts.t("setup.wrapper.no.script");
+            s.mavenSource = hasWrapperScript ? Texts.t("setup.wrapper.script") : Texts.t("setup.wrapper.no.script");
             Path dist = wrapperDistribution(s.mavenVersion, userHome, env);
             s.mavenHome = dist == null ? null : dist.toString();
         } else {

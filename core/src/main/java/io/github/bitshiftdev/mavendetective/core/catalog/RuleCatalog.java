@@ -37,7 +37,7 @@ public final class RuleCatalog {
 
     private static final Set<String> RULE_KEYS = new HashSet<String>(Arrays.asList(
             "id", "number", "category", "priority", "confidence", "patterns", "extract", "unless",
-            "cause", "checks", "fix", "description",
+            "cause", "checks", "fix", "description", "outsideTests",
             "category_en", "category_de", "cause_en", "cause_de"));
 
     /** Sprachen, für die {@code feld_<code>} neben dem Grundtext stehen darf. */
@@ -171,7 +171,19 @@ public final class RuleCatalog {
                 patterns, extract, unless,
                 string(m, "cause"), variants(m, "cause"),
                 checks,
-                fix(m.get("fix"), where + ".fix"));
+                fix(m.get("fix"), where + ".fix"),
+                bool(m.get("outsideTests"), where + ".outsideTests"));
+    }
+
+    private static boolean bool(Object o, String where) {
+        if (o == null) {
+            return false;
+        }
+        String s = String.valueOf(o).trim();
+        if ("true".equals(s) || "false".equals(s)) {
+            return Boolean.parseBoolean(s);
+        }
+        throw new CatalogException(where + ": true oder false erwartet, war '" + s + "'");
     }
 
     @SuppressWarnings("unchecked")

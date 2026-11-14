@@ -4,6 +4,8 @@ import io.github.bitshiftdev.mavendetective.core.env.MavenSettings;
 
 import javax.net.ssl.SSLException;
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.net.Authenticator;
 import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
@@ -57,6 +59,7 @@ public interface RepositoryProbe {
                 Proxy p = proxy == null ? Proxy.NO_PROXY
                         : new Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved(proxy.host, proxy.port));
                 c = (HttpURLConnection) u.openConnection(p);
+                NoCredentials.apply(c);
                 c.setRequestMethod("HEAD");
                 c.setConnectTimeout(timeoutMillis);
                 c.setReadTimeout(timeoutMillis);
@@ -82,4 +85,45 @@ public interface RepositoryProbe {
             }
         }
     };
+
+    /**
+     * Sorgt dafür, dass die Probe nie Zugangsdaten sendet. Ohne eigenen Authenticator fragt
+     * {@link HttpURLConnection} bei 401/407 {@link Authenticator#getDefault()} – in der IDE ist das deren
+     * Authenticator, der gemerkte Zugangsdaten liefern oder einen Dialog zeigen kann – und schickt Daten aus
+     * dem JVM-weiten Anmelde-Cache mit. Ein eigener Authenticator je Verbindung (ab Java 9; der Kern bleibt
+     * Java-8-Bytecode, daher Reflection) liefert nichts und hat einen eigenen, leeren Cache.
+     */
+    final class NoCredentials extends Authenticator {
+        private static final Authenticator INSTANCE = new NoCredentials();
+        private static final Method SET_AUTHENTICATOR = find();
+
+        private NoCredentials() {
+        }
+
+        private static Method find() {
+            try {
+                return HttpURLConnection.class.getMethod("setAuthenticator", Authenticator.class);
+            } catch (NoSuchMethodException | RuntimeException e) {
+                return null;   // Java 8: es gibt nur den globalen Authenticator, und die IDE läuft nie auf Java 8
+            }
+        }
+
+        /** {@code true}, wenn die Verbindung den leeren Authenticator bekommen hat. */
+        static boolean apply(HttpURLConnection c) {
+            if (SET_AUTHENTICATOR == null) {
+                return false;
+            }
+            try {
+                SET_AUTHENTICATOR.invoke(c, INSTANCE);
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        @Override
+        protected java.net.PasswordAuthentication getPasswordAuthentication() {
+            return null;
+        }
+    }
 }

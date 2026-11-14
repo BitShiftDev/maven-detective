@@ -18,9 +18,12 @@ import java.util.regex.Pattern;
 public final class MavenLogParser {
 
     private static final Pattern ANSI = Pattern.compile("\u001B\\[[0-9;]*[A-Za-z]");
-    /** CI-Präfixe wie "2026-11-12T06:48:01.123Z " oder "12:01:02 " vor dem Level. */
-    private static final Pattern LEVEL = Pattern.compile(
-            "^(?:\\S*\\d{2}:\\d{2}:\\d{2}\\S*\\s+)?\\[(FATAL|ERROR|WARNING|WARN|INFO|DEBUG)\\]\\s?(.*)$");
+    /**
+     * Beginn einer Testausgabe von Surefire/Failsafe: Kopf eines gescheiterten Tests
+     * ({@code … <<< FAILURE!}) oder die Liste in der Zusammenfassung ({@code Errors:}).
+     */
+    private static final Pattern TEST_OUTPUT_START = Pattern.compile(
+            "<<< (?:FAILURE|ERROR)!|^(?:Failures|Errors|Flakes):\\s*$");
     private static final Pattern FAILED_GOAL = Pattern.compile(
             "Failed to execute goal (\\S+) \\(([^)]*)\\) on project ([^:\\s]+)");
     private static final Pattern MAVEN_VERSION = Pattern.compile("^Apache Maven (\\S+)");
@@ -55,34 +58,44 @@ public final class MavenLogParser {
         BufferedReader br = new BufferedReader(reader);
         String raw;
         boolean previousWasError = false;
+        boolean inTestOutput = false;
         while ((raw = br.readLine()) != null) {
-            String line = ANSI.matcher(raw).replaceAll("");
+            String line = raw.indexOf('\u001B') >= 0 ? ANSI.matcher(raw).replaceAll("") : raw;
             if (failure.getLogLines().size() < MAX_LOG_LINES) {
                 failure.getLogLines().add(line);
             }
-            readSessionHints(line, failure);
+            LogPrefix parsed = LogPrefix.parse(line);
+            String text = parsed.getText();
+            readSessionHints(text, failure);
 
-            Matcher level = LEVEL.matcher(line);
-            if (level.matches()) {
-                String lvl = level.group(1);
-                String text = level.group(2);
+            String lvl = parsed.getLevel();
+            if (lvl != null) {
                 previousWasError = "ERROR".equals(lvl) || "FATAL".equals(lvl);
                 if (previousWasError) {
-                    addError(failure, text);
-                } else if (text.contains("offline mode")) {
-                    failure.getSession().setOffline(Boolean.TRUE);
+                    String t = text.trim();
+                    if (TEST_OUTPUT_START.matcher(t).find()) {
+                        inTestOutput = true;
+                    } else if (t.startsWith("Tests run:") || t.startsWith("Failed to execute goal")) {
+                        inTestOutput = false;   // Summenzeile bzw. Maven-Meldung schließen den Testblock
+                    }
+                    addError(failure, text, inTestOutput);
+                } else {
+                    inTestOutput = false;
+                    if (text.contains("offline mode")) {
+                        failure.getSession().setOffline(Boolean.TRUE);
+                    }
                 }
                 continue;
             }
             // Fortsetzungszeilen ohne Präfix (Stacktraces, mehrzeilige Meldungen) gehören zum Fehler davor
-            if (previousWasError && !line.trim().isEmpty()) {
-                addError(failure, line);
+            if (previousWasError && !text.trim().isEmpty()) {
+                addError(failure, text, inTestOutput);
             } else {
                 previousWasError = false;
             }
             // Ausnahmen, die ohne [ERROR] im Log landen (Surefire-Reports, Konsolen-Dumps)
-            if (!previousWasError && looksLikeRuntimeError(line)) {
-                addError(failure, line.trim());
+            if (!previousWasError && looksLikeRuntimeError(text)) {
+                addError(failure, text.trim(), inTestOutput);
             }
         }
         return failure;
@@ -96,7 +109,7 @@ public final class MavenLogParser {
                 || line.contains("There is insufficient memory for the Java Runtime");
     }
 
-    private static void addError(BuildFailure failure, String text) {
+    private static void addError(BuildFailure failure, String text, boolean testOutput) {
         String t = text.trim();
         if (t.isEmpty() || isNoise(t)) {
             return;
@@ -111,6 +124,7 @@ public final class MavenLogParser {
             return;
         }
         ErrorRecord r = ErrorRecord.ofText(t);
+        r.setTestOutput(testOutput);
         Matcher goal = FAILED_GOAL.matcher(t);
         if (goal.find()) {
             r.setMojo(goal.group(1));
@@ -132,7 +146,12 @@ public final class MavenLogParser {
         return false;
     }
 
+    /** Liest Versionen aus {@code mvn -V}; {@code line} ist der Text ohne CI-Präfix. */
     private static void readSessionHints(String line, BuildFailure failure) {
+        char c = line.isEmpty() ? ' ' : line.charAt(0);
+        if (c != 'A' && c != 'J' && c != 'M') {
+            return;   // schneller Ausstieg für die allermeisten Zeilen
+        }
         Matcher m = MAVEN_VERSION.matcher(line);
         if (m.find()) {
             failure.getSession().setMavenVersion(m.group(1));

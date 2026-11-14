@@ -18,8 +18,6 @@ import java.util.regex.Pattern;
 public final class LogOutline {
 
     private static final Pattern ANSI = Pattern.compile("\u001B\\[[0-9;]*[A-Za-z]");
-    private static final Pattern PREFIX = Pattern.compile(
-            "^(?:\\S*\\d{2}:\\d{2}:\\d{2}\\S*\\s+)?(?:\\[(FATAL|ERROR|WARNING|WARN|INFO|DEBUG)\\]\\s?)?(.*)$");
     private static final Pattern DOWNLOAD = Pattern.compile(
             "^(?:Downloading|Downloaded|Uploading|Uploaded)(?: from| to)? [^:]*:\\s*\\S+.*$|^(?:Downloading|Downloaded): \\S+.*$");
     private static final Pattern PROGRESS = Pattern.compile("^Progress \\(\\d+\\): .*$");
@@ -203,14 +201,12 @@ public final class LogOutline {
         if (cr >= 0) {
             line = line.substring(cr + 1);   // Fortschrittsanzeigen überschreiben die Zeile
         }
-        Matcher m = PREFIX.matcher(line);
-        return m.matches() ? m.group(2).trim() : line.trim();
+        return LogPrefix.parse(line).getText().trim();
     }
 
     private static String level(String rawLine) {
         String line = rawLine.indexOf('\u001B') >= 0 ? ANSI.matcher(rawLine).replaceAll("") : rawLine;
-        Matcher m = PREFIX.matcher(line);
-        return m.matches() ? m.group(1) : null;
+        return LogPrefix.parse(line).getLevel();
     }
 
     // ------------------------------------------------------------------ Analyse

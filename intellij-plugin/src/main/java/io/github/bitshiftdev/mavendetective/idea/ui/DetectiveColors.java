@@ -42,6 +42,9 @@ public final class DetectiveColors {
      */
     public static final JBColor TINTED_SECONDARY = named("tintedSecondaryForeground", 0x55585F, 0xB4B8BF);
 
+    /** Nebentext auf dem normalen Panel-Hintergrund (statt {@code JBColor.GRAY}, das den Kontrasttest nicht kennt). */
+    public static final JBColor SECONDARY = named("secondaryForeground", 0x5E6270, 0xA4A7AE);
+
     /** Zeichen für Änderungen im Baum (Upgrade-Simulator): ↑ gehoben, ↓ gesenkt, + neu, − weg, ~ Scope. */
     public static final JBColor DELTA_UP = named("deltaUp", 0x2E7D32, 0x6FBF73);
     public static final JBColor DELTA_DOWN = named("deltaDown", 0xC62828, 0xF2726F);

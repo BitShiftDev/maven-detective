@@ -373,7 +373,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         List<String> p = c.packages();
         r.append("  " + MavenDetectiveBundle.message("duplicates.classes", c.getClasses().size()) + " · " + p.get(0)
                 + (p.size() > 1 ? " +" + (p.size() - 1) : ""), SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
-        r.append("  → " + (c.getDrop() == null ? MavenDetectiveBundle.message("duplicates.decide") : c.getDrop().label() + " raus"),
+        r.append("  → " + (c.getDrop() == null ? MavenDetectiveBundle.message("duplicates.decide") : MavenDetectiveBundle.message("duplicates.drop", c.getDrop().label())),
                 SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
         r.setToolTipText(c.message());
     }

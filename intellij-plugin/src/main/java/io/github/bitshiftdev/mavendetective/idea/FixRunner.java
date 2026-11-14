@@ -21,6 +21,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.fix.FixExecutor;
+import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -211,7 +212,7 @@ final class FixRunner {
         boolean wouldStart = result.environment() != null && !hasArgs || hasArgs && result.configuration() != null;
         if (wouldStart && !DetectiveSettings.getInstance().isRebuildAfterFix()) {
             NotificationGroupManager.getInstance().getNotificationGroup(BuildDoctorService.TOOL_WINDOW_ID)
-                    .createNotification(MavenDetectiveBundle.message("fix.rebuild.off", fixLabel), NotificationType.INFORMATION)
+                    .createNotification(plainToHtml(MavenDetectiveBundle.message("fix.rebuild.off", fixLabel)), NotificationType.INFORMATION)
                     .addAction(NotificationAction.createSimpleExpiring(MavenDetectiveBundle.message("fix.rebuild.now"),
                             () -> restart(project, result, args, fixLabel)))
                     .notify(project);
@@ -397,8 +398,8 @@ final class FixRunner {
                 if (plan.failed() != null) {
                     openLocation(project, plan.failed().toString());
                 }
-                notify(project, escape(String.join("\n", plan.problems())).replace("\n", "<br>")
-                        + "<br>" + MavenDetectiveBundle.message("fix.by.hand"), NotificationType.WARNING);
+                notify(project, String.join("\n", plan.problems()) + "\n" + MavenDetectiveBundle.message("fix.by.hand"),
+                        NotificationType.WARNING);
             }
             return 0;
         }
@@ -431,13 +432,14 @@ final class FixRunner {
         List<String> done = new ArrayList<>();
         for (PomChanges.FileChange c : now.files()) {
             for (String d : c.descriptions()) {
-                done.add(escape(d + " (" + c.file().getFileName() + ")"));
+                done.add(d + " (" + c.file().getFileName() + ")");
             }
         }
         for (String p : now.problems()) {
-            done.add(escape(p));
+            done.add(p);
         }
-        notify(project, String.join("<br>", done) + "<br>" + MavenDetectiveBundle.message("fix.reimport"), NotificationType.INFORMATION);
+        done.add(MavenDetectiveBundle.message("fix.reimport"));
+        notify(project, String.join("\n", done), NotificationType.INFORMATION);
         IdeMaven.reimport(project);
         return now.editCount();
     }
@@ -467,8 +469,9 @@ final class FixRunner {
         return vf == null ? null : FileDocumentManager.getInstance().getDocument(vf);
     }
 
-    private static String escape(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    /** Benachrichtigungen zeigen HTML: Text escapen ({@code <server>} bliebe sonst unsichtbar), Zeilen umbrechen. */
+    static String plainToHtml(String text) {
+        return Html.esc(text).replace("\n", "<br>");
     }
 
     private static int parseInt(String s) {
@@ -518,9 +521,10 @@ final class FixRunner {
         return rule + "__erkannt-als-" + detected + "-" + stamp + ".log";
     }
 
+    /** {@code text} ist Klartext (Zeilen mit {@code \n}), nie HTML. */
     private static void notify(Project project, String text, NotificationType type) {
         NotificationGroupManager.getInstance().getNotificationGroup(BuildDoctorService.TOOL_WINDOW_ID)
-                .createNotification(text, type)
+                .createNotification(plainToHtml(String.valueOf(text)), type)
                 .notify(project);
     }
 }

@@ -26,6 +26,7 @@ import io.github.bitshiftdev.mavendetective.core.env.SetupComparison;
 import io.github.bitshiftdev.mavendetective.core.snapshot.BuildSnapshot;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotDiff;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotStore;
+import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
 import org.jetbrains.annotations.NotNull;
@@ -237,7 +238,8 @@ public final class BuildDoctorService {
                         runEnded();
                     }
                     NotificationGroupManager.getInstance().getNotificationGroup(TOOL_WINDOW_ID)
-                            .createNotification(MavenDetectiveBundle.message("notification.analysis.failed"), String.valueOf(e.getMessage()), NotificationType.ERROR)
+                            .createNotification(MavenDetectiveBundle.message("notification.analysis.failed"),
+                                    FixRunner.plainToHtml(String.valueOf(e.getMessage())), NotificationType.ERROR)
                             .notify(project);
                 }, project.getDisposed());
                 return;
@@ -384,7 +386,8 @@ public final class BuildDoctorService {
                 && (window == null || !window.isVisible())) {
             Diagnosis d = result.diagnoses().get(0);
             NotificationGroupManager.getInstance().getNotificationGroup(TOOL_WINDOW_ID)
-                    .createNotification(MavenDetectiveBundle.message("notification.build.failed", d.getCategory()), d.getCause(),
+                    .createNotification(Html.esc(MavenDetectiveBundle.message("notification.build.failed", d.getCategory())),
+                            FixRunner.plainToHtml(d.getCause()),
                             NotificationType.WARNING)
                     .addAction(NotificationAction.createSimple(MavenDetectiveBundle.message("notification.show.diagnosis"),
                             () -> Navigator.buildDoctor(project, BuildDoctorPanel::showLatest)))

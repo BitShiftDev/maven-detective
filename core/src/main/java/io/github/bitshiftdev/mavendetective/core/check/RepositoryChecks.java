@@ -11,7 +11,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
@@ -152,7 +151,8 @@ final class RepositoryChecks {
     // ------------------------------------------------------------------ corrupt-jar
 
     static final class CorruptJar implements Check {
-        private static final Pattern PATH = Pattern.compile("((?:[A-Za-z]:)?[\\\\/][^\\s;:'\"]*\\.(?:jar|zip|war))");
+        /** Nur am Anfang eines Pfads ansetzen, sonst wächst {@code find()} quadratisch mit langen Zeilen. */
+        private static final Pattern PATH = Pattern.compile("(?<![^\\s;:'\"=(\\[,])((?:[A-Za-z]:)?[\\\\/][^\\s;:'\"]*\\.(?:jar|zip|war))");
 
         @Override
         public String id() { return "corrupt-jar"; }
@@ -161,11 +161,11 @@ final class RepositoryChecks {
         public CheckResult run(CheckContext ctx) {
             Path file = null;
             if (ctx.var("file") != null) {
-                file = Paths.get(ctx.var("file"));
+                file = Text.localPath(ctx.var("file"));
             } else {
                 Matcher m = ctx.find(PATH);
                 if (m != null) {
-                    file = Paths.get(m.group(1));
+                    file = Text.localPath(m.group(1));
                 } else if (ctx.var("artifact") != null && ctx.env().getLocalRepository() != null) {
                     Coordinates c = Coordinates.parse(ctx.var("artifact"));
                     if (c != null) {

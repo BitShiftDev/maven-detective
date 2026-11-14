@@ -35,6 +35,6 @@ class MavenRunListenerTest {
         String text = log.toString();
         assertTrue(text.startsWith("[INFO] Apache Maven 3.9.11\n"));
         assertTrue(text.endsWith("[ERROR] Failed to execute goal x\n"));
-        assertTrue(text.contains(MavenRunListener.CUT_MARKER));
+        assertTrue(text.contains(MavenRunListener.cutMarker()));
     }
 }

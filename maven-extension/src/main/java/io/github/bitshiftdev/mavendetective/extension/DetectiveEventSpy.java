@@ -40,6 +40,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Maven-Core-Extension: schreibt strukturierte Events und gibt bei einem Fehler die Diagnose-Karte aus.
@@ -77,6 +78,8 @@ public class DetectiveEventSpy extends AbstractEventSpy {
 
     private final Logger log = LoggerFactory.getLogger("maven-detective");
     private final List<Map<String, Object>> events = Collections.synchronizedList(new ArrayList<Map<String, Object>>());
+    /** Events kommen unter {@code -T} und aus Resolver-Threads parallel; Zugriff nur unter {@link #writerLock}. */
+    private final Object writerLock = new Object();
     private Writer writer;
     private boolean report = true;
     private boolean snapshots = true;
@@ -84,7 +87,7 @@ public class DetectiveEventSpy extends AbstractEventSpy {
     private SnapshotStore store;
     private String mavenVersion;
     private String projectDirectory;
-    private int repositoryEvents;
+    private final AtomicInteger repositoryEvents = new AtomicInteger();
 
     @Override
     public void init(Context context) {
@@ -106,7 +109,9 @@ public class DetectiveEventSpy extends AbstractEventSpy {
                 if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
                     log.debug("Maven Detective: kann {} nicht anlegen", parent);
                 }
-                writer = new OutputStreamWriter(new FileOutputStream(f, false), StandardCharsets.UTF_8);
+                synchronized (writerLock) {
+                    writer = new OutputStreamWriter(new FileOutputStream(f, false), StandardCharsets.UTF_8);
+                }
             }
         } catch (Throwable t) {
             log.debug("Maven Detective: Initialisierung fehlgeschlagen", t);
@@ -121,7 +126,7 @@ public class DetectiveEventSpy extends AbstractEventSpy {
                 record(session(request));
             } else if (event instanceof RepositoryEvent) {
                 Map<String, Object> e = repository((RepositoryEvent) event);
-                if (e != null && repositoryEvents++ < MAX_REPOSITORY_EVENTS) {
+                if (e != null && repositoryEvents.getAndIncrement() < MAX_REPOSITORY_EVENTS) {
                     record(e);
                 }
             } else if (event instanceof ExecutionEvent) {
@@ -148,6 +153,12 @@ public class DetectiveEventSpy extends AbstractEventSpy {
 
     @Override
     public void close() {
+        synchronized (writerLock) {
+            closeWriter();
+        }
+    }
+
+    private void closeWriter() {
         if (writer != null) {
             try {
                 writer.close();
@@ -277,14 +288,22 @@ public class DetectiveEventSpy extends AbstractEventSpy {
 
     private void record(Map<String, Object> event) {
         events.add(event);
-        if (writer != null) {
+        synchronized (writerLock) {
+            if (writer == null) {
+                return;
+            }
+        }
+        String line = Json.write(event) + "\n";   // außerhalb der Sperre: andere Threads warten nur aufs Schreiben
+        synchronized (writerLock) {
+            if (writer == null) {
+                return;
+            }
             try {
-                writer.write(Json.write(event));
-                writer.write('\n');
+                writer.write(line);   // eine Zeile in einem Aufruf, damit sich Zeilen nie vermischen
                 writer.flush();
             } catch (IOException e) {
                 log.debug("Maven Detective: Event-Datei nicht schreibbar", e);
-                writer = null;
+                closeWriter();
             }
         }
     }
