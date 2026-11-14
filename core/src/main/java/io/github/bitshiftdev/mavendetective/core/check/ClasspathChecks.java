@@ -601,7 +601,8 @@ final class ClasspathChecks {
                         "file", file, "line", String.valueOf(own.dep.getLine()));
             }
             return FixAction.of(FixAction.SET_SCOPE, Texts.t("check.location.scope.fix", h.ga()),
-                    "file", file, "artifact", h.ga(), "scope", "compile", "classifier", own.dep.getClassifier());
+                    "file", file, "artifact", h.ga(), "scope", "compile", "classifier", own.dep.getClassifier(),
+                    "type", "jar".equals(own.dep.getType()) ? null : own.dep.getType());
         }
     }
 

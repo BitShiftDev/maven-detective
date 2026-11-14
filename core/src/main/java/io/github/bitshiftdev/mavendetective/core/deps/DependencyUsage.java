@@ -246,7 +246,7 @@ public final class DependencyUsage {
             String pomFile = module.getPom().getFile().toString();
             if (kind == Kind.UNDECLARED) {
                 EffectiveModel model = module.getModel();
-                boolean managed = model.managed(entry.getGroupId(), entry.getArtifactId()) != null;
+                boolean managed = model.managed(entry.getGroupId(), entry.getArtifactId(), entry.getType(), entry.getClassifier()) != null;
                 String scope = suggestedScope();
                 out.add(FixAction.of(FixAction.ADD_DEPENDENCY,
                         Texts.t("usage.fix.declare", entry.ga() + (managed ? "" : ":" + entry.getVersion()) + ("compile".equals(scope) ? "" : " (" + scope + ")"),
@@ -267,12 +267,19 @@ public final class DependencyUsage {
             }
             if (kind == Kind.TEST_ONLY) {
                 out.add(FixAction.of(FixAction.SET_SCOPE, Texts.t("usage.fix.scope.test", entry.ga()),
-                        "file", file, "artifact", entry.ga(), "scope", "test", "classifier", declared.dep.getClassifier()));
+                        "file", file, "artifact", entry.ga(), "scope", "test", "classifier", declared.dep.getClassifier(),
+                        "type", declaredType()));
             } else {
                 out.add(FixAction.of(FixAction.REMOVE_DEPENDENCY, Texts.t("usage.fix.remove", entry.ga(), module.getName()),
-                        "file", file, "artifact", entry.ga(), "classifier", declared.dep.getClassifier()));
+                        "file", file, "artifact", entry.ga(), "classifier", declared.dep.getClassifier(), "type", declaredType()));
             }
             return out;
+        }
+
+        /** Typ der Deklaration für den Quick-Fix; {@code null} bei {@code jar}. */
+        private String declaredType() {
+            String t = declared.dep.getType();
+            return "jar".equals(t) ? null : t;
         }
 
         /** Zeile der Deklaration (UNUSED/TEST_ONLY) als {@code datei:zeile}, sonst {@code null}. */
@@ -440,6 +447,14 @@ public final class DependencyUsage {
                     continue;
                 }
                 int owner = owner(owners.get(cls), entries, test);
+                if (owner >= 0 && !entries.get(owner).isDirect()) {
+                    // Liegt die Klasse auch in einer deklarierten Dependency, gehört die Nennung ihr –
+                    // sonst hieße die Deklaration „ungenutzt“, und ihr Entfernen hinge an einem Zufall der Reihenfolge.
+                    int declared = declaredOwner(owners.get(cls), entries, test);
+                    if (declared >= 0) {
+                        owner = declared;
+                    }
+                }
                 if (owner < 0 || entries.get(owner).isSelf()) {
                     continue;
                 }
@@ -654,6 +669,21 @@ public final class DependencyUsage {
         return runtime;
     }
 
+    /** Erste direkte Dependency unter den Kandidaten, die der Compiler hier sieht (Hauptquellen: nicht test/runtime); sonst -1. */
+    private static int declaredOwner(int[] candidates, List<Entry> entries, boolean test) {
+        for (int i : candidates) {
+            Entry e = entries.get(i);
+            if (!e.isDirect() || e.isSelf()) {
+                continue;
+            }
+            String scope = e.getScope();
+            if (test || !"test".equals(scope) && !"runtime".equals(scope)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /** Index der direkten Dependency, über die {@code e} kommt; -1, wenn unbekannt. */
     private static int directIndex(List<Entry> entries, Entry e) {
         if (e.getPath().isEmpty()) {
@@ -669,17 +699,29 @@ public final class DependencyUsage {
         return -1;
     }
 
-    /** Classpath-Eintrag einer deklarierten Dependency (gleicher Classifier). */
+    /** Classpath-Eintrag einer deklarierten Dependency (gleicher Typ und Classifier). */
     private static int directEntry(List<Entry> entries, PomFile.Dep dep) {
-        String classifier = dep.getClassifier() == null || dep.getClassifier().isEmpty() ? null : dep.getClassifier();
+        String type = dep.getType();
+        String classifier = classifierOf(type, dep.getClassifier());
         for (int i = 0; i < entries.size(); i++) {
             Entry e = entries.get(i);
-            if (e.isDirect() && e.ga().equals(dep.ga())
-                    && (classifier == null ? e.getClassifier() == null || "test-jar".equals(e.getType()) : classifier.equals(e.getClassifier()))) {
+            String et = e.getType() == null ? "jar" : e.getType();
+            if (e.isDirect() && e.ga().equals(dep.ga()) && type.equals(et) && classifier.equals(classifierOf(et, e.getClassifier()))) {
                 return i;
             }
         }
         return -1;
+    }
+
+    /** Classifier, den der Typ mitbringt, wenn keiner angegeben ist ({@code test-jar} → {@code tests}). */
+    private static String classifierOf(String type, String classifier) {
+        if (classifier != null && !classifier.isEmpty()) {
+            return classifier;
+        }
+        if ("test-jar".equals(type)) {
+            return "tests";
+        }
+        return "ejb-client".equals(type) ? "client" : "";
     }
 
     /**

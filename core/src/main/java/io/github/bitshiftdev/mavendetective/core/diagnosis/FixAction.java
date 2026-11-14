@@ -26,15 +26,16 @@ import java.util.Map;
  *     {@code exclusion} (groupId:artifactId, auch mit *), {@code section} ({@code dependencies} oder
  *     {@code dependencyManagement}) – entfernt eine veraltete Exclusion (Modul A4)</td></tr>
  * <tr><td>{@code add-exclusion}</td><td>{@code file} (POM), {@code artifact} (direkte Dependency unter {@code dependencies},
- *     groupId:artifactId), {@code exclusion} (groupId:artifactId) – nimmt ein transitives JAR aus dem Classpath,
+ *     groupId:artifactId), {@code exclusion} (groupId:artifactId), optional {@code classifier}, {@code type} – nimmt ein transitives JAR aus dem Classpath,
  *     z. B. wegen doppelter Klassen (Modul A3)</td></tr>
  * <tr><td>{@code add-dependency}</td><td>{@code file} (POM des Moduls), {@code artifact} (groupId:artifactId),
  *     {@code version} (fehlt, wenn verwaltet), {@code scope}, {@code type}, {@code classifier} (nur wenn nicht Standard) –
  *     deklariert eine bisher nur transitiv vorhandene Dependency (Modul A5)</td></tr>
- * <tr><td>{@code remove-dependency}</td><td>{@code file} (POM), {@code artifact} (groupId:artifactId), {@code classifier} –
+ * <tr><td>{@code remove-dependency}</td><td>{@code file} (POM), {@code artifact} (groupId:artifactId), {@code classifier},
+ *     {@code type} (fehlt = {@code jar}; trennt z. B. {@code jar} und {@code test-jar}) –
  *     entfernt eine ungenutzte Dependency aus {@code dependencies} (Modul A5)</td></tr>
  * <tr><td>{@code set-scope}</td><td>{@code file} (POM), {@code artifact} (groupId:artifactId), {@code scope},
- *     {@code classifier} – z. B. auf {@code test}, wenn nur Tests sie nennen (Modul A5)</td></tr>
+ *     {@code classifier}, {@code type} (fehlt = {@code jar}) – z. B. auf {@code test}, wenn nur Tests sie nennen (Modul A5)</td></tr>
  * <tr><td>{@code set-version}</td><td>{@code file} (POM), {@code version} und entweder {@code property} (Name; fehlt sie,
  *     wird sie unter {@code properties} angelegt) oder {@code artifact} (groupId:artifactId) mit {@code section}
  *     ({@code parent}, {@code dependencies} oder {@code dependencyManagement}) – hebt eine Version genau dort, wo sie

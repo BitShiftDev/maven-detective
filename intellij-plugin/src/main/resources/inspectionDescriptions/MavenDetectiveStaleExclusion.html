@@ -11,9 +11,11 @@ it is <b>redundant</b>.
 </p>
 <p>
 If POMs along the way are missing from the local repository, the inspection reports nothing – better no
-report than a wrong one. Build once, then it checks completely. Project-wide: <i>Code | Inspect Code</i>, the
+report than a wrong one. The same applies when a POM on the way is relocated or brings dependencies in a
+profile: Maven Detective does not rebuild those, so the exclusion is left alone. Build once, then it checks completely. Project-wide: <i>Code | Inspect Code</i>, the
 <i>Exclusions</i> page in the <i>Maven Detective</i> tool window, or <code>maven-detective-core.jar exclusions</code>.
 </p>
-<p>Quick fix: remove the exclusion (for the last one together with <code>&lt;exclusions&gt;</code>).</p>
+<p>Quick fix: remove the exclusion (for the last one together with <code>&lt;exclusions&gt;</code>). Like every POM
+change by Maven Detective it shows a diff preview first (unless switched off) and reimports the Maven project.</p>
 </body>
 </html>

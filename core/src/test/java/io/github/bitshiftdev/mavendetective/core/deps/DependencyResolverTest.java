@@ -102,6 +102,26 @@ class DependencyResolverTest {
         assertEquals("runtime", r.getPremanagedScope());
     }
 
+    /** Review #16: Management gilt nur für denselben Schlüssel g:a:type[:classifier] – wie bei Maven. */
+    @Test
+    void managementMatchesTypeAndClassifier() throws Exception {
+        // nur test-jar verwaltet (Scope test): die jar-Deklaration bleibt compile
+        PomFile pom = project("<dependencyManagement><dependencies>"
+                + dep("org.c", "c", "1.0", "<type>test-jar</type><scope>test</scope>") + "</dependencies></dependencyManagement>"
+                + "<dependencies>" + dep("org.c", "c", "1.0", "") + "</dependencies>");
+        DepNode c = resolve(pom).getRoot().findIncluded("org.c", "c");
+        assertEquals("compile", c.getScope());
+        assertEquals("compile", resolve(pom).getRoot().findIncluded("org.d", "d").getScope());
+
+        // jar (ohne Scope) und test-jar (test) verwaltet: das test-jar ohne eigenen Scope wird test
+        pom = project("<dependencyManagement><dependencies>" + dep("org.c", "c", "1.0", "")
+                + dep("org.c", "c", "1.0", "<type>test-jar</type><scope>test</scope>") + "</dependencies></dependencyManagement>"
+                + "<dependencies>" + dep("org.c", "c", null, "<type>test-jar</type>") + "</dependencies>");
+        DepNode testJar = resolve(pom).getRoot().findIncluded("org.c", "c");
+        assertEquals("test-jar", testJar.getType());
+        assertEquals("test", testJar.getScope());
+    }
+
     @Test
     void scopesAreDerivedAndWidened() throws Exception {
         // x (test) bringt y → z; b (compile) bringt r (runtime)

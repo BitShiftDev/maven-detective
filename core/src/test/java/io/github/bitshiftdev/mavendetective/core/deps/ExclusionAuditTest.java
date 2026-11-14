@@ -271,4 +271,53 @@ class ExclusionAuditTest {
         assertTrue(String.join("\n", a.lines(true)).contains("wirkt"));
         assertTrue(a.markdown(false).contains("| veraltet | `app:"), a.markdown(false));
     }
+    /** Review #17/#18: Relocation und Profil-Dependencies bildet der Nachbau nicht ab – nie STALE. */
+    @Test
+    void relocationAndProfileDependenciesAreUnknownNotStale() throws IOException {
+        artifact("mysql", "mysql-connector-java", "8.0.33", """
+                <distributionManagement>
+                  <relocation><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId></relocation>
+                </distributionManagement>
+                """);
+        artifact("com.mysql", "mysql-connector-j", "8.0.33", "<dependencies>" + dep("com.google.protobuf", "protobuf-java", "3.21.9", "")
+                + "</dependencies>");
+        artifact("org.xml", "binding", "1.0", """
+                <profiles>
+                  <profile>
+                    <id>jdk11</id>
+                    <activation><jdk>[11,)</jdk></activation>
+                    <dependencies>%s</dependencies>
+                  </profile>
+                </profiles>
+                """.formatted(dep("javax.xml.bind", "jaxb-api", "2.3.1", "")));
+        write(project.resolve("pom.xml"), """
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>com.acme</groupId>
+                  <artifactId>app</artifactId>
+                  <version>1.0</version>
+                  <dependencies>
+                    %s
+                    %s
+                  </dependencies>
+                </project>
+                """.formatted(
+                dep("mysql", "mysql-connector-java", "8.0.33",
+                        "<exclusions><exclusion><groupId>com.google.protobuf</groupId><artifactId>protobuf-java</artifactId></exclusion></exclusions>"),
+                dep("org.xml", "binding", "1.0",
+                        "<exclusions><exclusion><groupId>javax.xml.bind</groupId><artifactId>jaxb-api</artifactId></exclusion></exclusions>")));
+        ExclusionAudit a = audit(Map.of());
+
+        Finding protobuf = finding(a, "com.google.protobuf:protobuf-java");
+        assertEquals(Status.UNKNOWN, protobuf.getStatus());
+        assertNull(protobuf.fix());
+        assertTrue(protobuf.getMissing().isEmpty());
+        assertTrue(protobuf.message().contains("com.mysql:mysql-connector-j:8.0.33"), protobuf.message());
+
+        Finding jaxb = finding(a, "javax.xml.bind:jaxb-api");
+        assertEquals(Status.UNKNOWN, jaxb.getStatus());
+        assertNull(jaxb.fix());
+        assertTrue(jaxb.message().contains("jdk11"), jaxb.message());
+        assertTrue(a.removable().isEmpty());
+    }
 }

@@ -66,7 +66,9 @@ public final class ExclusionsPanel extends DetectivePanel {
         installToolbar(null, actions, search);
 
         tree = new FindingTree<>(ExclusionAudit.Finding.class, ExclusionsPanel::render, ExclusionAudit.Finding::isRemovable,
-                f -> f.getDependency().ga() + " " + f.getExclusion().ga());
+                f -> f.getDependency().ga() + " " + f.getExclusion().ga())
+                // Häkchen hängen am Befund, nicht am Objekt: nach dem Neu-Prüfen bleibt eine abgewählte Exclusion abgewählt
+                .keyedBy(f -> List.of(f.getFile(), f.isManaged(), f.getDependency().managementKey(), f.getExclusion().ga()));
         tree.addSelectionListener(this::showSelection);
         tree.addCheckListener(this::updateRemove);
         emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("loading.exclusions"), null, null);

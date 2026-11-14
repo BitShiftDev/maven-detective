@@ -1,8 +1,10 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -393,6 +395,39 @@ class PomEditorTest {
         String out2 = PomEditor.setScope(out, "g", "b", "test", null).apply(out);
         assertTrue(out2.contains("<artifactId>b</artifactId><scope>test</scope></dependency>"), out2);
         assertThrows(IllegalArgumentException.class, () -> PomEditor.setScope(out2, "g", "b", "test", null));
+    }
+
+    /** Review #15: jar und test-jar derselben Dependency – jeder Fix trifft genau den gemeinten Eintrag. */
+    @Test
+    void typeSelectsBetweenJarAndTestJar() {
+        String xml = """
+                <project>
+                  <dependencies>
+                    <dependency><groupId>g</groupId><artifactId>a</artifactId><type>test-jar</type><scope>test</scope></dependency>
+                    <dependency><groupId>g</groupId><artifactId>a</artifactId><scope>runtime</scope></dependency>
+                  </dependencies>
+                </project>
+                """;
+        // ohne type: der jar-Eintrag, auch wenn das test-jar vorne steht
+        String scoped = PomEditor.setScope(xml, "g", "a", "compile", null).apply(xml);
+        assertTrue(scoped.contains("<artifactId>a</artifactId><scope>compile</scope>"), scoped);
+        assertTrue(scoped.contains("<type>test-jar</type><scope>test</scope>"), scoped);
+
+        String removed = PomEditor.forFix(xml, FixAction.of(FixAction.REMOVE_DEPENDENCY, "x", "file", "pom.xml", "artifact", "g:a",
+                "type", "test-jar")).apply(xml);
+        assertFalse(removed.contains("test-jar"), removed);
+        assertTrue(removed.contains("<scope>runtime</scope>"), removed);
+
+        String jarRemoved = PomEditor.removeDependency(xml, "g", "a", null).apply(xml);
+        assertTrue(jarRemoved.contains("test-jar") && !jarRemoved.contains("runtime"), jarRemoved);
+
+        String excluded = PomEditor.forFix(xml, FixAction.of(FixAction.ADD_EXCLUSION, "x", "file", "pom.xml", "artifact", "g:a",
+                "exclusion", "x:y")).apply(xml);
+        assertTrue(excluded.indexOf("<exclusions>") > excluded.indexOf("<scope>runtime</scope>"), "beim jar-Eintrag: " + excluded);
+
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.setScope(xml, "g", "a", "test", null, "ejb"));
+        // gleiche Koordinaten, anderer Typ: kein Duplikat
+        PomEditor.addDependency(removed, "g", "a", "1.0", "test", "test-jar", null);
     }
 
     @Test

@@ -62,6 +62,84 @@ class ChecksTest {
         assertEquals("-U", fix.param("args"));
     }
 
+    private static final String VERSION_MISSING = "[ERROR] [ERROR] Some problems were encountered while processing the POMs:\n"
+            + "[ERROR] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-surefire-plugin is missing. @ line 9, column 15\n"
+            + "[ERROR] The build could not read 1 project -> [Help 1]";
+
+    /** Review #11: nur das Plugin ohne eigene {@code <version>} zählt – nicht Dependencies oder Konfiguration mit gleicher artifactId. */
+    @Test
+    void pluginVersionPointsToThePluginWithoutVersion() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        write(project.resolve("pom.xml"), "<project><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version>\n"
+                + "<build><pluginManagement><plugins>\n"
+                + "<!-- <plugin><artifactId>maven-surefire-plugin</artifactId></plugin> -->\n"
+                + "<plugin><artifactId>other</artifactId>\n"
+                + "<dependencies><dependency><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>"
+                + "<version>3.0</version></dependency></dependencies></plugin>\n"
+                + "</plugins></pluginManagement><plugins>\n"
+                + "<plugin>\n"
+                + "<artifactId>maven-surefire-plugin</artifactId>\n"
+                + "<configuration><version>x</version></configuration>\n"
+                + "</plugin>\n"
+                + "</plugins></build></project>");
+        Diagnosis d = diagnose(env, VERSION_MISSING);
+        assertEquals("plugin-missing", d.getRuleId());
+        FixAction fix = null;
+        for (FixAction f : d.getFixes()) {
+            if (FixAction.INSERT_PLUGIN_VERSION.equals(f.getType())) {
+                fix = f;
+            }
+        }
+        assertTrue(fix != null, d.getFixes().toString());
+        assertEquals("8", fix.param("line"), "Zeile der artifactId im Plugin ohne <version>");
+    }
+
+    @Test
+    void pluginVersionIsNotConfirmedWhenTheVersionIsThere() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        write(project.resolve("pom.xml"), "<project><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version>\n"
+                + "<build><plugins><plugin><groupId>org.apache.maven.plugins</groupId>\n"
+                + "<artifactId>maven-surefire-plugin</artifactId><version>3.2.5</version></plugin></plugins></build></project>");
+        Diagnosis d = diagnose(env, VERSION_MISSING);
+        assertEquals("plugin-missing", d.getRuleId());
+        for (FixAction f : d.getFixes()) {
+            assertTrue(!FixAction.INSERT_PLUGIN_VERSION.equals(f.getType()), f.toString());
+        }
+
+        // Prefix-Fehler: das Plugin steht mit Version da – kein „Version einfügen“
+        write(project.resolve("pom.xml"), "<project><groupId>com.acme</groupId><artifactId>root</artifactId><version>1.0</version>\n"
+                + "<build><plugins><plugin><groupId>org.springframework.boot</groupId>\n"
+                + "<artifactId>spring-boot-maven-plugin</artifactId><version>3.3.5</version></plugin></plugins></build></project>");
+        d = diagnose(env, "[ERROR] No plugin found for prefix 'spring-boot' in the current project and in the plugin groups "
+                + "[org.apache.maven.plugins, org.codehaus.mojo] available from the repositories -> [Help 1]");
+        for (FixAction f : d.getFixes()) {
+            assertTrue(!FixAction.INSERT_PLUGIN_VERSION.equals(f.getType()), f.toString());
+        }
+    }
+
+    /** Review #12/#13: Text-Log aus der IDE – settings.xml und lokales Repository der IDE gelten, nicht ~/.m2. */
+    @Test
+    void environmentTakesTheIdeSettingsForTextLogs() throws Exception {
+        Path dir = Files.createTempDirectory("md-ide");
+        Path settings = dir.resolve("corp-settings.xml");
+        write(settings, "<settings><localRepository>" + dir.resolve("m2") + "</localRepository>"
+                + "<servers><server><id>nexus</id></server></servers></settings>");
+        io.github.bitshiftdev.mavendetective.core.model.BuildFailure failure = MavenLogParser.parse("[ERROR] boom");
+        io.github.bitshiftdev.mavendetective.core.env.BuildSetup ide = new io.github.bitshiftdev.mavendetective.core.env.BuildSetup("IDE");
+        ide.setUserSettings(settings.toString());
+        ide.setJavaVersion("21.0.2");
+        Environment e = Environment.forBuild(failure, dir, ide);
+        assertEquals(settings, e.getUserSettingsFile());
+        assertEquals(dir.resolve("m2"), e.getLocalRepository(), "<localRepository> aus der settings.xml der IDE");
+        assertEquals("21.0.2", e.getRunnerJavaVersion());
+
+        ide.setLocalRepository(dir.resolve("ide-repo").toString());
+        assertEquals(dir.resolve("ide-repo"), Environment.forBuild(failure, dir, ide).getLocalRepository(), "Repository der IDE gewinnt");
+
+        failure.getSession().setLocalRepository(dir.resolve("from-run").toString());
+        assertEquals(dir.resolve("from-run"), Environment.forBuild(failure, dir, ide).getLocalRepository(), "Angabe des Laufs gewinnt");
+    }
+
     @Test
     void offlineModeWinsOverOtherCauses() throws Exception {
         Environment env = env(new HashMap<>(), Boolean.TRUE);

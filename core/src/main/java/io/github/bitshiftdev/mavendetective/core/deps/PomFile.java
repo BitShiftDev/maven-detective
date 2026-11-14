@@ -126,6 +126,11 @@ public final class PomFile {
     final List<Dep> dependencies = new ArrayList<Dep>();
     final List<Dep> managed = new ArrayList<Dep>();
     final List<String> profilesTouchingVersions = new ArrayList<String>();
+    final List<String> profilesWithDependencies = new ArrayList<String>();
+    boolean relocated;
+    String relocationGroupId;
+    String relocationArtifactId;
+    String relocationVersion;
     final List<String> modules = new ArrayList<String>();
 
     private PomFile(Path file) {
@@ -178,6 +183,20 @@ public final class PomFile {
     public List<Dep> getManagedDependencies() { return Collections.unmodifiableList(managed); }
     public List<String> getProfilesTouchingVersions() { return Collections.unmodifiableList(profilesTouchingVersions); }
     public List<String> getModules() { return Collections.unmodifiableList(modules); }
+    /** Profile (id), die Dependencies oder dependencyManagement mitbringen – je nach Aktivierung fehlen sie im Modell. */
+    public List<String> getProfilesWithDependencies() { return Collections.unmodifiableList(profilesWithDependencies); }
+    /** Steht {@code distributionManagement/relocation} in der POM (Artefakt ist umgezogen)? */
+    public boolean isRelocated() { return relocated; }
+
+    /** Ziel der Relocation als {@code groupId:artifactId:version} (fehlende Teile wie diese POM); {@code null} ohne Relocation. */
+    public String relocationTarget() {
+        if (!relocated) {
+            return null;
+        }
+        return (relocationGroupId != null ? relocationGroupId : getGroupId()) + ":"
+                + (relocationArtifactId != null ? relocationArtifactId : artifactId) + ":"
+                + (relocationVersion != null ? relocationVersion : getVersion());
+    }
 
     public String gav() {
         return getGroupId() + ":" + artifactId + ":" + getVersion();
@@ -205,6 +224,7 @@ public final class PomFile {
         private int exclusionLine;
         private String profileId;
         private boolean profileTouches;
+        private boolean profileDependencies;
         private int elementLine;
 
         Handler(PomFile pom) {
@@ -237,9 +257,15 @@ public final class PomFile {
             } else if ("project/profiles/profile".equals(p)) {
                 profileId = null;
                 profileTouches = false;
+                profileDependencies = false;
             } else if (p.startsWith("project/profiles/profile/properties/")
                     || "project/profiles/profile/dependencyManagement".equals(p)) {
                 profileTouches = true;
+                profileDependencies |= "project/profiles/profile/dependencyManagement".equals(p);
+            } else if ("project/profiles/profile/dependencies/dependency".equals(p)) {
+                profileDependencies = true;
+            } else if ("project/distributionManagement/relocation".equals(p)) {
+                pom.relocated = true;
             }
         }
 
@@ -310,9 +336,18 @@ public final class PomFile {
                 pom.modules.add(value);
             } else if ("project/profiles/profile/id".equals(p)) {
                 profileId = value;
+            } else if ("project/distributionManagement/relocation/groupId".equals(p)) {
+                pom.relocationGroupId = value.isEmpty() ? null : value;
+            } else if ("project/distributionManagement/relocation/artifactId".equals(p)) {
+                pom.relocationArtifactId = value.isEmpty() ? null : value;
+            } else if ("project/distributionManagement/relocation/version".equals(p)) {
+                pom.relocationVersion = value.isEmpty() ? null : value;
             } else if ("project/profiles/profile".equals(p)) {
                 if (profileTouches) {
                     pom.profilesTouchingVersions.add(profileId == null ? "(ohne id)" : profileId);
+                }
+                if (profileDependencies) {
+                    pom.profilesWithDependencies.add(profileId == null ? "(ohne id)" : profileId);
                 }
             }
             path.remove(path.size() - 1);

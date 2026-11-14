@@ -309,13 +309,32 @@ final class PomChecks {
         @Override
         public CheckResult run(CheckContext ctx) {
             String plugin = ctx.var("plugin");
-            if (plugin == null || plugin.indexOf(':') < 0) {
+            // Nur die Warnung „'build.plugins.plugin.version' for … is missing“ handelt von einer fehlenden Version;
+            // dieselbe Regel deckt auch unbekannte Prefixe und Goals ab
+            if (plugin == null || plugin.indexOf(':') < 0 || !ctx.anyLineContains("'build.plugins.plugin.version'")) {
                 return CheckResult.notApplicable();
             }
-            String artifactId = plugin.substring(plugin.indexOf(':') + 1);
-            List<ProjectPoms.Location> hits = ctx.projectPoms().findText("<artifactId>" + artifactId + "</artifactId>");
-            if (hits.isEmpty()) {
+            String[] parts = plugin.split(":");
+            String groupId = parts[0];
+            String artifactId = parts[1];
+            boolean declared = false;
+            List<ProjectPoms.Location> hits = new ArrayList<ProjectPoms.Location>();
+            for (ProjectPoms.Pom pom : ctx.projectPoms().all()) {
+                for (PluginEntry e : pluginEntries(pom.lines)) {
+                    if (!artifactId.equals(e.artifactId) || !groupId.equals(e.groupId == null ? "org.apache.maven.plugins" : e.groupId)) {
+                        continue;
+                    }
+                    declared = true;
+                    if (!e.hasVersion) {
+                        hits.add(new ProjectPoms.Location(pom, e.line));
+                    }
+                }
+            }
+            if (!declared) {
                 return CheckResult.info().evidence(Evidence.hint(Texts.t("check.plugin.version.not.declared")));
+            }
+            if (hits.isEmpty()) {
+                return CheckResult.notApplicable(); // überall mit <version> – fehlt dann im Parent außerhalb des Projekts
             }
             ProjectPoms.Location l = hits.get(0);
             CheckResult r = CheckResult.confirmed();
@@ -327,6 +346,77 @@ final class PomChecks {
                     .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.open.pom"),
                             "file", l.pom.file.toString(), "line", String.valueOf(l.line)));
         }
+    }
+
+    /** Ein {@code <plugin>}-Eintrag: Koordinaten, ob er eine eigene {@code <version>} hat, Zeile der artifactId. */
+    static final class PluginEntry {
+        String groupId;
+        String artifactId;
+        boolean hasVersion;
+        int line;
+    }
+
+    private static final Pattern PLUGIN_BLOCK = Pattern.compile("<plugin\\s*>(.*?)</plugin\\s*>", Pattern.DOTALL);
+    private static final Pattern NESTED = Pattern.compile(
+            "<(dependencies|configuration|executions|goals)\\b[^>]*>.*?</\\1\\s*>|<(dependencies|configuration|executions|goals)\\b[^>]*/>",
+            Pattern.DOTALL);
+    private static final Pattern CHILD = Pattern.compile("<(groupId|artifactId|version)\\s*>\\s*([^<]*?)\\s*</\\1\\s*>");
+
+    /**
+     * Alle {@code <plugin>}-Einträge einer POM (build, pluginManagement, Profile, reporting). Kommentare
+     * zählen nicht; Koordinaten aus verschachtelten {@code <dependencies>}/{@code <configuration>} auch nicht.
+     */
+    static List<PluginEntry> pluginEntries(List<String> lines) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : lines) {
+            sb.append(line).append('\n');
+        }
+        String text = blank(sb.toString(), Pattern.compile("<!--.*?-->", Pattern.DOTALL));
+        List<PluginEntry> out = new ArrayList<PluginEntry>();
+        Matcher m = PLUGIN_BLOCK.matcher(text);
+        while (m.find()) {
+            String body = blank(m.group(1), NESTED);
+            PluginEntry e = new PluginEntry();
+            Matcher c = CHILD.matcher(body);
+            while (c.find()) {
+                if ("groupId".equals(c.group(1))) {
+                    e.groupId = c.group(2);
+                } else if ("artifactId".equals(c.group(1))) {
+                    e.artifactId = c.group(2);
+                    e.line = lineAt(text, m.start(1) + c.start());
+                } else {
+                    e.hasVersion = !c.group(2).isEmpty();
+                }
+            }
+            if (e.artifactId != null) {
+                out.add(e);
+            }
+        }
+        return out;
+    }
+
+    /** Ersetzt jeden Treffer durch Leerzeichen; Zeilenumbrüche bleiben, damit Offsets und Zeilen stimmen. */
+    private static String blank(String text, Pattern p) {
+        Matcher m = p.matcher(text);
+        StringBuilder out = new StringBuilder(text);
+        while (m.find()) {
+            for (int i = m.start(); i < m.end(); i++) {
+                if (out.charAt(i) != '\n') {
+                    out.setCharAt(i, ' ');
+                }
+            }
+        }
+        return out.toString();
+    }
+
+    private static int lineAt(String text, int offset) {
+        int line = 1;
+        for (int i = 0; i < offset; i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        return line;
     }
 
     // ------------------------------------------------------------------ plugin-declaration

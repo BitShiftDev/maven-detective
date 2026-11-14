@@ -246,7 +246,7 @@ public final class ModuleClasspath {
                 continue;
             }
             String version = ExclusionAudit.dependencyVersion(model, dep);
-            Managed managed = model.managed(dep.getGroupId(), dep.getArtifactId());
+            Managed managed = model.managed(dep);
             String scope = dep.getScope() != null ? dep.getScope()
                     : managed != null && managed.dep.getScope() != null ? managed.dep.getScope() : "compile";
             if ("import".equals(scope)) {

@@ -55,6 +55,7 @@ public final class ExclusionAudit {
         private List<String> path = Collections.emptyList();
         private String coveredBy;
         private List<String> missing = Collections.emptyList();
+        private List<String> limits = Collections.emptyList();
         private String alsoIncludedVia;
 
         Finding(PomFile pom, PomFile.Dep dependency, boolean managed, PomFile.Exclusion exclusion, String dependencyVersion) {
@@ -80,6 +81,8 @@ public final class ExclusionAudit {
         public String getCoveredBy() { return coveredBy; }
         /** Bei {@link Status#UNKNOWN}: was lokal fehlt. */
         public List<String> getMissing() { return missing; }
+        /** Bei {@link Status#UNKNOWN}: was der Nachbau nicht abbildet (Relocation, Profile mit Dependencies). */
+        public List<String> getLimits() { return limits; }
         /** Bei {@link Status#USED} mit Baum: Pfad, über den das Artifact trotzdem im Classpath landet. */
         public String getAlsoIncludedVia() { return alsoIncludedVia; }
 
@@ -107,7 +110,11 @@ public final class ExclusionAudit {
                     return Texts.t("excl.msg.used", e, join(path))
                             + (alsoIncludedVia == null ? "" : " – " + Texts.t("excl.msg.also.included", e, alsoIncludedVia));
                 default:
-                    return Texts.t("excl.msg.unknown", e, dependencyLabel(), join(missing, ", "));
+                    if (missing.isEmpty()) {
+                        return Texts.t("excl.msg.unsupported", e, dependencyLabel(), join(limits, ", "));
+                    }
+                    return Texts.t("excl.msg.unknown", e, dependencyLabel(), join(missing, ", "))
+                            + (limits.isEmpty() ? "" : "; " + join(limits, ", "));
             }
         }
 
@@ -223,13 +230,16 @@ public final class ExclusionAudit {
                 f.status = Status.REDUNDANT;
                 f.path = anyHit;
                 f.coveredBy = coveredBy(anyHit, others);
-            } else if (withOthers.missing.isEmpty() && full.missing.isEmpty()) {
+            } else if (withOthers.missing.isEmpty() && full.missing.isEmpty() && full.limits.isEmpty() && withOthers.limits.isEmpty()) {
                 f.status = Status.STALE;
             } else {
                 f.status = Status.UNKNOWN;
                 Set<String> m = new LinkedHashSet<String>(full.missing);
                 m.addAll(withOthers.missing);
                 f.missing = new ArrayList<String>(m);
+                Set<String> l = new LinkedHashSet<String>(full.limits);
+                l.addAll(withOthers.limits);
+                f.limits = new ArrayList<String>(l);
             }
             out.add(f);
         }
@@ -241,7 +251,7 @@ public final class ExclusionAudit {
             Interpolated v = consumer.interpolate(d.getVersion());
             return v.isResolved() && isFixed(v.value) ? v.value : null;
         }
-        Managed m = consumer.managed(d.getGroupId(), d.getArtifactId());
+        Managed m = consumer.managed(d);
         if (m == null) {
             return null;
         }
@@ -273,6 +283,8 @@ public final class ExclusionAudit {
         /** Je {@code groupId:artifactId} die Angabe, über die es kam (Typ, Classifier, Scope). */
         final Map<String, PomFile.Dep> decls = new HashMap<String, PomFile.Dep>();
         final Set<String> missing = new LinkedHashSet<String>();
+        /** Was der Nachbau nicht abbildet (Relocation, Profile mit Dependencies) – das Ergebnis ist dann unsicher. */
+        final Set<String> limits = new LinkedHashSet<String>();
 
         private static final class Node {
             final String groupId;
@@ -310,6 +322,17 @@ public final class ExclusionAudit {
                 PomFile last = chain.get(chain.size() - 1);
                 if (last.hasParent() && locator.parentOf(last) == null) {
                     c.missing.add(last.parentGav() + " (" + Texts.t("excl.missing.parent", n.groupId + ":" + n.artifactId) + ")");
+                }
+                // Relocation und Profile bildet der Nachbau nicht ab: was dort käme, fehlt sonst
+                // stillschweigend – dann lieber „nicht prüfbar“ als „veraltet“.
+                if (pom.isRelocated()) {
+                    c.limits.add(Texts.t("excl.missing.relocation", n.groupId + ":" + n.artifactId + ":" + n.version,
+                            pom.relocationTarget()));
+                }
+                for (PomFile p : chain) {
+                    for (String profile : p.getProfilesWithDependencies()) {
+                        c.limits.add(Texts.t("excl.missing.profile", profile, p.gav()));
+                    }
                 }
                 for (Declared d : model.getDependencies().values()) {
                     String scope = d.dep.getScope();
@@ -366,7 +389,7 @@ public final class ExclusionAudit {
 
         /** Management des prüfenden Moduls gewinnt, sonst die Angabe in der POM der Dependency. */
         private static String version(EffectiveModel consumer, EffectiveModel owner, PomFile.Dep d) {
-            Managed cm = consumer.managed(d.getGroupId(), d.getArtifactId());
+            Managed cm = consumer.managed(d);
             if (cm != null) {
                 Interpolated v = cm.version();
                 if (v.isResolved() && isFixed(v.value)) {
@@ -377,7 +400,7 @@ public final class ExclusionAudit {
                 Interpolated v = owner.interpolate(d.getVersion());
                 return v.isResolved() && isFixed(v.value) ? v.value : null;
             }
-            Managed m = owner.managed(d.getGroupId(), d.getArtifactId());
+            Managed m = owner.managed(d);
             if (m == null) {
                 return null;
             }

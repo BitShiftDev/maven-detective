@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.InspectionManager;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
@@ -21,6 +22,7 @@ import io.github.bitshiftdev.mavendetective.core.deps.ExclusionAudit;
 import io.github.bitshiftdev.mavendetective.core.deps.PomCache;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
+import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -73,7 +75,7 @@ public final class StaleExclusionInspection extends LocalInspectionTool {
             used.add(tag);
             boolean stale = f.getStatus() == ExclusionAudit.Status.STALE;
             problems.add(manager.createProblemDescriptor(tag, f.message(), isOnTheFly,
-                    new LocalQuickFix[] {new RemoveExclusionFix(f.getExclusion().ga())},
+                    new LocalQuickFix[] {new RemoveExclusionFix(f.getExclusion().ga(), f.fix())},
                     stale ? ProblemHighlightType.LIKE_UNUSED_SYMBOL : ProblemHighlightType.WEAK_WARNING));
         }
         return problems.isEmpty() ? null : problems.toArray(ProblemDescriptor.EMPTY_ARRAY);
@@ -133,12 +135,28 @@ public final class StaleExclusionInspection extends LocalInspectionTool {
         return s == null ? null : s.trim();
     }
 
-    /** Entfernt das {@code <exclusion>}; war es das letzte, auch {@code <exclusions>}. Ein Undo-Schritt. */
+    /**
+     * Entfernt das {@code <exclusion>} (war es das letzte, auch {@code <exclusions>}) über
+     * {@link FixRunner#editPoms} – also mit Diff-Vorschau, einem Undo-Schritt und Maven-Import wie
+     * jede andere POM-Änderung. Läuft deshalb nicht in einer Write-Action.
+     */
     static final class RemoveExclusionFix implements LocalQuickFix {
         private final String exclusion;
+        private final FixAction fix;
 
-        RemoveExclusionFix(String exclusion) {
+        RemoveExclusionFix(String exclusion, FixAction fix) {
             this.exclusion = exclusion;
+            this.fix = fix;
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+            return false;
+        }
+
+        @Override
+        public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull ProblemDescriptor previewDescriptor) {
+            return IntentionPreviewInfo.EMPTY; // die Vorschau zeigt editPoms selbst
         }
 
         @Override
@@ -154,15 +172,10 @@ public final class StaleExclusionInspection extends LocalInspectionTool {
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
             PsiElement element = descriptor.getPsiElement();
-            if (!(element instanceof XmlTag tag) || !"exclusion".equals(tag.getLocalName())) {
+            if (fix == null || !(element instanceof XmlTag tag) || !"exclusion".equals(tag.getLocalName())) {
                 return;
             }
-            XmlTag parent = tag.getParentTag();
-            if (parent != null && "exclusions".equals(parent.getLocalName()) && parent.getSubTags().length == 1) {
-                parent.delete();
-            } else {
-                tag.delete();
-            }
+            FixRunner.editPoms(project, List.of(fix), MavenDetectiveBundle.message("command.remove.exclusions"));
         }
     }
 }

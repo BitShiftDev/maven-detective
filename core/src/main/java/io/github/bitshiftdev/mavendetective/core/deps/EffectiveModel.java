@@ -240,8 +240,42 @@ public final class EffectiveModel {
         return null;
     }
 
-    /** (Geerbte) {@code <dependency>} für {@code groupId:artifactId} oder {@code null}. */
+    /**
+     * Verwalteter Eintrag für genau diese Dependency – wie Maven über den vollen Schlüssel
+     * {@code groupId:artifactId:type[:classifier]}. Nur wenn type oder classifier (hier oder im
+     * Management) noch einen Ausdruck {@code ${…}} enthalten, zählt ein Eintrag mit gleichem g:a.
+     */
+    public Managed managed(String groupId, String artifactId, String type, String classifier) {
+        String t = type == null || type.isEmpty() ? "jar" : type;
+        String c = classifier == null ? "" : classifier;
+        Managed exact = managed.get(groupId + ":" + artifactId + ":" + t + (c.isEmpty() ? "" : ":" + c));
+        if (exact != null) {
+            return exact;
+        }
+        boolean open = t.contains("${") || c.contains("${");
+        for (Managed m : managed.values()) {
+            if (!groupId.equals(m.dep.getGroupId()) || !artifactId.equals(m.dep.getArtifactId())) {
+                continue;
+            }
+            String mc = m.dep.getClassifier();
+            if (open || m.dep.getType().contains("${") || mc != null && mc.contains("${")) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    /** Verwalteter Eintrag für {@code dep} über den vollen Schlüssel, siehe {@link #managed(String, String, String, String)}. */
+    public Managed managed(PomFile.Dep dep) {
+        return managed(dep.getGroupId(), dep.getArtifactId(), dep.getType(), dep.getClassifier());
+    }
+
+    /** (Geerbte) {@code <dependency>} für {@code groupId:artifactId} oder {@code null}; bevorzugt {@code type=jar} ohne Classifier. */
     public Declared declared(String groupId, String artifactId) {
+        Declared exact = dependencies.get(groupId + ":" + artifactId + ":jar");
+        if (exact != null) {
+            return exact;
+        }
         for (Declared d : dependencies.values()) {
             if (groupId.equals(d.dep.getGroupId()) && artifactId.equals(d.dep.getArtifactId())) {
                 return d;

@@ -116,7 +116,7 @@ final class FixRunner {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
                 try {
-                    outcome = executor(result).execute(fix);
+                    outcome = executor(project, result).execute(fix);
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
@@ -174,11 +174,23 @@ final class FixRunner {
         }
     }
 
-    /** Löschen nur im lokalen Repository erlauben. */
-    private static FixExecutor executor(BuildDoctorService.Result result) {
+    /**
+     * Löschen nur im lokalen Repository erlauben – dem, mit dem die Diagnose gerechnet hat (auch aus
+     * {@code <localRepository>} der settings.xml oder den Maven-Einstellungen der IDE), sonst ~/.m2/repository.
+     */
+    private static FixExecutor executor(Project project, BuildDoctorService.Result result) {
         List<Path> roots = new ArrayList<>();
+        if (result.localRepository() != null) {
+            roots.add(result.localRepository());
+        }
         String repo = result.failure().getSession().getLocalRepository();
-        roots.add(repo != null ? Paths.get(repo) : Paths.get(System.getProperty("user.home"), ".m2", "repository"));
+        if (repo != null) {
+            roots.add(Paths.get(repo));
+        }
+        if (roots.isEmpty()) {
+            Path ide = IdeMaven.localRepository(project);
+            roots.add(ide != null ? ide : Paths.get(System.getProperty("user.home"), ".m2", "repository"));
+        }
         return new FixExecutor(roots);
     }
 

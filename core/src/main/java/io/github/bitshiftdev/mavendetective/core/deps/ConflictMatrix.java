@@ -292,7 +292,7 @@ public final class ConflictMatrix {
             if (d.dep.getVersion() != null) {
                 version = model.interpolate(d.dep.getVersion()).value;
             } else {
-                Managed m = model.managed(d.dep.getGroupId(), d.dep.getArtifactId());
+                Managed m = model.managed(d.dep);
                 version = m == null ? null : m.version().value;
             }
             if (version == null) {

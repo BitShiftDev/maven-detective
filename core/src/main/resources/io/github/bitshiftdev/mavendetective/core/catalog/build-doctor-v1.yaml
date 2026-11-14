@@ -18,6 +18,8 @@
 #               replace-in-file, replace-url, switch-jdk, set-jvm-option, insert-plugin-version,
 #               show-dependency, pin-version, remove-exclusion, add-exclusion,
 #               add-dependency, remove-dependency, set-scope, set-version, manual
+#               POM-Fixes mit artifact kennen optional type (fehlt = jar) und classifier,
+#               damit z. B. jar und test-jar derselben Dependency getrennt bleiben.
 #
 # Sprachen: category, cause und label sind deutsch; category_en, cause_en, label_en (auch in Pattern-Mappings
 # und unter fix) liefern den englischen Text. Fehlt eine Variante, gilt der Grundtext. Welche Sprache gilt,

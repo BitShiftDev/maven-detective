@@ -19,6 +19,7 @@ import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,6 +33,8 @@ import java.util.function.Predicate;
  * Exclusions, Nutzung). Gruppe ist meist das Modul bzw. die POM. Ankreuzen lässt sich nur, was einen
  * Fix hat ({@code checkable}, sonst ist die Checkbox ausgegraut); die Leertaste schaltet, Mehrfachauswahl zeigt Details zur Auswahl.
  * Beim Neubefüllen bleiben Häkchen, Auswahl und Aufklappzustand erhalten, soweit die Befunde gleich sind.
+ * Was der Nutzer an- oder abgehakt hat, merkt sich der Baum je Schlüssel ({@link #keyedBy}) – auch für
+ * Befunde, die gerade ausgefiltert sind, und über eine Neuberechnung hinweg (neue Objekte, gleicher Befund).
  *
  * @param <T> Befund
  */
@@ -52,6 +55,10 @@ public final class FindingTree<T> {
     private final Predicate<T> checkable;
     private final Function<T, String> searchText;
     private final List<Runnable> checkListeners = new ArrayList<>();
+    /** Stabiler Schlüssel eines Befunds (Standard: das Objekt selbst). */
+    private Function<T, Object> key = item -> item;
+    /** Häkchen je Schlüssel, wie der Nutzer sie zuletzt gesehen bzw. gesetzt hat. */
+    private final Map<Object, Boolean> choices = new HashMap<>();
     /** Häkchen-Ereignisse beim Befüllen nicht melden. */
     private boolean filling;
 
@@ -86,6 +93,7 @@ public final class FindingTree<T> {
             @Override
             public void nodeStateChanged(@NotNull CheckedTreeNode node) {
                 if (!filling) {
+                    rememberChoices();
                     checkListeners.forEach(Runnable::run);
                 }
             }
@@ -96,18 +104,40 @@ public final class FindingTree<T> {
         });
     }
 
+    /**
+     * Schlüssel, unter dem Häkchen über Suche, Filter und Neuberechnung hinweg erhalten bleiben – z. B.
+     * Datei + Dependency + Exclusion. Muss vor dem ersten {@link #set} gesetzt werden.
+     */
+    public @NotNull FindingTree<T> keyedBy(@NotNull Function<T, ?> key) {
+        this.key = key::apply;
+        return this;
+    }
+
+    /** Häkchen aller sichtbaren ankreuzbaren Befunde merken (ausgeblendete behalten ihren Stand). */
+    private void rememberChoices() {
+        for (int i = 0; i < root.getChildCount(); i++) {
+            CheckedTreeNode g = (CheckedTreeNode) root.getChildAt(i);
+            for (int j = 0; j < g.getChildCount(); j++) {
+                CheckedTreeNode n = (CheckedTreeNode) g.getChildAt(j);
+                if (n.isEnabled()) {
+                    choices.put(key.apply(type.cast(n.getUserObject())), n.isChecked());
+                }
+            }
+        }
+    }
+
     public @NotNull CheckboxTree component() {
         return tree;
     }
 
     /**
      * Neu befüllen. {@code groups}: Gruppenname → Befunde in Anzeigereihenfolge, {@code detail}: Zusatz hinter
-     * dem Gruppennamen. Neue Befunde bekommen ein Häkchen, wenn {@code checkedByDefault} es sagt.
+     * dem Gruppennamen. Befunde, deren Schlüssel der Baum noch nicht kennt, bekommen ein Häkchen, wenn
+     * {@code checkedByDefault} es sagt; bekannte behalten die Wahl des Nutzers.
      */
     public void set(@NotNull Map<String, List<T>> groups, @NotNull Function<List<T>, @Nls String> detail,
                     @NotNull Predicate<T> checkedByDefault) {
-        Set<T> wasChecked = new HashSet<>(checked());
-        Set<T> known = new HashSet<>(all());
+        rememberChoices();
         List<T> wasSelected = selected();
         Set<String> collapsed = new HashSet<>();
         for (int i = 0; i < root.getChildCount(); i++) {
@@ -129,7 +159,8 @@ public final class FindingTree<T> {
                     CheckedTreeNode n = new CheckedTreeNode(item);
                     boolean can = checkable.test(item);
                     n.setEnabled(can);
-                    n.setChecked(can && (known.contains(item) ? wasChecked.contains(item) : checkedByDefault.test(item)));
+                    Boolean choice = choices.get(key.apply(item));
+                    n.setChecked(can && (choice != null ? choice : checkedByDefault.test(item)));
                     any |= can;
                     g.add(n);
                 }
@@ -246,6 +277,7 @@ public final class FindingTree<T> {
         } finally {
             filling = false;
         }
+        rememberChoices();
         tree.repaint();
         checkListeners.forEach(Runnable::run);
     }
@@ -290,11 +322,12 @@ public final class FindingTree<T> {
     }
 
     private @Nullable CheckedTreeNode node(T item) {
+        Object k = key.apply(item);
         for (int i = 0; i < root.getChildCount(); i++) {
             CheckedTreeNode g = (CheckedTreeNode) root.getChildAt(i);
             for (int j = 0; j < g.getChildCount(); j++) {
                 CheckedTreeNode n = (CheckedTreeNode) g.getChildAt(j);
-                if (item.equals(n.getUserObject())) {
+                if (item.equals(n.getUserObject()) || k.equals(key.apply(type.cast(n.getUserObject())))) {
                     return n;
                 }
             }

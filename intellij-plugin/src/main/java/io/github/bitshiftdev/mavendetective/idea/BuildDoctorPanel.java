@@ -359,7 +359,7 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
             failure.getSession().setLocalRepository(report.getLocalRepository().toString());
         }
         FixRunner.run(project, new FixAction(fix.getType(), fix.getLabel(), params),
-                new BuildDoctorService.Result(failure, List.of(), "", null, null, null));
+                new BuildDoctorService.Result(failure, List.of(), "", null, null, null, report.getLocalRepository()));
         if (!FixAction.OPEN_FILE.equals(fix.getType())) {
             setStatus(MavenDetectiveBundle.message("preflight.fix.started", fix.getLabel()));
         }

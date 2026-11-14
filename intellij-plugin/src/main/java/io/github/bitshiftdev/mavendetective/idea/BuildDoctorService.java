@@ -56,9 +56,14 @@ public final class BuildDoctorService {
      * @param changes Vergleich mit dem letzten grünen Build ({@code null}: keiner gespeichert oder Log ohne Lauf)
      * @param setup   IDE gegen Kommandozeile ({@code null}: nicht ermittelbar)
      */
+    /**
+     * @param localRepository lokales Repository, mit dem die Diagnose gerechnet hat (Lauf, IDE-Einstellung oder
+     *                        {@code <localRepository>} der settings.xml) – dort darf {@code delete-files} löschen
+     */
     public record Result(BuildFailure failure, List<Diagnosis> diagnoses, String rawLog,
                          @Nullable ExecutionEnvironment environment,
-                         @Nullable SnapshotDiff changes, @Nullable SetupComparison setup) {
+                         @Nullable SnapshotDiff changes, @Nullable SetupComparison setup,
+                         @Nullable Path localRepository) {
 
         public @Nullable MavenRunConfiguration configuration() {
             return environment != null && environment.getRunProfile() instanceof MavenRunConfiguration c ? c : null;
@@ -211,12 +216,16 @@ public final class BuildDoctorService {
             Result result;
             try {
                 BuildFailure failure = MavenLogParser.parse(log);
-                List<Diagnosis> diagnoses = doctor.diagnose(failure, Environment.forBuild(failure, projectDir()));
+                MavenRunConfiguration cfg = env != null && env.getRunProfile() instanceof MavenRunConfiguration c ? c : null;
+                // Lauf aus der IDE: Der Text-Log nennt weder settings.xml noch lokales Repository – es gelten die
+                // Maven-Einstellungen der IDE, nicht ~/.m2. Ein Log aus der Zwischenablage stammt eher vom Terminal.
+                BuildSetup ide = env == null ? null : ideSetup(cfg);
+                Environment environment = Environment.forBuild(failure, projectDir(), ide);
+                List<Diagnosis> diagnoses = doctor.diagnose(failure, environment);
                 LOG.info("Maven Detective: Analyse " + (env == null ? "Zwischenablage" : "Lauf") + ", " + failure.getErrors().size()
                         + " Fehlerblöcke, Diagnose: " + (diagnoses.isEmpty() ? "keine" : diagnoses.get(0).getRuleId()));
-                MavenRunConfiguration cfg = env != null && env.getRunProfile() instanceof MavenRunConfiguration c ? c : null;
                 SnapshotDiff changes = env == null ? null : changesSinceGreen(cfg);
-                result = new Result(failure, diagnoses, log, env, changes, compareSetups(cfg));
+                result = new Result(failure, diagnoses, log, env, changes, compareSetups(cfg), environment.getLocalRepository());
             } catch (ProcessCanceledException e) {
                 throw e;
             } catch (RuntimeException e) {
@@ -330,6 +339,25 @@ public final class BuildDoctorService {
     }
 
     /** IDE gegen Kommandozeile ({@code null}: nicht ermittelbar); liest Dateien, nicht auf dem EDT aufrufen. */
+    /** Maven-Einstellungen der IDE für diesen Lauf (samt Maven-Installation); {@code null}, wenn nicht ermittelbar. */
+    private @Nullable BuildSetup ideSetup(@Nullable MavenRunConfiguration cfg) {
+        try {
+            BuildSetup s = IdeMaven.ideSetup(project, cfg);
+            if (s.getMavenHome() == null) {
+                Path home = IdeMaven.mavenHome(project);
+                if (home != null) {
+                    s.setMavenHome(home.toString());
+                }
+            }
+            return s;
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: Maven-Einstellungen der IDE nicht lesbar", e);
+            return null;
+        }
+    }
+
     public @Nullable SetupComparison compareSetups(@Nullable MavenRunConfiguration cfg) {
         try {
             return SetupComparison.compare(IdeMaven.ideSetup(project, cfg), IdeMaven.cliSetup(project));

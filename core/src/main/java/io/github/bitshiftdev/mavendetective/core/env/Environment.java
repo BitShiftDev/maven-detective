@@ -47,6 +47,15 @@ public final class Environment {
      * JVM (Benutzerverzeichnis, Umgebungsvariablen).
      */
     public static Environment forBuild(BuildFailure failure, Path projectDirectory) {
+        return forBuild(failure, projectDirectory, null);
+    }
+
+    /**
+     * Wie {@link #forBuild(BuildFailure, Path)}, aber was der Build selbst nicht nennt (Text-Log), kommt aus
+     * {@code setup} – den Einstellungen, mit denen er tatsächlich lief (z. B. Maven-Einstellungen der IDE:
+     * eigene settings.xml, lokales Repository, Runner-JDK). {@code setup} darf {@code null} sein.
+     */
+    public static Environment forBuild(BuildFailure failure, Path projectDirectory, BuildSetup setup) {
         SessionInfo s = failure.getSession();
         Builder b = builder()
                 .userHome(Paths.get(System.getProperty("user.home")))
@@ -67,7 +76,25 @@ public final class Environment {
         if (s.getGlobalSettings() != null) {
             b.globalSettingsFile(Paths.get(s.getGlobalSettings()));
         }
+        if (setup != null) {
+            if (s.getLocalRepository() == null && notEmpty(setup.getLocalRepository())) {
+                b.localRepository(Paths.get(setup.getLocalRepository()));
+            }
+            if (s.getUserSettings() == null && notEmpty(setup.getUserSettings())) {
+                b.userSettingsFile(Paths.get(setup.getUserSettings()));
+            }
+            if (s.getGlobalSettings() == null && notEmpty(setup.getMavenHome())) {
+                b.globalSettingsFile(Paths.get(setup.getMavenHome(), "conf", "settings.xml"));
+            }
+            if (s.getJavaVersion() == null && notEmpty(setup.getJavaVersion())) {
+                b.runnerJavaVersion(setup.getJavaVersion());
+            }
+        }
         return b.build();
+    }
+
+    private static boolean notEmpty(String s) {
+        return s != null && !s.trim().isEmpty();
     }
 
     public static Builder builder() {

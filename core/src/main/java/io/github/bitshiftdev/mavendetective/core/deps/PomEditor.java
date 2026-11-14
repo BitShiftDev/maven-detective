@@ -177,6 +177,15 @@ public final class PomEditor {
      * @throws IllegalArgumentException wenn die Dependency fehlt oder die Exclusion schon da ist
      */
     public static Edit addExclusion(String xml, String groupId, String artifactId, String exclusion) {
+        return addExclusion(xml, groupId, artifactId, exclusion, null, null);
+    }
+
+    /**
+     * Wie {@link #addExclusion(String, String, String, String)}, aber für den Eintrag mit genau
+     * diesem {@code classifier}/{@code type} ({@code null} = bevorzugt ohne Classifier, Typ jar).
+     */
+    public static Edit addExclusion(String xml, String groupId, String artifactId, String exclusion, String classifier,
+                                    String type) {
         Scan s = Scan.of(xml);
         if (s.projectEnd < 0) {
             throw new IllegalArgumentException(Texts.t("edit.no.project"));
@@ -187,16 +196,7 @@ public final class PomEditor {
         }
         String eg = exclusion.substring(0, colon);
         String ea = exclusion.substring(colon + 1);
-        DepEntry found = null;
-        for (DepEntry d : s.deps) {
-            if (d.managed || !groupId.equals(d.fields.get("groupId")) || !artifactId.equals(d.fields.get("artifactId"))) {
-                continue;
-            }
-            String classifier = d.fields.get("classifier");
-            if (found == null || (classifier == null || classifier.isEmpty()) && found.fields.get("classifier") != null) {
-                found = d;
-            }
-        }
+        DepEntry found = pick(s.deps, false, groupId, artifactId, classifier, type, false);
         if (found == null || found.range == null) {
             throw new IllegalArgumentException(Texts.t("edit.dependency.not.found", groupId + ":" + artifactId));
         }
@@ -241,7 +241,8 @@ public final class PomEditor {
         }
         for (DepEntry d : s.deps) {
             if (!d.managed && groupId.equals(d.fields.get("groupId")) && artifactId.equals(d.fields.get("artifactId"))
-                    && same(classifier, d.fields.get("classifier"))) {
+                    && same(classifier, d.fields.get("classifier"))
+                    && typeOf(d).equals(type == null || type.isEmpty() ? "jar" : type)) {
                 throw new IllegalArgumentException(Texts.t("edit.dependency.exists", groupId + ":" + artifactId));
             }
         }
@@ -273,8 +274,16 @@ public final class PomEditor {
      * @throws IllegalArgumentException wenn sie dort nicht steht
      */
     public static Edit removeDependency(String xml, String groupId, String artifactId, String classifier) {
+        return removeDependency(xml, groupId, artifactId, classifier, null);
+    }
+
+    /**
+     * Wie {@link #removeDependency(String, String, String, String)}, nur für den Eintrag vom Typ
+     * {@code type} ({@code null} = bevorzugt {@code jar}).
+     */
+    public static Edit removeDependency(String xml, String groupId, String artifactId, String classifier, String type) {
         Scan s = Scan.of(xml);
-        DepEntry found = find(s, groupId, artifactId, classifier);
+        DepEntry found = find(s, groupId, artifactId, classifier, type);
         int count = 0;
         for (DepEntry d : s.deps) {
             if (!d.managed) {
@@ -303,8 +312,13 @@ public final class PomEditor {
      * @throws IllegalArgumentException wenn sie fehlt oder den Scope schon hat
      */
     public static Edit setScope(String xml, String groupId, String artifactId, String scope, String classifier) {
+        return setScope(xml, groupId, artifactId, scope, classifier, null);
+    }
+
+    /** Wie {@link #setScope(String, String, String, String, String)} für den Eintrag vom Typ {@code type} ({@code null} = bevorzugt jar). */
+    public static Edit setScope(String xml, String groupId, String artifactId, String scope, String classifier, String type) {
         Scan s = Scan.of(xml);
-        DepEntry found = find(s, groupId, artifactId, classifier);
+        DepEntry found = find(s, groupId, artifactId, classifier, type);
         String description = Texts.t("edit.scope.set", groupId + ":" + artifactId, scope);
         Range current = found.ranges.get("scope");
         if (current != null) {
@@ -358,14 +372,7 @@ public final class PomEditor {
             what = "Parent " + artifactId;
         } else {
             boolean managed = "dependencyManagement".equals(section);
-            DepEntry found = null;
-            for (DepEntry d : managed ? s.managed : s.deps) {
-                if (d.managed == managed && groupId.equals(d.fields.get("groupId")) && artifactId.equals(d.fields.get("artifactId"))
-                        && d.ranges.get("version") != null
-                        && (found == null || found.fields.get("classifier") != null && d.fields.get("classifier") == null)) {
-                    found = d;
-                }
-            }
+            DepEntry found = pick(managed ? s.managed : s.deps, managed, groupId, artifactId, null, null, true);
             if (found == null) {
                 throw new IllegalArgumentException(Texts.t("edit.version.not.found", groupId + ":" + artifactId, section));
             }
@@ -442,16 +449,16 @@ public final class PomEditor {
             return removeExclusion(xml, g, a, required(fix, "exclusion"), "dependencyManagement".equals(fix.param("section")));
         }
         if (FixAction.ADD_EXCLUSION.equals(type)) {
-            return addExclusion(xml, g, a, required(fix, "exclusion"));
+            return addExclusion(xml, g, a, required(fix, "exclusion"), fix.param("classifier"), fix.param("type"));
         }
         if (FixAction.ADD_DEPENDENCY.equals(type)) {
             return addDependency(xml, g, a, fix.param("version"), fix.param("scope"), fix.param("type"), fix.param("classifier"));
         }
         if (FixAction.REMOVE_DEPENDENCY.equals(type)) {
-            return removeDependency(xml, g, a, fix.param("classifier"));
+            return removeDependency(xml, g, a, fix.param("classifier"), fix.param("type"));
         }
         if (FixAction.SET_SCOPE.equals(type)) {
-            return setScope(xml, g, a, required(fix, "scope"), fix.param("classifier"));
+            return setScope(xml, g, a, required(fix, "scope"), fix.param("classifier"), fix.param("type"));
         }
         if (FixAction.SET_VERSION.equals(type)) {
             return setVersion(xml, required(fix, "section"), g, a, required(fix, "version"));
@@ -561,28 +568,56 @@ public final class PomEditor {
     }
 
     /** Dependency unter {@code project/dependencies}; ohne Classifier bevorzugt die ohne. */
-    private static DepEntry find(Scan s, String groupId, String artifactId, String classifier) {
+    private static DepEntry find(Scan s, String groupId, String artifactId, String classifier, String type) {
         if (s.projectEnd < 0) {
             throw new IllegalArgumentException(Texts.t("edit.no.project"));
         }
-        DepEntry found = null;
-        for (DepEntry d : s.deps) {
-            if (d.managed || !groupId.equals(d.fields.get("groupId")) || !artifactId.equals(d.fields.get("artifactId"))) {
-                continue;
-            }
-            String c = d.fields.get("classifier");
-            if (classifier != null && !classifier.isEmpty()) {
-                if (classifier.equals(c)) {
-                    return d;
-                }
-            } else if (found == null || (c == null || c.isEmpty()) && found.fields.get("classifier") != null) {
-                found = d;
-            }
-        }
+        DepEntry found = pick(s.deps, false, groupId, artifactId, classifier, type, false);
         if (found == null || found.range == null) {
             throw new IllegalArgumentException(Texts.t("edit.dependency.not.found", groupId + ":" + artifactId));
         }
         return found;
+    }
+
+    /**
+     * Der passende Eintrag unter {@code dependencies} bzw. {@code dependencyManagement}: mit
+     * {@code classifier}/{@code type} genau dieser (Typ ohne {@code <type>} = {@code jar}); fehlen
+     * sie, bevorzugt ohne Classifier und vom Typ {@code jar} – sonst würde bei {@code jar} +
+     * {@code test-jar} der falsche Eintrag getroffen. {@code needsVersion}: nur Einträge mit {@code <version>}.
+     */
+    private static DepEntry pick(List<DepEntry> entries, boolean managed, String groupId, String artifactId, String classifier,
+                                 String type, boolean needsVersion) {
+        boolean wantClassifier = classifier != null && !classifier.isEmpty();
+        boolean wantType = type != null && !type.isEmpty();
+        DepEntry found = null;
+        int foundRank = Integer.MAX_VALUE;
+        for (DepEntry d : entries) {
+            if (d.managed != managed || !groupId.equals(d.fields.get("groupId")) || !artifactId.equals(d.fields.get("artifactId"))
+                    || needsVersion && d.ranges.get("version") == null) {
+                continue;
+            }
+            String c = d.fields.get("classifier");
+            boolean noClassifier = c == null || c.isEmpty();
+            if (wantClassifier && !classifier.equals(c)) {
+                continue;
+            }
+            String t = typeOf(d);
+            if (wantType && !type.equals(t)) {
+                continue;
+            }
+            int rank = (wantClassifier || noClassifier ? 0 : 2) + (wantType || "jar".equals(t) ? 0 : 1);
+            if (rank < foundRank) {
+                found = d;
+                foundRank = rank;
+            }
+        }
+        return found;
+    }
+
+    /** Typ eines Eintrags; ohne {@code <type>} gilt {@code jar}. */
+    private static String typeOf(DepEntry d) {
+        String t = d.fields.get("type");
+        return t == null || t.isEmpty() ? "jar" : t;
     }
 
     private static boolean same(String classifier, String other) {

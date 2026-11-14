@@ -19,6 +19,13 @@
 - POM fixes no longer create a second element when a container is written empty, such as `<dependencies/>`, `<exclusions/>`, `<properties/>` or `<dependencyManagement/>`; Maven rejected such a POM.
 - Removing the last dependency or exclusion keeps the surrounding block if it still holds comments.
 - `set-jvm-option` changes `.mvn/jvm.config` line by line and keeps comments, instead of joining everything into one line.
+- A dependency declared both as `jar` and as `test-jar` is now judged and changed per type: "Remove", "set scope" and "add exclusion" hit exactly the meant entry instead of the first one with the same coordinates.
+- Dependency management is matched by `groupId:artifactId:type[:classifier]` like Maven does. A managed `test-jar` no longer turns the plain `jar` into a test dependency, which led to a wrong "set scope to compile" card.
+- Exclusion check: if a POM on the way is relocated or brings dependencies in a profile, the exclusion is reported as "cannot be checked" instead of stale. The editor quick fix "Remove exclusion" now runs with diff preview, as one undo step and with a Maven reimport.
+- Unchecked findings stay unchecked after a search, a filter or a recalculation (for example after removing the other exclusions), so a later "Remove" no longer takes them along.
+- Unused dependencies: if a named class lies in a declared dependency and also in a transitive JAR, it counts for the declared one – no more "unused" with a remove fix for it.
+- The plugin version check only suggests "Insert version" for a `<plugin>` that really has no `<version>`; dependencies, configuration and comments with the same artifactId no longer count.
+- Builds run from the IDE are diagnosed with the IDE's Maven settings (user `settings.xml`, local repository, runner JDK) instead of `~/.m2`. Deleting `.lastUpdated` files works with a custom local repository, including `<localRepository>` from `settings.xml`.
 
 ### Distribution
 

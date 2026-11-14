@@ -83,7 +83,9 @@ public final class DependencyUsagePanel extends DetectivePanel {
         apply.addActionListener(e -> applySelected());
 
         tree = new FindingTree<>(DependencyUsage.Finding.class, DependencyUsagePanel::render, DependencyUsagePanel::hasPomFix,
-                f -> f.getModule().getName() + " " + f.getEntry().label());
+                f -> f.getModule().getName() + " " + f.getEntry().label())
+                .keyedBy(f -> List.of(f.getModule().getPom().getFile().toString(), f.getKind(), f.getEntry().ga(),
+                        String.valueOf(f.getEntry().getType()), String.valueOf(f.getEntry().getClassifier())));
         tree.addSelectionListener(() -> {
             List<DependencyUsage.Finding> sel = selected();
             show(tree.single(), sel.size());

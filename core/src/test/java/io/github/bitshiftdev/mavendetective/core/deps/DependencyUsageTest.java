@@ -314,4 +314,82 @@ class DependencyUsageTest {
         assertTrue(app.getFindings().isEmpty(), app.getFindings().toString());
         assertTrue(app.getNotes().get(0).contains("Keine Quelldateien"));
     }
+    /** Ein eigenständiges Modul {@code solo} mit diesen Dependencies und Quellen; ergibt dessen Ergebnis. */
+    private DependencyUsage.ModuleResult solo(String deps, String main, String test) throws IOException {
+        Path dir = tmp.resolve("solo");
+        write(dir.resolve("pom.xml"), """
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>com.acme</groupId>
+                  <artifactId>solo</artifactId>
+                  <version>1.0</version>
+                  <dependencies>
+                %s
+                  </dependencies>
+                </project>
+                """.formatted(deps));
+        write(dir.resolve("src/main/java/com/acme/Main.java"), main);
+        if (test != null) {
+            write(dir.resolve("src/test/java/com/acme/MainTest.java"), test);
+        }
+        PomLocator locator = new PomLocator(dir, repo);
+        PomFile pom = locator.load(dir.resolve("pom.xml"));
+        DependencyUsage r = DependencyUsage.build(locator, List.of(pom), Map.of(), new JarIndex(), DependencyUsage.sourceScanner(null), null);
+        return r.getModules().get(0);
+    }
+
+    private void testJar(String g, String a, String v, String... classes) throws IOException {
+        Path dir = repo;
+        for (String part : g.split("\\.")) {
+            dir = dir.resolve(part);
+        }
+        dir = dir.resolve(a).resolve(v);
+        Files.createDirectories(dir);
+        try (OutputStream os = Files.newOutputStream(dir.resolve(a + "-" + v + "-tests.jar")); ZipOutputStream zip = new ZipOutputStream(os)) {
+            for (String c : classes) {
+                zip.putNextEntry(new ZipEntry(c.replace('.', '/') + ".class"));
+                zip.write(c.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+    }
+
+    /** Review #15: jar und test-jar derselben Dependency werden getrennt beurteilt und getrennt geändert. */
+    @Test
+    void jarAndTestJarOfTheSameArtifactStaySeparate() throws IOException {
+        artifact("org.lib", "lib", "1.0", "", "org.lib.Foo");
+        testJar("org.lib", "lib", "1.0", "org.lib.FooFixture");
+        DependencyUsage.ModuleResult m = solo(
+                dep("org.lib", "lib", "1.0", "<type>test-jar</type><scope>test</scope>") + "\n" + dep("org.lib", "lib", "1.0", ""),
+                "package com.acme;\nimport org.lib.Foo;\nclass Main { Foo foo; }\n", null);
+
+        List<Finding> lib = new ArrayList<>();
+        for (Finding f : m.getFindings()) {
+            if (f.ga().equals("org.lib:lib")) {
+                lib.add(f);
+            }
+        }
+        assertEquals(1, lib.size(), m.getFindings().toString());
+        Finding unused = lib.get(0);
+        assertEquals(DependencyUsage.Kind.UNUSED, unused.getKind());
+        assertEquals("test-jar", unused.getDeclared().dep.getType());
+        assertEquals("test-jar", unused.fixes().get(0).param("type"));
+
+        new FixExecutor(List.of()).execute(unused.fixes().get(0));
+        String pom = Files.readString(tmp.resolve("solo/pom.xml"));
+        assertFalse(pom.contains("test-jar"), pom);
+        assertTrue(pom.contains("<artifactId>lib</artifactId><version>1.0</version></dependency>"), pom);
+    }
+
+    /** Review #44: Liegt die genannte Klasse auch in einer deklarierten Dependency, ist die genutzt. */
+    @Test
+    void classInTwoJarsCountsForTheDeclaredDependency() throws IOException {
+        artifact("org.boot", "web-starter", "1.0", dep("org.impl", "impl", "1.0", ""));
+        artifact("org.impl", "impl", "1.0", "", "jakarta.servlet.Servlet", "org.impl.Engine");
+        artifact("jakarta.servlet", "jakarta.servlet-api", "6.0", "", "jakarta.servlet.Servlet");
+        DependencyUsage.ModuleResult m = solo(
+                dep("org.boot", "web-starter", "1.0", "") + "\n" + dep("jakarta.servlet", "jakarta.servlet-api", "6.0", "<scope>provided</scope>"),
+                "package com.acme;\nimport jakarta.servlet.Servlet;\nclass Main { Servlet s; }\n", null);
+        assertNull(find(m, "jakarta.servlet:jakarta.servlet-api"), m.getFindings().toString());
+        assertNull(find(m, "org.impl:impl"), "nicht undeklariert – die Klasse kommt aus der Deklaration");
+    }
 }

@@ -34,7 +34,7 @@ class DiagnosisCardTest {
     }
 
     private static BuildDoctorService.Result result(List<Diagnosis> ds) {
-        return new BuildDoctorService.Result(new BuildFailure(BuildFailure.Source.LOG), ds, "[ERROR] x", null, null, null);
+        return new BuildDoctorService.Result(new BuildFailure(BuildFailure.Source.LOG), ds, "[ERROR] x", null, null, null, null);
     }
 
     @Test

@@ -118,7 +118,7 @@ public final class DependencyResolver {
             if (dep.isImport()) {
                 continue;
             }
-            Managed managed = consumer.managed(dep.getGroupId(), dep.getArtifactId());
+            Managed managed = consumer.managed(dep);
             String scope = dep.getScope() != null && !dep.getScope().isEmpty() ? dep.getScope()
                     : managed != null && managed.dep.getScope() != null ? managed.dep.getScope() : "compile";
             if ("import".equals(scope)) {
@@ -167,14 +167,14 @@ public final class DependencyResolver {
                 if (dep.isOptional() || dep.isImport() || excluded(n.exclusions, dep)) {
                     continue;
                 }
-                Managed own = owner.managed(dep.getGroupId(), dep.getArtifactId());
+                Managed own = owner.managed(dep);
                 String ownScope = dep.getScope() != null && !dep.getScope().isEmpty() ? dep.getScope()
                         : own != null && own.dep.getScope() != null ? own.dep.getScope() : "compile";
                 if (!"compile".equals(ownScope) && !"runtime".equals(ownScope)) {
                     continue;   // test, provided, system: nicht transitiv
                 }
                 String ownVersion = ownVersion(owner, dep, own);
-                Managed cm = consumer.managed(dep.getGroupId(), dep.getArtifactId());
+                Managed cm = consumer.managed(dep);
                 String version = ownVersion;
                 String scope = ownScope;
                 String premanagedVersion = null;
