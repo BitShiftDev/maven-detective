@@ -246,6 +246,11 @@ swallows its own errors.
 | `-DmavenDetective.home=…` | Where snapshots live (also env `MAVEN_DETECTIVE_HOME`; default `~/.maven-detective`) |
 | `-DmavenDetective.eventsFile=target/md-events.jsonl` | Also write structured build events as JSON lines |
 
+**No card and no snapshot at all?** Maven silently ignores a `maven.ext.class.path` that does not point to a JAR. Run
+with `-X` and check the line `Included …` under `Populating class realm maven.ext`: it must show only the JAR path.
+A common cause is passing all options as one shell argument (e.g. `E="-Dmaven.ext.class.path=… -DmavenDetective.home=…"`
+and `mvn verify $E` in zsh, which does not split variables) – Maven then reads the whole string as the path.
+
 ## Command line
 
 ```bash
