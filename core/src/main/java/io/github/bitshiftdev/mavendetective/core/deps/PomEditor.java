@@ -81,30 +81,27 @@ public final class PomEditor {
                 String prop = current.substring(2, current.length() - 1);
                 Range p = s.properties.get(prop);
                 if (p != null) {
-                    return new Edit(p.contentStart, p.contentEnd - p.contentStart, version, lineOf(xml, p.contentStart),
+                    return replaceContent(xml, p, version,
                             Texts.t("edit.property.changed", "${" + prop + "}", xml.substring(p.contentStart, p.contentEnd).trim(), version));
                 }
             }
-            return new Edit(v.contentStart, v.contentEnd - v.contentStart, version, lineOf(xml, v.contentStart),
-                    Texts.t("edit.managed.version.changed", current, version));
+            return replaceContent(xml, v, version, Texts.t("edit.managed.version.changed", current, version));
         }
 
-        if (s.dmDependenciesEnd >= 0) {
-            int at = s.dmDependenciesEnd;
-            String closingIndent = lineIndent(xml, at);
+        if (s.dmDependencies != null) {
+            String closingIndent = lineIndent(xml, s.dmDependencies.contentEnd);
             String block = dependency(groupId, artifactId, version, closingIndent + unit, unit, nl);
-            return insertBefore(xml, at, block, closingIndent, nl,
-                    Texts.t("edit.managed.added", groupId + ":" + artifactId + ":" + version));
+            return insertInto(xml, s.dmDependencies, block, closingIndent, nl,
+                    Texts.t("edit.managed.added", groupId + ":" + artifactId + ":" + version), "<dependency>");
         }
-        if (s.dmEnd >= 0) {
-            int at = s.dmEnd;
-            String closingIndent = lineIndent(xml, at);
+        if (s.dm != null) {
+            String closingIndent = lineIndent(xml, s.dm.contentEnd);
             String inner = closingIndent + unit;
             String block = inner + "<dependencies>" + nl
                     + dependency(groupId, artifactId, version, inner + unit, unit, nl)
                     + inner + "</dependencies>" + nl;
-            return insertBefore(xml, at, block, closingIndent, nl,
-                    Texts.t("edit.managed.added", groupId + ":" + artifactId + ":" + version));
+            return insertInto(xml, s.dm, block, closingIndent, nl,
+                    Texts.t("edit.managed.added", groupId + ":" + artifactId + ":" + version), "<dependency>");
         }
         int at = s.dependenciesStart >= 0 ? s.dependenciesStart : s.buildStart >= 0 ? s.buildStart : s.projectEnd;
         String indent = at == s.projectEnd ? lineIndent(xml, at) + unit : lineIndent(xml, at);
@@ -157,7 +154,8 @@ public final class PomEditor {
         if (target == null) {
             throw new IllegalArgumentException(Texts.t("edit.exclusion.not.found", exclusion, groupId + ":" + artifactId, where));
         }
-        Range r = found.exclusions.size() == 1 && found.exclusionsRange != null ? found.exclusionsRange : target.range;
+        Range r = found.exclusions.size() == 1 && found.exclusionsRange != null
+                && onlyWhitespaceBesides(xml, found.exclusionsRange, target.range) ? found.exclusionsRange : target.range;
         int start = r.tagStart;
         int end = r.tagEnd;
         int lineStart = lineStart(xml, start);
@@ -217,7 +215,7 @@ public final class PomEditor {
             int at = found.exclusionsRange.contentEnd;
             String closingIndent = xml.substring(lineStart(xml, at), at).trim().isEmpty() ? lineIndent(xml, at) : childIndent;
             String block = exclusionBlock(eg, ea, closingIndent + unit, unit, nl);
-            return insertBefore(xml, at, block, closingIndent, nl, description, "<exclusion>");
+            return insertInto(xml, found.exclusionsRange, block, closingIndent, nl, description, "<exclusion>");
         }
         int at = found.range.contentEnd;
         String closingIndent = lineIndent(xml, found.range.tagStart);
@@ -252,10 +250,9 @@ public final class PomEditor {
         String coords = groupId + ":" + artifactId + (version == null ? "" : ":" + version)
                 + (scope == null || "compile".equals(scope) ? "" : " (" + scope + ")");
         if (s.dependencies != null) {
-            int at = s.dependencies.contentEnd;
             String closingIndent = lineIndent(xml, s.dependencies.tagStart);
             String block = dependencyBlock(groupId, artifactId, version, scope, type, classifier, closingIndent + unit, unit, nl);
-            return insertBefore(xml, at, block, closingIndent, nl, Texts.t("edit.dependency.added", coords));
+            return insertInto(xml, s.dependencies, block, closingIndent, nl, Texts.t("edit.dependency.added", coords), "<dependency>");
         }
         int at = s.buildStart >= 0 ? s.buildStart : s.projectEnd;
         String indent = at == s.projectEnd ? lineIndent(xml, at) + unit : lineIndent(xml, at);
@@ -284,7 +281,8 @@ public final class PomEditor {
                 count++;
             }
         }
-        Range r = count == 1 && s.dependencies != null ? s.dependencies : found.range;
+        Range r = count == 1 && s.dependencies != null && onlyWhitespaceBesides(xml, s.dependencies, found.range)
+                ? s.dependencies : found.range;
         int start = r.tagStart;
         int end = r.tagEnd;
         int lineStart = lineStart(xml, start);
@@ -314,8 +312,7 @@ public final class PomEditor {
             if (scope.equals(old)) {
                 throw new IllegalArgumentException(Texts.t("edit.scope.exists", groupId + ":" + artifactId, scope));
             }
-            return new Edit(current.contentStart, current.contentEnd - current.contentStart, scope, lineOf(xml, current.contentStart),
-                    Texts.t("edit.scope.changed", groupId + ":" + artifactId, old, scope));
+            return replaceContent(xml, current, scope, Texts.t("edit.scope.changed", groupId + ":" + artifactId, old, scope));
         }
         Range after = null;
         for (String child : new String[] {"artifactId", "version", "type", "classifier"}) {
@@ -379,8 +376,7 @@ public final class PomEditor {
             throw new IllegalArgumentException(Texts.t("edit.no.version", groupId + ":" + artifactId));
         }
         String current = xml.substring(v.contentStart, v.contentEnd).trim();
-        return new Edit(v.contentStart, v.contentEnd - v.contentStart, version, lineOf(xml, v.contentStart),
-                what + ": " + Texts.t("edit.version.changed", current, version));
+        return replaceContent(xml, v, version, what + ": " + Texts.t("edit.version.changed", current, version));
     }
 
     /**
@@ -396,16 +392,14 @@ public final class PomEditor {
         Range p = s.properties.get(name);
         if (p != null) {
             String current = xml.substring(p.contentStart, p.contentEnd).trim();
-            return new Edit(p.contentStart, p.contentEnd - p.contentStart, value, lineOf(xml, p.contentStart),
-                    Texts.t("edit.property.changed", "${" + name + "}", current, value));
+            return replaceContent(xml, p, value, Texts.t("edit.property.changed", "${" + name + "}", current, value));
         }
         String nl = xml.contains("\r\n") ? "\r\n" : "\n";
         String unit = s.indentUnit(xml);
         String element = "<" + name + ">" + value + "</" + name + ">";
         if (s.propertiesRange != null) {
-            int at = s.propertiesRange.contentEnd;
             String closingIndent = lineIndent(xml, s.propertiesRange.tagStart);
-            return insertBefore(xml, at, closingIndent + unit + element + nl, closingIndent, nl,
+            return insertInto(xml, s.propertiesRange, closingIndent + unit + element + nl, closingIndent, nl,
                     Texts.t("edit.property.added", "${" + name + "} = " + value), "<" + name + ">");
         }
         int at = s.dmStart >= 0 ? s.dmStart : s.dependenciesStart >= 0 ? s.dependenciesStart : s.buildStart >= 0 ? s.buildStart : s.projectEnd;
@@ -422,12 +416,15 @@ public final class PomEditor {
     /**
      * Die Textänderung zu einem POM-Quick-Fix ({@code pin-version}, {@code remove-exclusion},
      * {@code add-exclusion}, {@code add-dependency}, {@code remove-dependency}, {@code set-scope},
-     * {@code set-version}).
+     * {@code set-version}, {@code replace-url}).
      *
      * @throws IllegalArgumentException bei anderem Typ, fehlenden Parametern oder wenn die Stelle fehlt
      */
     public static Edit forFix(String xml, FixAction fix) {
         String type = fix.getType();
+        if (FixAction.REPLACE_URL.equals(type)) {
+            return replaceUrl(xml, required(fix, "search"), required(fix, "replace"));
+        }
         if (FixAction.SET_VERSION.equals(type) && fix.param("property") != null) {
             return setProperty(xml, fix.param("property"), required(fix, "version"));
         }
@@ -466,7 +463,93 @@ public final class PomEditor {
     public static boolean isPomFix(String type) {
         return FixAction.PIN_VERSION.equals(type) || FixAction.REMOVE_EXCLUSION.equals(type) || FixAction.ADD_EXCLUSION.equals(type)
                 || FixAction.ADD_DEPENDENCY.equals(type) || FixAction.REMOVE_DEPENDENCY.equals(type) || FixAction.SET_SCOPE.equals(type)
-                || FixAction.SET_VERSION.equals(type);
+                || FixAction.SET_VERSION.equals(type) || FixAction.REPLACE_URL.equals(type);
+    }
+
+    /** Elemente, deren {@code <url>} {@link #replaceUrl} ändert. */
+    private static final java.util.Set<String> URL_OWNERS = new java.util.HashSet<String>(java.util.Arrays.asList(
+            "repository", "pluginRepository", "snapshotRepository", "mirror"));
+
+    /**
+     * Ersetzt die Adresse {@code search} durch {@code replace} – nur dort, wo sie der ganze Wert eines
+     * {@code <url>} in {@code <repository>}, {@code <pluginRepository>}, {@code <snapshotRepository>}
+     * oder {@code <mirror>} ist (überall, auch in Profilen; ein abschließender {@code /} darf abweichen).
+     * Längere Adressen mit demselben Anfang und Kommentare bleiben stehen. Geht auch für settings.xml.
+     * Mehrere Stellen ergeben ein {@link Edit} von der ersten bis zur letzten.
+     *
+     * @throws IllegalArgumentException wenn keine solche {@code <url>} vorkommt
+     */
+    public static Edit replaceUrl(String xml, String search, String replace) {
+        String from = stripSlash(search.trim());
+        String to = stripSlash(replace.trim());
+        List<int[]> hits = new ArrayList<int[]>();
+        List<String> stack = new ArrayList<String>();
+        int open = -1;
+        int i = 0;
+        int n = xml.length();
+        while (i < n) {
+            int lt = xml.indexOf('<', i);
+            if (lt < 0) {
+                break;
+            }
+            if (xml.startsWith("<!--", lt)) {
+                i = Scan.skip(xml, lt, "-->");
+                continue;
+            }
+            if (xml.startsWith("<![CDATA[", lt)) {
+                i = Scan.skip(xml, lt, "]]>");
+                continue;
+            }
+            if (xml.startsWith("<?", lt)) {
+                i = Scan.skip(xml, lt, "?>");
+                continue;
+            }
+            if (xml.startsWith("<!", lt)) {
+                i = Scan.skip(xml, lt, ">");
+                continue;
+            }
+            int gt = Scan.tagEnd(xml, lt);
+            if (gt < 0) {
+                throw new IllegalArgumentException("Unvollständiges Tag ab Zeichen " + lt);
+            }
+            boolean closing = xml.charAt(lt + 1) == '/';
+            String name = Scan.tagName(xml, closing ? lt + 2 : lt + 1, gt);
+            if (closing) {
+                if (open >= 0 && "url".equals(name) && stack.size() >= 2 && URL_OWNERS.contains(stack.get(stack.size() - 2))) {
+                    String raw = xml.substring(open, lt);
+                    String value = raw.trim();
+                    if (stripSlash(value).equals(from)) {
+                        int start = open + raw.indexOf(value);
+                        hits.add(new int[] {start, start + from.length()});
+                    }
+                }
+                open = -1;
+                if (!stack.isEmpty()) {
+                    stack.remove(stack.size() - 1);
+                }
+            } else if (xml.charAt(gt - 1) != '/') {
+                stack.add(name);
+                open = gt + 1;
+            }
+            i = gt + 1;
+        }
+        if (hits.isEmpty()) {
+            throw new IllegalArgumentException(Texts.t("edit.url.not.found", from));
+        }
+        int start = hits.get(0)[0];
+        int end = hits.get(hits.size() - 1)[1];
+        StringBuilder text = new StringBuilder();
+        int at = start;
+        for (int[] h : hits) {
+            text.append(xml, at, h[0]).append(to);
+            at = h[1];
+        }
+        return new Edit(start, end - start, text.toString(), lineOf(xml, start),
+                Texts.t("edit.url.changed", from, to, hits.size()));
+    }
+
+    private static String stripSlash(String url) {
+        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
     private static String required(FixAction fix, String key) {
@@ -569,6 +652,59 @@ public final class PomEditor {
         return new Edit(at, 0, text, lineOf(xml, at) + 1 + firstContentLine(block, marker), description);
     }
 
+    /**
+     * Fügt {@code block} am Ende des Containers {@code r} ein (wie {@link #insertBefore} vor dessen
+     * schließendem Tag). Ist der Container leer geschrieben ({@code <dependencies/>}), wird er zu
+     * {@code <dependencies>…</dependencies>} aufgeklappt – sonst entstünde ein zweites Element gleichen
+     * Namens, und Maven lehnte die POM ab.
+     */
+    private static Edit insertInto(String xml, Range r, String block, String closingIndent, String nl, String description,
+                                   String marker) {
+        if (!r.selfClosing) {
+            return insertBefore(xml, r.contentEnd, block, closingIndent, nl, description, marker);
+        }
+        String text = openTag(xml, r) + nl + block + closingIndent + closeTag(xml, r);
+        return new Edit(r.tagStart, r.tagEnd - r.tagStart, text, lineOf(xml, r.tagStart) + 1 + firstContentLine(block, marker),
+                description);
+    }
+
+    /** Ersetzt den Inhalt von {@code r} durch {@code text}; aus {@code <x/>} wird {@code <x>text</x>}. */
+    private static Edit replaceContent(String xml, Range r, String text, String description) {
+        if (r.selfClosing) {
+            return new Edit(r.tagStart, r.tagEnd - r.tagStart, openTag(xml, r) + text + closeTag(xml, r), lineOf(xml, r.tagStart),
+                    description);
+        }
+        return new Edit(r.contentStart, r.contentEnd - r.contentStart, text, lineOf(xml, r.contentStart), description);
+    }
+
+    /** {@code <x a="1"/>} → {@code <x a="1">}. */
+    private static String openTag(String xml, Range r) {
+        int end = r.tagEnd - 2;
+        while (end > r.tagStart && Character.isWhitespace(xml.charAt(end - 1))) {
+            end--;
+        }
+        return xml.substring(r.tagStart, end) + ">";
+    }
+
+    /** {@code <p:x a="1"/>} → {@code </p:x>} (mit Präfix, wie geschrieben). */
+    private static String closeTag(String xml, Range r) {
+        int end = r.tagStart + 1;
+        while (end < r.tagEnd && !Character.isWhitespace(xml.charAt(end)) && xml.charAt(end) != '/' && xml.charAt(end) != '>') {
+            end++;
+        }
+        return "</" + xml.substring(r.tagStart + 1, end) + ">";
+    }
+
+    /**
+     * Steht in {@code container} außer {@code element} nur Leerraum? Nur dann darf der Container beim
+     * Entfernen des letzten Eintrags mitgehen – Kommentare (etwa eine auskommentierte alte Dependency)
+     * blieben sonst nicht erhalten.
+     */
+    private static boolean onlyWhitespaceBesides(String xml, Range container, Range element) {
+        return xml.substring(container.contentStart, element.tagStart).trim().isEmpty()
+                && xml.substring(element.tagEnd, container.contentEnd).trim().isEmpty();
+    }
+
     /** Zeile (ab 0) im Block, auf der {@code marker} steht – dahin soll der Sprung gehen. */
     private static int firstContentLine(String block, String marker) {
         int idx = Math.max(0, block.indexOf(marker));
@@ -614,6 +750,11 @@ public final class PomEditor {
         int contentStart;
         int contentEnd;
         int tagEnd;
+        /**
+         * Leer geschrieben ({@code <x/>}): {@code contentStart == contentEnd == tagStart}. Einfügen und
+         * Ersetzen gehen dann über {@link #insertInto} bzw. {@link #replaceContent}.
+         */
+        boolean selfClosing;
     }
 
     /** Ein {@code <dependency>} in {@code project/dependencies} oder {@code project/dependencyManagement/dependencies}. */
@@ -654,8 +795,9 @@ public final class PomEditor {
         /** {@code project/properties} komplett; {@code null}, wenn es fehlt. */
         Range propertiesRange;
         int dmStart = -1;
-        int dmEnd = -1;
-        int dmDependenciesEnd = -1;
+        /** {@code project/dependencyManagement} bzw. dessen {@code dependencies}; {@code null}, wenn es fehlt. */
+        Range dm;
+        Range dmDependencies;
         int dependenciesStart = -1;
         /** {@code project/dependencies} komplett; {@code null}, wenn es fehlt. */
         Range dependencies;
@@ -747,6 +889,15 @@ public final class PomEditor {
                         exclusion = new ExclusionEntry();
                     }
                     if (empty) {
+                        if (!"project".equals(path)) {
+                            Range r = new Range();
+                            r.tagStart = lt;
+                            r.contentStart = lt;
+                            r.contentEnd = lt;
+                            r.tagEnd = gt + 1;
+                            r.selfClosing = true;
+                            s.onClose(path, name, r, xml, entry, exclusion);
+                        }
                         stack.remove(stack.size() - 1);
                     } else {
                         starts.add(lt);
@@ -766,10 +917,10 @@ public final class PomEditor {
                 parentRanges.put(name, r);
             } else if ("project/properties".equals(path) && propertiesRange == null) {
                 propertiesRange = r;
-            } else if ("project/dependencyManagement".equals(path)) {
-                dmEnd = r.contentEnd;
-            } else if ("project/dependencyManagement/dependencies".equals(path)) {
-                dmDependenciesEnd = r.contentEnd;
+            } else if ("project/dependencyManagement".equals(path) && dm == null) {
+                dm = r;
+            } else if ("project/dependencyManagement/dependencies".equals(path) && dmDependencies == null) {
+                dmDependencies = r;
             } else if ("project/dependencies".equals(path) && dependencies == null) {
                 dependencies = r;
             } else if (entry != null && isChild(path, entry.managed ? MANAGED_DEPENDENCY : DEPENDENCY)) {

@@ -484,4 +484,158 @@ class PomEditorTest {
                 .apply(without);
         assertEquals(created.apply(without), forFix);
     }
+
+    // --- Leer geschriebene Container (<x/>) werden aufgeklappt, nicht verdoppelt
+
+    @Test
+    void addsDependencyIntoSelfClosingDependencies() {
+        String xml = "<project>\n  <artifactId>m</artifactId>\n  <dependencies/>\n</project>\n";
+        assertEquals("""
+                <project>
+                  <artifactId>m</artifactId>
+                  <dependencies>
+                    <dependency>
+                      <groupId>g</groupId>
+                      <artifactId>a</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """, PomEditor.addDependency(xml, "g", "a", "1.0", null, null, null).apply(xml));
+    }
+
+    @Test
+    void addsExclusionIntoSelfClosingExclusions() {
+        String xml = """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>g</groupId>
+                      <artifactId>a</artifactId>
+                      <exclusions />
+                    </dependency>
+                  </dependencies>
+                </project>
+                """;
+        String out = PomEditor.addExclusion(xml, "g", "a", "x:y").apply(xml);
+        assertEquals("""
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>g</groupId>
+                      <artifactId>a</artifactId>
+                      <exclusions>
+                        <exclusion>
+                          <groupId>x</groupId>
+                          <artifactId>y</artifactId>
+                        </exclusion>
+                      </exclusions>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """, out);
+    }
+
+    @Test
+    void setsPropertyInSelfClosingPropertiesAndEmptyValue() {
+        String xml = "<project>\n  <properties/>\n</project>\n";
+        assertEquals("<project>\n  <properties>\n    <a.version>2.0</a.version>\n  </properties>\n</project>\n",
+                PomEditor.setProperty(xml, "a.version", "2.0").apply(xml));
+        String empty = "<project>\n  <properties>\n    <a.version/>\n  </properties>\n</project>\n";
+        assertEquals("<project>\n  <properties>\n    <a.version>2.0</a.version>\n  </properties>\n</project>\n",
+                PomEditor.setProperty(empty, "a.version", "2.0").apply(empty));
+    }
+
+    @Test
+    void pinsIntoSelfClosingManagement() {
+        String dm = "<project>\n  <dependencyManagement/>\n</project>\n";
+        String expected = """
+                <project>
+                  <dependencyManagement>
+                    <dependencies>
+                      <dependency>
+                        <groupId>org.lib</groupId>
+                        <artifactId>lib</artifactId>
+                        <version>2.0</version>
+                      </dependency>
+                    </dependencies>
+                  </dependencyManagement>
+                </project>
+                """;
+        assertEquals(expected, pin(dm));
+        String deps = "<project>\n  <dependencyManagement>\n    <dependencies/>\n  </dependencyManagement>\n</project>\n";
+        assertEquals(expected, pin(deps));
+    }
+
+    // --- Kommentare im Container bleiben beim Entfernen des letzten Eintrags
+
+    @Test
+    void keepsContainerWithCommentsWhenRemovingLastEntry() {
+        String xml = """
+                <project>
+                  <dependencies>
+                    <!-- <dependency><groupId>old</groupId><artifactId>x</artifactId></dependency> -->
+                    <dependency>
+                      <groupId>g</groupId>
+                      <artifactId>a</artifactId>
+                      <exclusions>
+                        <!-- früher auch x:z -->
+                        <exclusion>
+                          <groupId>x</groupId>
+                          <artifactId>y</artifactId>
+                        </exclusion>
+                      </exclusions>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """;
+        String noExclusion = PomEditor.removeExclusion(xml, "g", "a", "x:y", false).apply(xml);
+        assertTrue(noExclusion.contains("<exclusions>\n        <!-- früher auch x:z -->\n      </exclusions>"), noExclusion);
+        String noDependency = PomEditor.removeDependency(xml, "g", "a", null).apply(xml);
+        assertEquals("""
+                <project>
+                  <dependencies>
+                    <!-- <dependency><groupId>old</groupId><artifactId>x</artifactId></dependency> -->
+                  </dependencies>
+                </project>
+                """, noDependency);
+    }
+
+    // --- Repository-Adresse: nur ganze <url>-Werte
+
+    @Test
+    void replacesOnlyWholeRepositoryUrls() {
+        String xml = """
+                <project>
+                  <url>http://nexus.corp/repo</url>
+                  <!-- siehe http://nexus.corp/repo-guide.html -->
+                  <repositories>
+                    <repository>
+                      <id>corp</id>
+                      <url> http://nexus.corp/repo/ </url>
+                    </repository>
+                    <repository>
+                      <id>third</id>
+                      <url>http://nexus.corp/repository/thirdparty</url>
+                    </repository>
+                  </repositories>
+                  <profiles>
+                    <profile>
+                      <pluginRepositories>
+                        <pluginRepository>
+                          <url>http://nexus.corp/repo</url>
+                        </pluginRepository>
+                      </pluginRepositories>
+                    </profile>
+                  </profiles>
+                </project>
+                """;
+        PomEditor.Edit edit = PomEditor.replaceUrl(xml, "http://nexus.corp/repo", "https://nexus.corp/repo");
+        String out = edit.apply(xml);
+        assertEquals(xml.replace("<url> http://nexus.corp/repo/ </url>", "<url> https://nexus.corp/repo/ </url>")
+                .replace("<url>http://nexus.corp/repo</url>\n        </pluginRepository>",
+                        "<url>https://nexus.corp/repo</url>\n        </pluginRepository>"), out);
+        assertEquals(7, edit.line);
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.replaceUrl(xml, "http://nexus.corp/rep", "https://nexus.corp/rep"));
+    }
 }

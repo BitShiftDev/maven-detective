@@ -245,7 +245,7 @@ class PreflightTest {
                   </repository>
                 </repositories>""");
         Item item = first(run(), Topic.REPOSITORY, Status.ERROR);
-        FixAction replace = fix(item, FixAction.REPLACE_IN_FILE);
+        FixAction replace = fix(item, FixAction.REPLACE_URL);
         assertEquals(project.resolve("pom.xml").toString(), replace.param("file"));
         assertEquals("https://repo.old.example/maven2", replace.param("replace"));
     }

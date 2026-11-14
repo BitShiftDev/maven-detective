@@ -15,7 +15,7 @@
 #               Prüfung mit eigener Ursache ersetzt cause und liefert den ersten Quick-Fix.
 #   cause       Ursache in einem Satz. Platzhalter: {var}, {var|Ersatztext}, {a,b|Ersatz}
 #   fix         type + label (+ params). Typen: rebuild, delete-files, open-file,
-#               replace-in-file, switch-jdk, set-jvm-option, insert-plugin-version,
+#               replace-in-file, replace-url, switch-jdk, set-jvm-option, insert-plugin-version,
 #               show-dependency, pin-version, remove-exclusion, add-exclusion,
 #               add-dependency, remove-dependency, set-scope, set-version, manual
 #

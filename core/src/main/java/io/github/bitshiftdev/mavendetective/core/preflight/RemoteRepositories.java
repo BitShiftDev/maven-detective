@@ -269,7 +269,7 @@ final class RemoteRepositories {
         if (!r.viaNexus && r.pom != null && PreflightChecks.isRemoteHttp(r.url)) {
             String https = "https://" + r.url.substring("http://".length());
             item.evidence(Evidence.file(Texts.t("check.http.pom.evidence"), r.pom.file.toString(), r.line))
-                    .fix(FixAction.of(FixAction.REPLACE_IN_FILE, Texts.t("preflight.switch.https"),
+                    .fix(FixAction.of(FixAction.REPLACE_URL, Texts.t("preflight.switch.https"),
                             "file", r.pom.file.toString(), "search", r.url, "replace", https))
                     .fix(PreflightChecks.open(r.pom.file, r.line, Texts.t("check.open.pom")));
         } else if (r.mirrorSettings != null && !blocker) {

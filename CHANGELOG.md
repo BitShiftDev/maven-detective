@@ -12,6 +12,14 @@
 - New setting to switch the preflight check off: the action, the overview tile and the view disappear.
 - New setting **Custom Nexus** (CLI: `--nexus URL`): the network check asks every repository through your own repository manager, like a mirror with `mirrorOf *`. The preflight notes whether a `settings.xml` mirror points there too.
 
+### Fixed
+
+- Quick fixes keep the encoding of the file they change: a POM or `settings.xml` declared as `ISO-8859-1` (or starting with a byte order mark) is written back in the same encoding instead of UTF-8, so umlauts stay intact. A file whose bytes do not match its declared encoding is left unchanged.
+- The "switch to https" fix for a repository in a POM now runs like every other POM change in the IDE: with preview, as one undo step and followed by a Maven reimport. It changes only `<url>` values that are exactly the blocked address – longer URLs with the same beginning and comments stay as they are (also in `settings.xml`).
+- POM fixes no longer create a second element when a container is written empty, such as `<dependencies/>`, `<exclusions/>`, `<properties/>` or `<dependencyManagement/>`; Maven rejected such a POM.
+- Removing the last dependency or exclusion keeps the surrounding block if it still holds comments.
+- `set-jvm-option` changes `.mvn/jvm.config` line by line and keeps comments, instead of joining everything into one line.
+
 ### Distribution
 
 - Core/CLI and the Maven extension are published to Maven Central as `io.github.bitshiftdev.mavendetective:maven-detective-core` and `io.github.bitshiftdev.mavendetective:maven-detective-extension`. The extension can now be added to a project via `.mvn/extensions.xml`.

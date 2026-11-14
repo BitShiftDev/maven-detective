@@ -2,6 +2,7 @@ package io.github.bitshiftdev.mavendetective.core.deps;
 
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.Texts;
+import io.github.bitshiftdev.mavendetective.core.io.TextFile;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -143,7 +144,7 @@ public final class PomFetcher {
         for (Path p : poms) {
             String xml;
             try {
-                xml = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
+                xml = TextFile.read(p).getText();
             } catch (IOException e) {
                 continue;
             }

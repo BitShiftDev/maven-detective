@@ -3,20 +3,21 @@ package io.github.bitshiftdev.mavendetective.core.fix;
 import io.github.bitshiftdev.mavendetective.core.Texts;
 import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
+import io.github.bitshiftdev.mavendetective.core.io.TextFile;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Führt die Quick-Fixes aus, die nur Dateien betreffen. IDE-Aktionen (Datei öffnen, JDK umstellen,
  * Neubau starten) erledigt das Plugin selbst. Löscht nur innerhalb erlaubter Wurzeln, damit ein
- * manipulierter Log keine beliebigen Dateien entfernen kann.
+ * manipulierter Log keine beliebigen Dateien entfernen kann. Geänderte Dateien werden in ihrer eigenen
+ * Kodierung zurückgeschrieben ({@link TextFile}).
  */
 public final class FixExecutor {
 
@@ -64,50 +65,103 @@ public final class FixExecutor {
             o.rebuildArgs = fix.param("args") == null ? "" : fix.param("args");
         } else if (FixAction.REPLACE_IN_FILE.equals(type)) {
             Path p = Paths.get(fix.param("file"));
-            String content = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
+            TextFile file = TextFile.read(p);
+            String content = file.getText();
             String search = fix.param("search");
-            if (!content.contains(search)) {
-                throw new IOException(Texts.t("exec.text.not.found", p, search));
+            String replace = fix.param("replace");
+            if (isXml(p)) {
+                // settings.xml/POM: nur ganze Repository-Adressen, keine längeren mit gleichem Anfang, keine Kommentare
+                PomEditor.Edit edit;
+                try {
+                    edit = PomEditor.replaceUrl(content, search, replace);
+                } catch (IllegalArgumentException e) {
+                    throw new IOException(Texts.t("exec.url.not.found", p, search), e);
+                }
+                file.write(edit.apply(content));
+                o.actions.add(p + ":" + edit.line + ": " + edit.description);
+            } else {
+                if (!content.contains(search)) {
+                    throw new IOException(Texts.t("exec.text.not.found", p, search));
+                }
+                file.write(content.replace(search, replace));
+                o.actions.add(Texts.t("exec.replaced", p, search, replace));
             }
-            Files.write(p, content.replace(search, fix.param("replace")).getBytes(StandardCharsets.UTF_8));
-            o.actions.add(Texts.t("exec.replaced", p, search, fix.param("replace")));
             o.rebuildArgs = "";
         } else if (FixAction.SET_JVM_OPTION.equals(type)) {
             Path p = Paths.get(fix.param("file"));
             String option = fix.param("option");
-            List<String> tokens = new ArrayList<String>();
-            if (Files.isRegularFile(p)) {
-                tokens.addAll(Arrays.asList(new String(Files.readAllBytes(p), StandardCharsets.UTF_8).trim().split("\\s+")));
-                tokens.remove("");
-            }
-            String key = optionKey(option);
-            List<String> kept = new ArrayList<String>();
-            for (String t : tokens) {
-                if (!optionKey(t).equals(key)) {
-                    kept.add(t);
-                }
-            }
-            kept.add(option);
-            Files.createDirectories(p.getParent());
-            Files.write(p, (String.join(" ", kept) + "\n").getBytes(StandardCharsets.UTF_8));
+            TextFile file = TextFile.readOrCreate(p);
+            file.write(setJvmOption(file.getText(), option));
             o.actions.add(p + ": " + option);
             o.rebuildArgs = "";
         } else if (PomEditor.isPomFix(type)) {
             Path p = Paths.get(fix.param("file"));
-            String content = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
+            TextFile file = TextFile.read(p);
+            String content = file.getText();
             PomEditor.Edit edit;
             try {
                 edit = PomEditor.forFix(content, fix);
             } catch (IllegalArgumentException e) {
                 throw new IOException(Texts.t("exec.not.editable", p, e.getMessage()), e);
             }
-            Files.write(p, edit.apply(content).getBytes(StandardCharsets.UTF_8));
+            file.write(edit.apply(content));
             o.actions.add(p + ":" + edit.line + ": " + edit.description);
             o.rebuildArgs = "";
         } else {
             throw new IllegalArgumentException(Texts.t("exec.unsupported", type));
         }
         return o;
+    }
+
+    private static boolean isXml(Path p) {
+        String name = p.getFileName() == null ? "" : p.getFileName().toString().toLowerCase(Locale.ROOT);
+        return name.endsWith(".xml") || name.endsWith(".pom");
+    }
+
+    /**
+     * Setzt {@code option} in einer {@code .mvn/jvm.config}, Zeile für Zeile: Eine vorhandene Angabe
+     * derselben Option wird an ihrer Stelle ersetzt (weitere entfallen), sonst kommt die Option als
+     * eigene Zeile ans Ende. Kommentare, Leerzeilen und die Aufteilung auf Zeilen bleiben stehen.
+     */
+    static String setJvmOption(String content, String option) {
+        String nl = content.contains("\r\n") ? "\r\n" : "\n";
+        String key = optionKey(option);
+        String[] lines = content.split("\\r?\\n", -1);
+        List<String> out = new ArrayList<String>();
+        boolean placed = false;
+        for (String line : lines) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                out.add(line);
+                continue;
+            }
+            List<String> kept = new ArrayList<String>();
+            boolean hit = false;
+            for (String token : t.split("\\s+")) {
+                if (optionKey(token).equals(key)) {
+                    hit = true;
+                    if (!placed) {
+                        kept.add(option);
+                        placed = true;
+                    }
+                } else {
+                    kept.add(token);
+                }
+            }
+            if (!hit) {
+                out.add(line);
+            } else if (!kept.isEmpty()) {
+                out.add(line.substring(0, line.indexOf(t)) + String.join(" ", kept));
+            }
+        }
+        // Am Ende steht nach einem abschließenden Zeilenumbruch ein leerer Rest – die neue Zeile davor
+        if (!out.isEmpty() && out.get(out.size() - 1).isEmpty()) {
+            out.remove(out.size() - 1);
+        }
+        if (!placed) {
+            out.add(option);
+        }
+        return String.join(nl, out) + nl;
     }
 
     /** "-Xmx2g" → "-Xmx", "-XX:MaxMetaspaceSize=512m" → "-XX:MaxMetaspaceSize". */

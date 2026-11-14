@@ -122,7 +122,7 @@ final class RepositoryChecks {
                 for (ProjectPoms.Location l : hits) {
                     r.evidence(Evidence.file(Texts.t("check.http.pom.evidence"), l.pom.file.toString(), l.line));
                 }
-                return r.fix(FixAction.of(FixAction.REPLACE_IN_FILE, Texts.t("check.http.switch"),
+                return r.fix(FixAction.of(FixAction.REPLACE_URL, Texts.t("check.http.switch"),
                                 "file", loc.pom.file.toString(), "search", trimmed, "replace", https))
                         .fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.open.pom"),
                                 "file", loc.pom.file.toString(), "line", String.valueOf(loc.line)));

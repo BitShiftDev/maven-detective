@@ -179,9 +179,11 @@ class ChecksTest {
                 + "Blocked mirror for repositories: [old (http://repo.example.org/m2, default, releases+snapshots)]");
         assertEquals("http-repository-blocked", d.getRuleId());
         FixAction fix = d.getPrimaryFix();
-        assertEquals(FixAction.REPLACE_IN_FILE, fix.getType());
+        assertEquals(FixAction.REPLACE_URL, fix.getType());
         assertEquals("http://repo.example.org/m2", fix.param("search"));
         assertEquals("https://repo.example.org/m2", fix.param("replace"));
+        // geht in der IDE über PomEditor (Vorschau, Undo) und ersetzt genau die <url>
+        assertTrue(io.github.bitshiftdev.mavendetective.core.deps.PomEditor.isPomFix(fix.getType()));
     }
 
     @Test

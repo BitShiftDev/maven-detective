@@ -7,6 +7,7 @@ import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.ImportStep;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Managed;
 import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.PropertyOrigin;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
+import io.github.bitshiftdev.mavendetective.core.io.TextFile;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -519,7 +520,7 @@ public final class UpgradeSimulator {
             String xml = changed.get(file);
             try {
                 if (xml == null) {
-                    xml = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+                    xml = TextFile.read(file).getText();
                 }
                 PomEditor.Edit edit = PomEditor.forFix(xml, s.fix);
                 s.description = edit.description;

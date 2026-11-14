@@ -12,7 +12,10 @@ import java.util.Map;
  * <tr><td>{@code rebuild}</td><td>{@code args} (z. B. "-U", "-am"), {@code removeArgs} (z. B. "-o")</td></tr>
  * <tr><td>{@code delete-files}</td><td>{@code files} (zeilengetrennt), danach {@code args} für den Neubau</td></tr>
  * <tr><td>{@code open-file}</td><td>{@code file}, {@code line}</td></tr>
- * <tr><td>{@code replace-in-file}</td><td>{@code file}, {@code search}, {@code replace}</td></tr>
+ * <tr><td>{@code replace-in-file}</td><td>{@code file}, {@code search}, {@code replace} – in XML-Dateien (settings.xml, POM)
+ *     nur ganze Repository-{@code <url>}-Werte, sonst jedes Vorkommen</td></tr>
+ * <tr><td>{@code replace-url}</td><td>{@code file} (POM), {@code search}, {@code replace} – ändert eine Repository-Adresse
+ *     genau in den {@code <url>}-Werten, die sie ganz enthalten (z. B. http → https); läuft in der IDE mit Vorschau und Undo</td></tr>
  * <tr><td>{@code switch-jdk}</td><td>{@code required} (Java-Feature-Version)</td></tr>
  * <tr><td>{@code set-jvm-option}</td><td>{@code file} (.mvn/jvm.config), {@code option}</td></tr>
  * <tr><td>{@code insert-plugin-version}</td><td>{@code file}, {@code line}, {@code plugin}</td></tr>
@@ -45,6 +48,7 @@ public final class FixAction {
     public static final String DELETE_FILES = "delete-files";
     public static final String OPEN_FILE = "open-file";
     public static final String REPLACE_IN_FILE = "replace-in-file";
+    public static final String REPLACE_URL = "replace-url";
     public static final String SWITCH_JDK = "switch-jdk";
     public static final String SET_JVM_OPTION = "set-jvm-option";
     public static final String INSERT_PLUGIN_VERSION = "insert-plugin-version";

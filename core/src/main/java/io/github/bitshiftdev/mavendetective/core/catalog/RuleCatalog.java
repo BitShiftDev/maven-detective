@@ -30,7 +30,7 @@ public final class RuleCatalog {
     public static final String DEFAULT_RESOURCE = "/io/github/bitshiftdev/mavendetective/core/catalog/build-doctor-v1.yaml";
 
     private static final Set<String> FIX_TYPES = new HashSet<String>(Arrays.asList(
-            FixAction.REBUILD, FixAction.DELETE_FILES, FixAction.OPEN_FILE, FixAction.REPLACE_IN_FILE,
+            FixAction.REBUILD, FixAction.DELETE_FILES, FixAction.OPEN_FILE, FixAction.REPLACE_IN_FILE, FixAction.REPLACE_URL,
             FixAction.SWITCH_JDK, FixAction.SET_JVM_OPTION, FixAction.INSERT_PLUGIN_VERSION,
             FixAction.SHOW_DEPENDENCY, FixAction.PIN_VERSION, FixAction.REMOVE_EXCLUSION, FixAction.ADD_EXCLUSION,
             FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE, FixAction.SET_VERSION, FixAction.MANUAL));

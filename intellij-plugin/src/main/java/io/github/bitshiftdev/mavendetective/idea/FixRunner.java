@@ -49,7 +49,7 @@ final class FixRunner {
 
     static boolean isSupported(FixAction fix) {
         return switch (fix.getType()) {
-            case FixAction.OPEN_FILE, FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE,
+            case FixAction.OPEN_FILE, FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE, FixAction.REPLACE_URL,
                  FixAction.SET_JVM_OPTION, FixAction.REBUILD, FixAction.SWITCH_JDK,
                  FixAction.INSERT_PLUGIN_VERSION, FixAction.PIN_VERSION, FixAction.ADD_EXCLUSION,
                  FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE, FixAction.SET_VERSION -> true;
@@ -85,6 +85,12 @@ final class FixRunner {
                 }
                 case FixAction.SET_VERSION -> {
                     if (editPoms(project, List.of(fix), MavenDetectiveBundle.message("command.change.version")) > 0) {
+                        rebuild(project, result, null, fix.getLabel());
+                    }
+                }
+                // Repository-Adresse in der POM (http → https): wie jede POM-Änderung mit Vorschau und Undo
+                case FixAction.REPLACE_URL -> {
+                    if (editPoms(project, List.of(fix), MavenDetectiveBundle.message("command.change.repository.url")) > 0) {
                         rebuild(project, result, null, fix.getLabel());
                     }
                 }
