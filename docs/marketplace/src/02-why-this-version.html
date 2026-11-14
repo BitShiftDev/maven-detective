@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Why This Version</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .editor { flex: 1; position: relative; }
+  .code { padding-top: 8px; }
+  .gm { position: absolute; left: 4px; width: 14px; height: 14px; }
+  .popup { position: absolute; left: 470px; top: 252px; width: 580px; background: #2B2D30; border: 1px solid #43454A; border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.6); z-index: 3; font-size: 13px; }
+  .popup .ph { display: flex; align-items: center; gap: 10px; padding: 12px 16px 10px; border-bottom: 1px solid var(--ide-line); }
+  .popup .ph b { font-size: 14px; font-weight: 650; }
+  .popup .ph .sec { margin-left: auto; font-size: 12px; }
+  .crumb { padding: 10px 16px 0; font-size: 12px; color: var(--ide-text2); }
+  .crumb span.c { color: var(--ide-link); }
+  .sum { padding: 8px 16px 4px; font-size: 13.5px; line-height: 1.5; }
+  .tl { padding: 8px 16px 6px 16px; }
+  .st { display: grid; grid-template-columns: 22px 1fr auto; gap: 0 8px; position: relative; padding-bottom: 12px; }
+  .st::before { content: ""; position: absolute; left: 6px; top: 14px; bottom: -2px; width: 2px; background: #43454A; }
+  .st:last-child::before { display: none; }
+  .st .d { width: 14px; height: 14px; border-radius: 50%; background: var(--ide-accent); margin-top: 2px; box-shadow: 0 0 0 3px #2B2D30; z-index: 1; }
+  .st .d.k { background: #9D75F8; }
+  .st .d.x { background: #2B2D30; border: 2px solid var(--warn); }
+  .st .t1 { line-height: 1.45; }
+  .st .t2 { font-size: 12px; color: var(--ide-text2); margin-top: 2px; }
+  .st .loc { font-size: 12px; color: var(--ide-link); font-family: "JetBrains Mono", monospace; padding-top: 2px; }
+  .pf { display: flex; gap: 18px; padding: 10px 16px 12px; border-top: 1px solid var(--ide-line); font-size: 12.5px; }
+</style></head>
+<body>
+<div class="head">
+  <div class="kicker"><span>Dependency X-ray</span></div>
+  <h1>Why <em style="font-style:normal;background:linear-gradient(90deg,#5EA1FE,#9D75F8);-webkit-background-clip:text;color:transparent">this</em> version?</h1>
+  <p>Alt+Enter on any dependency shows the decision chain – declaration, dependencyManagement, imported BOM, property, nearest wins.
+     <b>Every step jumps to its line in the POM</b>, and the answers sit right next to your code.</p>
+</div>
+
+<div class="ide">
+  <div class="titlebar"></div>
+  <div class="main">
+    <div class="stripe left"></div>
+    <div class="pane editor">
+      <div class="etabs">
+        <div class="etab"><i class="mfile">m</i>shop-platform</div>
+        <div class="etab on"><i class="mfile">m</i>order-service</div>
+        <div class="etab"><span style="color:#5EA1FE;font-weight:800;font-size:11px">C</span>OrderMapper.java</div>
+      </div>
+      <div class="code">
+<div class="ln"><span class="g">30</span>    <span class="t">&lt;dependencies&gt;</span></div>
+<div class="ln"><span class="g">31</span>        <span class="t">&lt;dependency&gt;</span></div>
+<div class="ln"><span class="g">32</span>            <span class="t">&lt;groupId&gt;</span>com.acme.shop<span class="t">&lt;/groupId&gt;</span></div>
+<div class="ln"><span class="g">33</span>            <span class="t">&lt;artifactId&gt;</span>commons<span class="t">&lt;/artifactId&gt;</span><span class="inlay">2.4.0-SNAPSHOT · shop-platform</span></div>
+<div class="ln"><span class="g">34</span>        <span class="t">&lt;/dependency&gt;</span></div>
+<div class="codevision" style="padding-left:96px"><u>3 modules · 2 versions</u></div>
+<div class="ln"><span class="g">35</span>        <span class="t">&lt;dependency&gt;</span></div>
+<div class="ln"><span class="g">36</span>            <span class="t">&lt;groupId&gt;</span>com.fasterxml.jackson.core<span class="t">&lt;/groupId&gt;</span></div>
+<div class="ln cur"><span class="g">37</span>            <span class="t">&lt;artifactId&gt;</span>jackson-<span style="border-left:2px solid #DFE1E5;margin-left:-1px"></span>databind<span class="t">&lt;/artifactId&gt;</span><span class="inlay" style="color:#B9BCC2">2.18.2 · jackson-bom</span></div>
+<div class="ln"><span class="g">38</span>        <span class="t">&lt;/dependency&gt;</span></div>
+<div class="ln"><span class="g">39</span>        <span class="t">&lt;dependency&gt;</span></div>
+<div class="ln"><span class="g">40</span>            <span class="t">&lt;groupId&gt;</span>org.springframework.kafka<span class="t">&lt;/groupId&gt;</span></div>
+<div class="ln"><span class="g">41</span>            <span class="t">&lt;artifactId&gt;</span>spring-kafka<span class="t">&lt;/artifactId&gt;</span></div>
+<div class="ln"><span class="g">42</span>            <span class="t">&lt;version&gt;</span>3.1.4<span class="t">&lt;/version&gt;</span></div>
+<div class="ln"><span class="g">43</span>        <span class="t">&lt;/dependency&gt;</span></div>
+<div class="ln"><span class="g">44</span>        <span class="t">&lt;dependency&gt;</span></div>
+<div class="ln"><span class="g">45</span>            <span class="t">&lt;groupId&gt;</span>org.slf4j<span class="t">&lt;/groupId&gt;</span></div>
+<div class="ln"><span class="g">46</span>            <span class="t">&lt;artifactId&gt;</span>slf4j-api<span class="t">&lt;/artifactId&gt;</span><span class="inlay">2.0.16 · spring-boot-dependencies</span></div>
+<div class="ln"><span class="g">47</span>        <span class="t">&lt;/dependency&gt;</span></div>
+<div class="ln"><span class="g">48</span>        <span class="t">&lt;dependency&gt;</span></div>
+<div class="ln"><span class="g">49</span>            <span class="t">&lt;groupId&gt;</span>org.apache.httpcomponents<span class="t">&lt;/groupId&gt;</span></div>
+<div class="ln"><span class="g">50</span>            <span class="t">&lt;artifactId&gt;</span>httpclient<span class="t">&lt;/artifactId&gt;</span></div>
+<div class="ln"><span class="g">51</span>            <span class="t">&lt;version&gt;</span>4.5.14<span class="t">&lt;/version&gt;</span></div>
+<div class="ln"><span class="g">52</span>        <span class="t">&lt;/dependency&gt;</span></div>
+<div class="ln"><span class="g">53</span>    <span class="t">&lt;/dependencies&gt;</span></div>
+      </div>
+      <!-- Gutter-Marker: verdrängte höhere Version (Zeile 39), doppelte Klassen (Zeile 48) -->
+      <svg class="gm" style="left:30px;top:257px" viewBox="0 0 14 14"><path d="M7 1.5 L13 12.5 H1z" fill="#E08855"/><path d="M7 5.5v3.4" stroke="#1E1F22" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="10.7" r=".9" fill="#1E1F22"/></svg>
+      <svg class="gm" style="left:30px;top:446px" viewBox="0 0 14 14"><rect x="1.5" y="3.5" width="7" height="9" rx="1.5" fill="none" stroke="#E08855" stroke-width="1.4"/><rect x="5.5" y="1.5" width="7" height="9" rx="1.5" fill="#2B2D30" stroke="#E08855" stroke-width="1.4"/></svg>
+
+      <div class="popup">
+        <div class="ph"><b>Why com.fasterxml.jackson.core:jackson-databind?</b><span class="badge info">2.18.2</span><span class="sec">order-service</span></div>
+        <div class="crumb"><span class="c">order-service</span> <span class="muted">›</span> jackson-databind 2.18.2</div>
+        <div class="sum">Version <b>2.18.2</b> comes from the imported BOM – the module’s dependencyManagement overrides the version spring-kafka would bring.</div>
+        <div class="tl">
+          <div class="st"><span class="d"></span><div><div class="t1">Declared without a version in order-service</div><div class="t2">the version comes from dependencyManagement</div></div><span class="loc">pom.xml:35</span></div>
+          <div class="st"><span class="d"></span><div><div class="t1">Imports BOM <span class="chip">jackson-bom</span> ${jackson.version} in shop-platform</div><div class="t2">BOM import inherited</div></div><span class="loc">pom.xml:57</span></div>
+          <div class="st"><span class="d k"></span><div><div class="t1"><span class="chip">jackson.version</span> = 2.18.2 set in shop-platform</div></div><span class="loc">pom.xml:21</span></div>
+          <div class="st"><span class="d x"></span><div><div class="t1"><span style="color:#F0A77C">Displaced:</span> 2.15.4 via spring-kafka 3.1.4</div><div class="t2">dependencyManagement sets the version</div></div><span class="badge warn">displaced</span></div>
+        </div>
+        <div class="pf"><span class="link">Open in Tool Window</span><span class="link">Simulate Upgrade…</span></div>
+      </div>
+    </div>
+    <div class="stripe right" data-on="1"></div>
+  </div>
+</div>
+<script src="common.js"></script>
+</body></html>

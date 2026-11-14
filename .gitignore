@@ -15,3 +15,6 @@ target/
 
 # Interne Planung (Konzept, UI-Plan) bleibt lokal
 Maven Detective – *.md
+
+# Gerenderte Marketplace-Bilder bleiben lokal (Quellen in docs/marketplace/src)
+docs/marketplace/*.png

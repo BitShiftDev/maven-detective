@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Upgrade Simulator</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .editor { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .res { padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .rh { display: flex; align-items: center; gap: 10px; }
+  .rh h2 { font-size: 16px; font-weight: 650; color: #F0F6FC; }
+  .rh .sp { flex: 1; }
+  .warnbar { background: var(--warn-bg); color: #F3C3A5; border-radius: 6px; padding: 7px 12px; font-size: 12.5px; display: flex; gap: 8px; align-items: center; }
+  .lbl { font-size: 12.5px; font-weight: 600; color: var(--ide-text2); }
+  .diff { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--ide-line); border-radius: 6px; overflow: hidden;
+    font-family: "JetBrains Mono", monospace; font-size: 12px; line-height: 20px; }
+  .diff > div { padding: 4px 0; white-space: pre; }
+  .diff > div + div { border-left: 1px solid var(--ide-line); }
+  .diff .h { font-family: Inter, sans-serif; font-size: 11.5px; color: var(--ide-text2); padding: 0 10px 4px; border-bottom: 1px solid var(--ide-line); margin-bottom: 4px; }
+  .diff .l { padding: 0 10px; color: var(--c-text); }
+  .diff .l.chg-old { background: rgba(219,92,92,.14); }
+  .diff .l.chg-new { background: rgba(95,184,101,.14); }
+  .diff .l .x { background: rgba(219,92,92,.35); border-radius: 2px; }
+  .diff .l .y { background: rgba(95,184,101,.35); border-radius: 2px; }
+  .mk { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; font-weight: 700; font-size: 12px; margin-right: 6px; }
+  .up { background: var(--ok-bg); color: #8FD694; }
+  .down { background: var(--err-bg); color: #F08C8C; }
+  .add { background: #25324D; color: #8CB1F8; }
+  .rm { background: #3A3D42; color: #C5C8CE; }
+  .risk { background: var(--warn-bg); color: #F0A77C; }
+  table.grid td.mono2 { font-family: "JetBrains Mono", monospace; font-size: 12px; }
+  table.grid tr.mod td { background: #25272B; font-weight: 600; font-size: 12.5px; }
+</style></head>
+<body>
+<div class="head">
+  <div class="kicker"><span>Upgrade simulator</span></div>
+  <h1>What happens if I raise Spring Boot to 3.4.1?</h1>
+  <p>See what goes up, down, appears or disappears in <b>every module’s tree before the POM changes</b> –
+     including new conflicts. Then apply exactly that change.</p>
+</div>
+
+<div class="ide">
+  <div class="titlebar"></div>
+  <div class="main">
+    <div class="stripe left"></div>
+    <div class="pane editor">
+      <div class="etabs">
+        <div class="etab"><i class="mfile">m</i>shop-platform</div>
+        <div class="etab on"><span style="color:#9D75F8">⇅</span>Upgrade Simulation</div>
+      </div>
+      <div class="res">
+        <div class="rh"><h2>Upgrade spring-boot-starter-parent 3.3.5 → 3.4.1</h2><span class="badge info">4 modules change</span>
+          <span class="sp"></span><span class="btn">Simulate Again</span><span class="btn primary">Apply</span></div>
+        <div class="warnbar">⚠ 1 new conflict, 1 downgraded version – check before applying.</div>
+        <div class="lbl">Change to the POMs (not applied yet)</div>
+        <div class="diff">
+          <div><div class="h">shop-platform/pom.xml · before</div><div class="l"><span class="t">&lt;parent&gt;</span></div><div class="l">    <span class="t">&lt;artifactId&gt;</span>spring-boot-starter-parent<span class="t">&lt;/artifactId&gt;</span></div><div class="l chg-old">    <span class="t">&lt;version&gt;</span><span class="x">3.3.5</span><span class="t">&lt;/version&gt;</span></div></div>
+          <div><div class="h">after</div><div class="l"><span class="t">&lt;parent&gt;</span></div><div class="l">    <span class="t">&lt;artifactId&gt;</span>spring-boot-starter-parent<span class="t">&lt;/artifactId&gt;</span></div><div class="l chg-new">    <span class="t">&lt;version&gt;</span><span class="y">3.4.1</span><span class="t">&lt;/version&gt;</span></div></div>
+        </div>
+        <div class="lbl">Difference in the dependency tree</div>
+        <table class="grid">
+          <tr><th>Module / artifact</th><th>before</th><th>after</th><th>via</th></tr>
+          <tr class="mod"><td colspan="4">order-service <span class="muted" style="font-weight:400">· 4 changes · 1 new conflict</span></td></tr>
+          <tr><td class="mono2"><span class="mk up">↑</span>spring-core</td><td class="mono2">6.1.14</td><td class="mono2">6.2.1</td><td class="sec">spring-boot-starter-web</td></tr>
+          <tr><td class="mono2"><span class="mk up">↑</span>jackson-databind</td><td class="mono2">2.17.2</td><td class="mono2">2.18.2</td><td class="sec">direct</td></tr>
+          <tr class="sel"><td class="mono2"><span class="mk risk">!</span>kafka-clients</td><td class="mono2">3.7.1</td><td class="mono2">3.8.1</td><td class="sec">requires 3.9.0, 3.8.1 wins (via spring-kafka)</td></tr>
+          <tr><td class="mono2"><span class="mk add">+</span>micrometer-jakarta9</td><td class="mono2 muted">–</td><td class="mono2">1.14.2</td><td class="sec">spring-boot-starter-actuator</td></tr>
+          <tr class="mod"><td colspan="4">billing <span class="muted" style="font-weight:400">· 2 changes</span></td></tr>
+          <tr><td class="mono2"><span class="mk down">↓</span>flyway-core</td><td class="mono2">10.20.1</td><td class="mono2">10.10.0</td><td class="sec">managed by spring-boot-dependencies</td></tr>
+          <tr><td class="mono2"><span class="mk rm">−</span>javax.annotation-api</td><td class="mono2">1.3.2</td><td class="mono2 muted">–</td><td class="sec">springdoc-openapi</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="stripe right" data-on="1"></div>
+  </div>
+</div>
+<script src="common.js"></script>
+</body></html>
