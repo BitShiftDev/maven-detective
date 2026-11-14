@@ -4,8 +4,8 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 > **English:** Maven Detective explains why a Maven build fails – in plain language, with evidence, confidence and a quick fix.
-> It ships as an IntelliJ IDEA plugin (2025.3+), a Maven core extension that prints the diagnosis into the Maven log,
-> and a command line tool; on top it answers dependency questions (why this version, conflicts across modules,
+> It ships as an IntelliJ IDEA plugin (2025.3+), a Maven core extension that prints the diagnosis into the Maven log
+> (`io.github.bitshiftdev.mavendetective:maven-detective-extension` via `.mvn/extensions.xml`), and a command line tool; on top it answers dependency questions (why this version, conflicts across modules,
 > duplicate classes, stale exclusions, unused/undeclared dependencies, upgrade simulation). User interface and
 > diagnoses are available in English and German; this README and the code comments are in German.
 > See [Installation](#installation) and the [changelog](CHANGELOG.md). Issues and pull requests in English are welcome.
@@ -48,8 +48,10 @@ IntelliJ-Plugin, das erklärt, warum ein Maven-Build scheitert – in Klartext, 
 ## Installation
 
 - **IntelliJ-Plugin:** *Settings | Plugins | Marketplace* → „Maven Detective“ (IntelliJ IDEA 2025.3 oder neuer). Ohne Marketplace: `maven-detective-<version>.zip` aus den [Releases](https://github.com/BitShiftDev/maven-detective/releases) laden und über *Install Plugin from Disk…* einspielen.
-- **Kommandozeile:** `maven-detective-cli-<version>.jar` aus den Releases, läuft ab Java 8: `java -jar maven-detective-cli-<version>.jar diagnose build.log`.
-- **Maven-Extension:** `maven-detective-extension-<version>.jar` aus den Releases, dann `mvn -Dmaven.ext.class.path=/pfad/maven-detective-extension-<version>.jar verify` (Maven 3.9, Java 8 oder neuer). Dauerhaft für alle Läufe: JAR nach `$MAVEN_HOME/lib/ext/` legen. Über `.mvn/extensions.xml` geht es erst, wenn die Extension in Maven Central liegt (noch offen).
+- **Kommandozeile:** `maven-detective-cli-<version>.jar` aus den Releases, läuft ab Java 8: `java -jar maven-detective-cli-<version>.jar diagnose build.log`. Dasselbe JAR liegt in Maven Central als `io.github.bitshiftdev.mavendetective:maven-detective-core` (auch als Bibliothek nutzbar, ohne Abhängigkeiten).
+- **Maven-Extension:** am einfachsten aus Maven Central über `.mvn/extensions.xml` im Projekt (Maven 3.9, Java 8 oder neuer) – siehe [Extension in Maven-Läufen](#extension-in-maven-läufen). Ohne Projektänderung: `maven-detective-extension-<version>.jar` aus den Releases, dann `mvn -Dmaven.ext.class.path=/pfad/maven-detective-extension-<version>.jar verify`; dauerhaft für alle Läufe: JAR nach `$MAVEN_HOME/lib/ext/` legen.
+
+Die Veröffentlichung nach Maven Central ist vorbereitet (`./gradlew centralBundle`, Ablauf in [RELEASING.md](RELEASING.md)). Bis die erste Version dort liegt, gilt der Weg über die GitHub-Releases.
 
 Prüfsummen stehen in `SHA256SUMS` am Release. Was sich je Version geändert hat: [CHANGELOG.md](CHANGELOG.md).
 
@@ -115,7 +117,19 @@ mvn -Dmaven.ext.class.path=/pfad/maven-detective-extension.jar verify
 mvn -Dmaven.ext.class.path=… -DmavenDetective.eventsFile=target/md-events.jsonl verify
 ```
 
-Für CI über `.mvn/extensions.xml` muss die Extension erst in ein Repository veröffentlicht werden (noch offen); bis dahin das JAR aus dem Release per `-Dmaven.ext.class.path` oder `$MAVEN_HOME/lib/ext/` einbinden. `-DmavenDetective.report=false` schaltet die Karte ab.
+Für CI und alle im Team: `.mvn/extensions.xml` im Projekt anlegen, Maven lädt die Extension dann aus Maven Central:
+
+```xml
+<extensions>
+  <extension>
+    <groupId>io.github.bitshiftdev.mavendetective</groupId>
+    <artifactId>maven-detective-extension</artifactId>
+    <version>VERSION</version>
+  </extension>
+</extensions>
+```
+
+Das JAR bringt den Kern mit und hat keine Abhängigkeiten; dasselbe JAR funktioniert per `-Dmaven.ext.class.path` und in `$MAVEN_HOME/lib/ext/`. `fixtureTest` prüft den Weg über `extensions.xml` mit einem lokalen Repository. `-DmavenDetective.report=false` schaltet die Karte ab.
 
 **Sprache:** Karte, Kommandozeile und Berichte gibt es auf Englisch und Deutsch. Gewählt wird `-DmavenDetective.language=en|de` (in der Kommandozeile auch `--lang en|de`), sonst die Umgebungsvariable `MAVEN_DETECTIVE_LANGUAGE`, sonst die Sprache des Systems (Deutsch nur bei `de`, sonst Englisch). Im Plugin gilt die Einstellung *Sprache*. Texte stehen in `core/…/texts.properties` (Englisch) und `texts_de.properties`. Die Extension ändert nie etwas am Build; jeder interne Fehler wird geschluckt.
 
@@ -427,7 +441,7 @@ So entsteht eine Diagnose: Fehlerzeilen sammeln (Events oder Log) → jede Regel
 - **Gate 2:** `./gradlew :intellij-plugin:verifyPlugin` gegen die letzten drei IDE-Versionen (lädt die IDEs herunter; läuft in CI).
 - Preflight und Log-Navigator in `runIde` abnehmen: Preflight aus der Toolbar des Maven-Tool-Windows (Ampel, Kachel in der Übersicht), „Repositories prüfen“ hinter einem Firmen-Proxy (Zertifikat, 401 mit/ohne `<server>`), Quick-Fixes (settings.xml öffnen, https umstellen, `.lastUpdated` löschen – ohne Neubau danach); „Log öffnen“ auf der Karte eines Multi-Modul-Laufs (Gliederung, Sprünge, Fehlermarken im Scrollbalken, Downloads ein-/ausklappen), Download-Faltung in Konsole **und** Build-Fenster prüfen (greift `console.folding` im Build-Fenster von Maven-Läufen?).
 - Preflight erweitern: Repositories aus aktiven Profilen der settings.xml, Zugangsdaten auf Wunsch prüfen (verschlüsselte Passwörter über `settings-security.xml`), Wrapper-Distribution erreichbar; Ergebnis als Beleg auf der Karte, wenn ein Lauf an etwas scheitert, das der Preflight schon gemeldet hätte.
-- Extension veröffentlichen, damit `.mvn/extensions.xml` in CI funktioniert.
+- Ersten Release nach Maven Central schicken (Namespace `io.github.bitshiftdev` verifizieren, Secrets anlegen – RELEASING.md); danach den Hinweis „Bis die erste Version dort liegt …“ unter Installation entfernen und `VERSION` im `extensions.xml`-Beispiel durch die echte Version ersetzen.
 - A6 in `runIde` an einem Spring-Boot-Projekt durchklicken: Parent 3.4 → 3.5 simulieren, fehlende POMs laden, Unterschied prüfen, übernehmen, nach dem Import erneut simulieren (kein Unterschied mehr).
 - A6 schärfen: Simulation gegen `mvn dependency:tree -Dverbose` an echten Projekten vergleichen (Abweichungen zeigt der Simulator schon an); Upgrade-Kandidaten aus den Repository-Metadaten vorschlagen (nur auf Klick, Netz); Simulator als Beleg auf der Build-Doctor-Karte („nach dem Upgrade von X kam Y 2.0 → 1.4“).
 - A1 in `runIde` an einem Spring-Boot-Projekt durchklicken (Abnahme laut Konzept: Herkunft jeder Dependency korrekt).

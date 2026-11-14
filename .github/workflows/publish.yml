@@ -1,9 +1,11 @@
 name: publish
 
-# Lädt das IntelliJ-Plugin auf den JetBrains Marketplace, sobald ein Release auf GitHub
-# veröffentlicht wird (Entwurf aus release.yml → „Publish release“). Vorabversionen gehen in den
-# Kanal "eap". Von Hand nachholen: Actions → publish → Run workflow mit dem Tag.
-# Die allererste Version muss einmal von Hand auf plugins.jetbrains.com hochgeladen werden (RELEASING.md).
+# Sobald ein Release auf GitHub veröffentlicht wird (Entwurf aus release.yml → „Publish release“):
+# - IntelliJ-Plugin auf den JetBrains Marketplace (Vorabversionen in den Kanal "eap"),
+# - Kern/CLI und Maven-Extension nach Maven Central (Central Portal).
+# Von Hand nachholen: Actions → publish → Run workflow mit Tag und Ziel.
+# Die allererste Plugin-Version muss einmal von Hand auf plugins.jetbrains.com hochgeladen werden,
+# für Maven Central muss der Namespace verifiziert sein (RELEASING.md).
 on:
   release:
     types: [published]
@@ -16,12 +18,19 @@ on:
         description: 'Marketplace-Kanal'
         required: true
         default: default
+      target:
+        description: 'Wohin veröffentlichen'
+        required: true
+        default: both
+        type: choice
+        options: [both, marketplace, maven-central]
 
 permissions:
   contents: read
 
 jobs:
   marketplace:
+    if: github.event_name == 'release' || inputs.target != 'maven-central'
     runs-on: ubuntu-latest
     # Umgebung erlaubt Freigabe-Regeln und hält die Marketplace-Secrets getrennt (Settings → Environments)
     environment: marketplace
@@ -55,3 +64,54 @@ jobs:
           cache-disabled: true
       - name: Auf den Marketplace hochladen (Kanal ${{ env.CHANNEL }})
         run: ./gradlew :intellij-plugin:publishPlugin "-PpublishChannel=$CHANNEL"
+
+  maven-central:
+    if: github.event_name == 'release' || inputs.target != 'marketplace'
+    runs-on: ubuntu-latest
+    # Eigene Umgebung: Signierschlüssel und Portal-Token getrennt von den Marketplace-Secrets
+    environment: maven-central
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      ORG_GRADLE_PROJECT_signingKey: ${{ secrets.MAVEN_SIGNING_KEY }}
+      ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
+      CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+      CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+      # USER_MANAGED: im Portal per „Publish“ freigeben; AUTOMATIC: sofort (Variable in der Umgebung setzen)
+      CENTRAL_PUBLISHING_TYPE: ${{ vars.CENTRAL_PUBLISHING_TYPE || 'USER_MANAGED' }}
+    steps:
+      - name: Secrets vorhanden
+        run: |
+          missing=()
+          for name in ORG_GRADLE_PROJECT_signingKey ORG_GRADLE_PROJECT_signingPassword CENTRAL_USERNAME CENTRAL_PASSWORD; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          # Noch gar nicht eingerichtet → überspringen statt das Release rot zu färben; halb eingerichtet → Fehler
+          if [ ${#missing[@]} -eq 4 ]; then
+            echo "::warning::Maven Central ist nicht eingerichtet (Umgebung maven-central ohne Secrets) – übersprungen. Siehe RELEASING.md"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          elif [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Secrets fehlen: ${missing[*]} (siehe RELEASING.md, Abschnitt Maven Central)"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        if: env.SKIP != 'true'
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-java@v4
+        if: env.SKIP != 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        if: env.SKIP != 'true'
+        with:
+          gradle-home-cache-strict-match: true
+      - name: Signiertes Bundle bauen
+        if: env.SKIP != 'true'
+        run: |
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          ./gradlew centralBundle
+      - name: Ins Central Portal hochladen (${{ env.CENTRAL_PUBLISHING_TYPE }})
+        if: env.SKIP != 'true'
+        run: bash .github/scripts/central-upload.sh "build/central-bundle-$VERSION.zip"

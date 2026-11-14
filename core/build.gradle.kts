@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+    `maven-publish`
 }
 
 repositories {
@@ -40,5 +41,38 @@ tasks.jar {
             "Implementation-Title" to "Maven Detective Core",
             "Implementation-Version" to project.version,
         )
+    }
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.javadoc {
+    options.encoding = "UTF-8"
+    (options as StandardJavadocDocletOptions).apply {
+        charSet("UTF-8")
+        docEncoding("UTF-8")
+        // Javadoc ist intern (deutsch, nicht vollständig); fehlende Tags sollen den Release nicht stoppen
+        addStringOption("Xdoclint:none", "-quiet")
+    }
+}
+
+// Maven Central: io.github.bitshiftdev.mavendetective:maven-detective-core – Bibliothek und
+// Kommandozeile (java -jar), keine Abhängigkeiten. POM-Angaben und Signatur: build.gradle.kts im Wurzelverzeichnis.
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            artifactId = "maven-detective-core"
+            from(components["java"])
+            pom {
+                name.set("Maven Detective Core")
+                description.set(
+                    "Explains why a Maven build fails: log parser, rule catalog, checks and dependency analysis " +
+                        "shared by the Maven Detective extension, CLI and IntelliJ plugin. Runnable as CLI (java -jar)."
+                )
+            }
+        }
     }
 }

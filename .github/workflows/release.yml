@@ -47,6 +47,11 @@ jobs:
       - name: Bauen
         run: ./gradlew :core:jar :maven-extension:jar :intellij-plugin:buildPlugin
 
+      # Unsigniert ins Staging-Verzeichnis: Javadoc, Quellen und POMs für Maven Central müssen bauen,
+      # bevor der Entwurf entsteht (signiert und hochgeladen wird erst in publish.yml)
+      - name: Maven-Central-Artefakte probehalber bauen
+        run: ./gradlew :core:publishAllPublicationsToCentralStagingRepository :maven-extension:publishAllPublicationsToCentralStagingRepository
+
       - name: Plugin signieren
         if: env.CERTIFICATE_CHAIN != ''
         run: ./gradlew :intellij-plugin:signPlugin

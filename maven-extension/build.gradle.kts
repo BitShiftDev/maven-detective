@@ -1,5 +1,6 @@
 plugins {
     java
+    `maven-publish`
 }
 
 repositories {
@@ -35,12 +36,79 @@ tasks.jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
+java {
+    withJavadocJar()
+}
+
+tasks.javadoc {
+    options.encoding = "UTF-8"
+    (options as StandardJavadocDocletOptions).apply {
+        charSet("UTF-8")
+        docEncoding("UTF-8")
+        addStringOption("Xdoclint:none", "-quiet")
+    }
+}
+
+// Quellen passend zum JAR: Extension samt eingebettetem Kern
+val sourcesJar by tasks.registering(Jar::class) {
+    archiveBaseName.set("maven-detective-extension")
+    archiveClassifier.set("sources")
+    from(sourceSets.main.get().allSource)
+    from(project(":core").layout.projectDirectory.dir("src/main/java"))
+    from(project(":core").layout.projectDirectory.dir("src/main/resources"))
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named<Jar>("javadocJar") {
+    archiveBaseName.set("maven-detective-extension")
+}
+
+// Maven Central: io.github.bitshiftdev.mavendetective:maven-detective-extension. Bewusst ohne
+// components["java"]: Der Kern steckt im JAR, die POM darf ihn nicht noch einmal als Abhängigkeit
+// nennen (Maven lüde ihn sonst doppelt in den Extension-Realm). So bleibt die POM ohne Abhängigkeiten
+// und dasselbe JAR taugt für .mvn/extensions.xml und -Dmaven.ext.class.path.
+publishing {
+    repositories {
+        // Für fixtureTest: Extension so ablegen, wie Maven sie aus Central lädt
+        maven {
+            name = "fixture"
+            url = uri(layout.buildDirectory.dir("fixture-repo"))
+        }
+    }
+    publications {
+        create<MavenPublication>("maven") {
+            artifactId = "maven-detective-extension"
+            artifact(tasks.jar)
+            artifact(sourcesJar)
+            artifact(tasks.named("javadocJar"))
+            pom {
+                name.set("Maven Detective Extension")
+                description.set(
+                    "Maven core extension that explains why a build failed: prints a diagnosis card " +
+                        "(cause, evidence, quick fix) at the end of the Maven log. Never changes the build."
+                )
+            }
+        }
+    }
+}
+
+// Alte Versionen raus, sonst prüft fixtureTest womöglich nicht den aktuellen Stand
+tasks.named("publishMavenPublicationToFixtureRepository") {
+    val fixtureRepo = layout.buildDirectory.dir("fixture-repo")
+    doFirst { delete(fixtureRepo) }
+}
+
 // Führt alle Beispielprojekte unter fixtures/ mit einem echten Maven und der Extension aus
 // und prüft, ob Build Doctor jeweils die erwartete Regel liefert. Braucht `mvn` im PATH.
 tasks.register<Exec>("fixtureTest") {
     group = "verification"
     description = "Löst jeden Fehler aus fixtures/ absichtlich aus und prüft die Diagnose."
-    dependsOn(tasks.jar)
+    val fixtureRepo = layout.buildDirectory.dir("fixture-repo")
+    dependsOn(tasks.jar, "publishMavenPublicationToFixtureRepository")
     workingDir = rootProject.projectDir
-    commandLine("bash", "fixtures/run-fixtures.sh", tasks.jar.get().archiveFile.get().asFile.absolutePath)
+    commandLine(
+        "bash", "fixtures/run-fixtures.sh",
+        tasks.jar.get().archiveFile.get().asFile.absolutePath,
+        fixtureRepo.get().asFile.absolutePath,
+    )
 }

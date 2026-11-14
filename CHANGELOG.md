@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Distribution
+
+- Core/CLI and the Maven extension are published to Maven Central as `io.github.bitshiftdev.mavendetective:maven-detective-core` and `io.github.bitshiftdev.mavendetective:maven-detective-extension`. The extension can now be added to a project via `.mvn/extensions.xml`.
+
 ## [0.1.0] - 2026-11-13
 
 First public release: IntelliJ plugin, Maven core extension and command line share one analysis core.

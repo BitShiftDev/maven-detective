@@ -3,7 +3,11 @@
 # (strukturierte Events) und einmal nur über das Text-Log (Fallback-Parser) – und prüft,
 # ob Build Doctor beide Male die erwartete Regel liefert.
 #
-#   bash fixtures/run-fixtures.sh /pfad/maven-detective-extension.jar
+#   bash fixtures/run-fixtures.sh /pfad/maven-detective-extension.jar [/pfad/maven-repo]
+#
+# Mit zweitem Argument (Verzeichnis im Maven-Layout mit der veröffentlichten Extension, wie es
+# `./gradlew :maven-extension:fixtureTest` anlegt) läuft zusätzlich eine Fixture über
+# .mvn/extensions.xml – so wie Nutzer die Extension aus Maven Central einbinden.
 #
 # Voraussetzungen: mvn im PATH, Java 8+. Jede Fixture bekommt ein eigenes, leeres lokales Repository.
 set -uo pipefail
@@ -13,6 +17,7 @@ export MAVEN_DETECTIVE_LANGUAGE=de
 
 EXT_JAR="${1:?Pfad zum Extension-JAR angeben}"
 EXT_JAR="$(cd "$(dirname "$EXT_JAR")" && pwd)/$(basename "$EXT_JAR")"
+EXT_REPO="${2:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/md-fixtures.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
@@ -58,6 +63,54 @@ if [[ $green_exit -eq 0 ]] && grep -q "Seit dem letzten grünen Build" "$work/re
 else
   fail=$((fail + 1)); printf '  ✗ %-28s Karte nennt die Änderung nicht (grün: exit %s)\n' "$dir" "$green_exit"
   grep -A10 "Maven Detective" "$work/red.log" | sed 's/^/      /'
+fi
+
+# Einbindung über .mvn/extensions.xml: Maven lädt Extension und POM aus einem Remote-Repository
+# (hier file://, per settings.xml statt Central) – genau der Weg, den Nutzer mit Maven Central gehen
+if [[ -n "$EXT_REPO" ]]; then
+  dir=06-unknown-plugin-prefix
+  rule=plugin-missing
+  work="$WORK/extensions-xml"
+  EXT_REPO="$(cd "$EXT_REPO" && pwd)"
+  ext_dir="$EXT_REPO/io/github/bitshiftdev/mavendetective/maven-detective-extension"
+  version="$(ls "$ext_dir" 2>/dev/null | grep -v '^maven-metadata' | sort -V | tail -1)"
+  mkdir -p "$work/project/.mvn" "$work/repo"
+  cp "$HERE/$dir/pom.xml" "$work/project/pom.xml"
+  cat > "$work/project/.mvn/extensions.xml" <<XML
+<extensions>
+  <extension>
+    <groupId>io.github.bitshiftdev.mavendetective</groupId>
+    <artifactId>maven-detective-extension</artifactId>
+    <version>$version</version>
+  </extension>
+</extensions>
+XML
+  cat > "$work/settings.xml" <<XML
+<settings>
+  <mirrors>
+    <mirror><id>no-central</id><mirrorOf>central</mirrorOf><url>file://$EXT_REPO</url></mirror>
+  </mirrors>
+  <profiles>
+    <profile>
+      <id>fixture</id>
+      <repositories>
+        <repository><id>fixture</id><url>file://$EXT_REPO</url><snapshots><enabled>true</enabled></snapshots></repository>
+      </repositories>
+    </profile>
+  </profiles>
+  <activeProfiles><activeProfile>fixture</activeProfile></activeProfiles>
+</settings>
+XML
+  (cd "$work/project" && mvn -B -s "$work/settings.xml" -Dmaven.repo.local="$work/repo" \
+      -DmavenDetective.eventsFile="$work/events.jsonl" -DmavenDetective.home="$work/home" nosuchprefix:goal \
+      > "$work/build.log" 2>&1)
+  from_events="$(java -cp "$EXT_JAR" io.github.bitshiftdev.mavendetective.core.cli.Main diagnose "$work/events.jsonl" --id 2>/dev/null)"
+  if [[ -n "$version" && "$from_events" == "$rule" ]] && grep -q "Maven Detective .* Build Doctor" "$work/build.log"; then
+    pass=$((pass + 1)); printf '  ✓ %-28s %s (Extension %s)\n' "extensions.xml" "$rule" "$version"
+  else
+    fail=$((fail + 1)); printf '  ✗ %-28s Version: %s | Events: %s\n' "extensions.xml" "${version:-keine}" "$from_events"
+    sed -n '1,40p' "$work/build.log" | sed 's/^/      /'
+  fi
 fi
 
 echo "$pass bestanden, $fail fehlgeschlagen"
