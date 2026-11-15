@@ -1,23 +1,26 @@
 # Bilder für den JetBrains Marketplace
 
-Sechs Screenshots für den Bereich *Media* der Plugin-Seite, 2560 × 1600 px (16:10, doppelte Pixeldichte;
-JetBrains empfiehlt mindestens 1200 × 760 und einheitliche Seitenverhältnisse). Reihenfolge beim Hochladen = Dateiname.
+Acht Bilder für den Bereich *Media* der Plugin-Seite, 2560 × 1600 px (16:10, doppelte Pixeldichte; JetBrains empfiehlt
+mindestens 1200 × 760 und einheitliche Seitenverhältnisse). Jedes Bild = Überschrift + Ausschnitt eines **echten Screenshots**
+aus dem Demo-Projekt [`demo/`](demo/README.md). Reihenfolge beim Hochladen = Dateiname.
 
-| Datei | Zeigt |
-| --- | --- |
-| `01-build-doctor.png` | Diagnose-Karte neben der Run-Konsole: Ursache, Quick-Fix, Belege, „Seit dem letzten grünen Build“ |
-| `02-why-this-version.png` | `pom.xml` mit Inlays, Code Vision, Gutter-Markern und dem Popup „Why This Version?“ |
-| `03-conflict-matrix.png` | Konflikt-Matrix Artefakt × Modul mit Pin-Vorschlag im gemeinsamen Parent |
-| `04-upgrade-simulator.png` | Editor-Reiter „Upgrade Simulation“: POM-Diff und Baum-Unterschied je Modul |
-| `05-preflight.png` | Preflight-Ampel mit Befunden und Fixes |
-| `06-duplicate-classes.png` | Doppelte Klassen mit Classpath-Reihenfolge und Exclusion-Empfehlung |
+| Folie (`src/`) | Screenshot (`shots/`) | Zeigt |
+| --- | --- | --- |
+| `01-build-doctor.html` | `build-doctor.webp` | Diagnose-Karte *#10 Runtime conflict in tests · certain* |
+| `02-why-this-version.html` | `why.webp` | Seite „Why This Version?“: Abhängigkeiten eines Moduls und Entscheidungskette |
+| `03-conflicts.html` | `conflicts.webp` | Konflikt-Matrix mit Pin-Vorschlag, darüber Inlays im `pom.xml` |
+| `04-upgrade-simulator.html` | `upgrade.webp` | Editor-Reiter „Upgrade Simulation“: POM-Diff und Baum-Unterschied |
+| `05-duplicate-classes.html` | `duplicates.webp` | Doppelte Klassen mit Classpath-Reihenfolge und „Add exclusion“ |
+| `06-usage.html` | `usage.webp` | Undeklariert/ungenutzt, darunter die Diff-Vorschau „Clean up dependencies“ |
+| `07-preflight.html` | `preflight.webp` | Preflight rot (`http://`-Repository) mit Fix „Switch the URL to https“ |
+| `08-overview.html` | `overview.webp` | Übersicht mit Kacheln |
 
-Die Bilder sind **nachgebaute Oberflächen** (HTML in `src/`, Texte aus `MavenDetectiveBundle.properties` und echten
-Kern-Diagnosen, IDE im Standard-Theme Dark), keine Bildschirmfotos aus `runIde`. Sobald das Plugin in der IDE durchgeklickt
-ist, sollten echte Screenshots sie ersetzen oder ergänzen – der Marketplace verlangt, dass Bilder das Plugin nicht falsch darstellen.
-Für echte Aufnahmen gibt es das Demo-Projekt [`demo/`](demo/README.md) mit einer Klick-Anleitung je Bild.
+**Lokal, nicht im Git:** die Screenshots in `shots/` und die gerenderten `*.png` (siehe `.gitignore`). Im Repository liegen nur
+die Rahmen (`src/`), `render.sh` und das Demo-Projekt.
 
-Neu erzeugen (braucht Chromium oder Chrome):
+Ausschnitt ändern: `data-crop="x,y,breite,höhe"` am `.shot` der Folie, in Pixeln des Screenshots. Das Bild wird so groß wie
+möglich eingepasst; mehrere `.shot` in einer `.fit` stehen im selben Maßstab nebeneinander, mit `.fit.col` untereinander. Neuer Screenshot mit gleichem Fensteraufbau → nur die Datei in `shots/` ersetzen und neu rendern
+(braucht Chromium oder Chrome):
 
 ```bash
 docs/marketplace/render.sh
