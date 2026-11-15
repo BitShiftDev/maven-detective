@@ -41,7 +41,17 @@ public final class BuildSnapshot {
     private String javaHome;
     private Boolean offline;
     private String userSettings;
+    /** Ausdrücklich aktivierte Profile des Laufs ({@code -P}); abgeschaltete mit {@code !} davor. */
     private final List<String> activeProfiles = new ArrayList<String>();
+    /**
+     * {@code -D}-Properties des Laufs; {@code null} = nicht erfasst (Extension, ältere Schnappschüsse).
+     */
+    private Map<String, String> runProperties;
+    /**
+     * Profile, mit denen das Maven-Modell der Module entstand, wenn es nicht aus dem Lauf selbst stammt (IDE: aus
+     * dem Import, der {@code -P}/{@code -D} einer Run-Konfiguration nicht kennt); {@code null} = Modell aus dem Lauf.
+     */
+    private List<String> importProfiles;
     /** Mirror-ID → URL (mirrorOf steckt im Wert, falls bekannt: "url (mirrorOf)"). */
     private final Map<String, String> mirrors = new TreeMap<String, String>();
     /** groupId:artifactId → Modul. */
@@ -67,6 +77,11 @@ public final class BuildSnapshot {
         private final Set<String> resolvedScopes = new TreeSet<String>();
         /** groupId:artifactId[:classifier] → Scope, soweit bekannt. */
         private final Map<String, String> dependencyScopes = new TreeMap<String, String>();
+        /**
+         * Direkt deklarierte Versionen unter den Profilen und {@code -D} des Laufs ({@link DeclaredVersions}); nur
+         * die IDE füllt sie, weil ihre {@link #getDependencies()} aus dem Import stammen. Leer = nicht erfasst.
+         */
+        private final Map<String, String> declaredDependencies = new TreeMap<String, String>();
 
         public String getVersion() { return version; }
         public Module setVersion(String version) { this.version = version; return this; }
@@ -89,6 +104,8 @@ public final class BuildSnapshot {
         public Set<String> getResolvedScopes() { return resolvedScopes; }
 
         public Map<String, String> getDependencyScopes() { return dependencyScopes; }
+
+        public Map<String, String> getDeclaredDependencies() { return declaredDependencies; }
 
         /**
          * Hat dieser Lauf Dependencies dieses Scopes gesehen? Ohne Auflösung stehen die direkten Dependencies aller
@@ -170,6 +187,21 @@ public final class BuildSnapshot {
 
     public List<String> getActiveProfiles() { return activeProfiles; }
 
+    public Map<String, String> getRunProperties() { return runProperties; }
+    public BuildSnapshot setRunProperties(Map<String, String> p) {
+        this.runProperties = p == null ? null : new TreeMap<String, String>(p);
+        return this;
+    }
+
+    public List<String> getImportProfiles() { return importProfiles; }
+    public BuildSnapshot setImportProfiles(List<String> p) {
+        this.importProfiles = p == null ? null : new ArrayList<String>(p);
+        return this;
+    }
+
+    /** Stammt das Modell der Module aus einem Import statt aus dem Lauf selbst (IDE)? */
+    public boolean isModelFromImport() { return importProfiles != null; }
+
     public Map<String, String> getMirrors() { return mirrors; }
 
     public Map<String, Module> getModules() { return modules; }
@@ -200,6 +232,14 @@ public final class BuildSnapshot {
         List<String> profiles = new ArrayList<String>(activeProfiles);
         Collections.sort(profiles);
         root.put("profiles", profiles);
+        if (runProperties != null) {
+            root.put("runProperties", new LinkedHashMap<String, Object>(runProperties));
+        }
+        if (importProfiles != null) {
+            List<String> imported = new ArrayList<String>(importProfiles);
+            Collections.sort(imported);
+            root.put("importProfiles", imported);
+        }
         root.put("mirrors", new LinkedHashMap<String, Object>(mirrors));
         Map<String, Object> mods = new LinkedHashMap<String, Object>();
         for (Map.Entry<String, Module> e : modules.entrySet()) {
@@ -217,6 +257,9 @@ public final class BuildSnapshot {
             }
             if (!m.dependencyScopes.isEmpty()) {
                 mo.put("dependencyScopes", new LinkedHashMap<String, Object>(m.dependencyScopes));
+            }
+            if (!m.declaredDependencies.isEmpty()) {
+                mo.put("declaredDependencies", new LinkedHashMap<String, Object>(m.declaredDependencies));
             }
             mods.put(e.getKey(), mo);
         }
@@ -243,6 +286,16 @@ public final class BuildSnapshot {
             }
         }
         copy(root.get("mirrors"), s.mirrors);
+        if (root.get("runProperties") instanceof Map) {
+            s.runProperties = new TreeMap<String, String>();
+            copy(root.get("runProperties"), s.runProperties);
+        }
+        if (root.get("importProfiles") instanceof List) {
+            s.importProfiles = new ArrayList<String>();
+            for (Object o : (List<?>) root.get("importProfiles")) {
+                s.importProfiles.add(String.valueOf(o));
+            }
+        }
         if (root.get("modules") instanceof Map) {
             for (Map.Entry<?, ?> e : ((Map<?, ?>) root.get("modules")).entrySet()) {
                 if (!(e.getValue() instanceof Map)) {
@@ -258,6 +311,7 @@ public final class BuildSnapshot {
                 copy(mo.get("plugins"), m.plugins);
                 copy(mo.get("dependencies"), m.dependencies);
                 copy(mo.get("dependencyScopes"), m.dependencyScopes);
+                copy(mo.get("declaredDependencies"), m.declaredDependencies);
                 if (mo.get("resolvedScopes") instanceof List) {
                     for (Object o : (List<?>) mo.get("resolvedScopes")) {
                         m.resolvedScopes.add(String.valueOf(o));

@@ -108,6 +108,12 @@ Fix: Pin org.x:util:2.0 in app under dependencyManagement
 Snapshots live in `~/.maven-detective/snapshots/`, never in your working tree, and record Maven and JDK version,
 profiles, mirrors, parents, plugins, version properties and dependencies per module.
 
+In IntelliJ the modules come from the IDE's Maven import, which knows nothing about the `-P`/`-D` of a run
+configuration. The IDE therefore reads profiles and `-D` from the run (profile list, goals such as `verify -Pgreen`,
+command-line options, runner properties) and records which versions the POMs declare directly under those profiles.
+If green and red run used different arguments, the card names them and the changed direct versions, and says that
+transitive effects could not be compared – it never claims "no change" in that case.
+
 ### More help around the build
 
 - **IDE vs. command line** – *"works in the terminal, fails in IntelliJ"*: a side-by-side table of Maven installation, JDK, `settings.xml`, profiles, VM options and `.mvn/` configuration, with every difference explained.

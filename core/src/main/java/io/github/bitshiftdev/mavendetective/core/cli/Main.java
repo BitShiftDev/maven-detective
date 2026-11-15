@@ -259,10 +259,13 @@ public final class Main {
         SnapshotDiff diff = SnapshotDiff.compare(green, latest);
         out.println(Texts.t("cli.changes.headline", diff.headline(), latest.getCreatedAt()));
         if (diff.isEmpty()) {
-            out.println("  " + Texts.t("cli.changes.none"));
+            out.println("  " + Texts.t(diff.limitationText() == null ? "cli.changes.none" : "cli.changes.not.comparable"));
         }
         for (String line : diff.lines(Integer.MAX_VALUE)) {
             out.println("  - " + line);
+        }
+        if (diff.limitationText() != null) {
+            out.println("  " + diff.limitationText());
         }
         return 0;
     }

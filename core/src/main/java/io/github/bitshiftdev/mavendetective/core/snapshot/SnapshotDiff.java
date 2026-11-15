@@ -20,14 +20,30 @@ import java.util.TreeSet;
  */
 public final class SnapshotDiff {
 
+    /**
+     * Warum der Vergleich nicht alles sieht. Die IDE liest das Modell der Module aus ihrem Maven-Import, nicht
+     * aus dem Lauf; weichen die {@code -P}/{@code -D} des Laufs davon ab, fehlt deren Wirkung auf transitive
+     * Dependencies, Plugins und Properties.
+     */
+    public enum Limitation {
+        /** Alles verglichen, was beide messen. */
+        NONE,
+        /** Grüner und roter Lauf hatten verschiedene Profile oder {@code -D}-Properties. */
+        RUN_ARGUMENTS,
+        /** Gleiche Argumente, aber andere Profile als der Import der IDE. */
+        IMPORT_PROFILES
+    }
+
     private final BuildSnapshot green;
     private final BuildSnapshot current;
     private final List<Change> changes;
+    private final Limitation limitation;
 
-    private SnapshotDiff(BuildSnapshot green, BuildSnapshot current, List<Change> changes) {
+    private SnapshotDiff(BuildSnapshot green, BuildSnapshot current, List<Change> changes, Limitation limitation) {
         this.green = green;
         this.current = current;
         this.changes = changes;
+        this.limitation = limitation;
     }
 
     public static SnapshotDiff compare(BuildSnapshot green, BuildSnapshot current) {
@@ -51,6 +67,12 @@ public final class SnapshotDiff {
         String cp = joinSorted(current.getActiveProfiles());
         if (!gp.equals(cp)) {
             out.add(new Change(Change.Area.PROFILES, null, gp.isEmpty() ? Texts.t("changes.none") : gp, cp.isEmpty() ? Texts.t("changes.none") : cp));
+        }
+        boolean propertiesDiffer = false;
+        if (green.getRunProperties() != null && current.getRunProperties() != null) {
+            int before = out.size();
+            map(out, Change.Area.RUN_PROPERTY, null, prefixed(green.getRunProperties()), prefixed(current.getRunProperties()), true);
+            propertiesDiffer = out.size() > before;
         }
         if (sameOrigin) {
             map(out, Change.Area.MIRRORS, null, green.getMirrors(), current.getMirrors(), true);
@@ -76,6 +98,7 @@ public final class SnapshotDiff {
             map(local, Change.Area.PLUGIN, null, g.getPlugins(), c.getPlugins(), false);
             boolean comparable = sameOrigin && g.isDependenciesResolved() == c.isDependenciesResolved();
             dependencies(local, g, c, comparable);
+            declared(local, g, c);
             if (local.isEmpty() && sameOrigin && g.getEffectivePomHash() != null && c.getEffectivePomHash() != null
                     && !g.getEffectivePomHash().equals(c.getEffectivePomHash())) {
                 local.add(new Change(Change.Area.EFFECTIVE_POM, key, Texts.t("changes.green.state"), Texts.t("changes.changed")));
@@ -95,7 +118,21 @@ public final class SnapshotDiff {
                 return c != 0 ? c : String.valueOf(a.getSubject()).compareTo(String.valueOf(b.getSubject()));
             }
         });
-        return new SnapshotDiff(green, current, out);
+        return new SnapshotDiff(green, current, out, limitation(green, current, !gp.equals(cp) || propertiesDiffer));
+    }
+
+    private static Limitation limitation(BuildSnapshot green, BuildSnapshot current, boolean argumentsDiffer) {
+        if (!green.isModelFromImport() && !current.isModelFromImport()) {
+            return Limitation.NONE;
+        }
+        if (argumentsDiffer) {
+            return Limitation.RUN_ARGUMENTS;
+        }
+        return deviatesFromImport(green) || deviatesFromImport(current) ? Limitation.IMPORT_PROFILES : Limitation.NONE;
+    }
+
+    private static boolean deviatesFromImport(BuildSnapshot s) {
+        return s.isModelFromImport() && !joinSorted(s.getImportProfiles()).equals(joinSorted(s.getActiveProfiles()));
     }
 
     public BuildSnapshot getGreen() { return green; }
@@ -105,6 +142,28 @@ public final class SnapshotDiff {
     public List<Change> getChanges() { return Collections.unmodifiableList(changes); }
 
     public boolean isEmpty() { return changes.isEmpty(); }
+
+    /** Was der Vergleich nicht sehen konnte; {@link Limitation#NONE}, wenn nichts fehlt. */
+    public Limitation getLimitation() { return limitation; }
+
+    /** Hinweis zur {@link #getLimitation()} als Klartext, {@code null} ohne Einschränkung. */
+    public String limitationText() {
+        switch (limitation) {
+            case RUN_ARGUMENTS:
+                return Texts.t("changes.limited.arguments");
+            case IMPORT_PROFILES:
+                String imported = joinSorted(importProfiles());
+                return Texts.t("changes.limited.import", imported.isEmpty() ? Texts.t("changes.none") : imported);
+            default:
+                return null;
+        }
+    }
+
+    /** Profile des Imports, mit dem die Module gelesen wurden (bevorzugt der des roten Laufs). */
+    public List<String> importProfiles() {
+        List<String> p = current.getImportProfiles() != null ? current.getImportProfiles() : green.getImportProfiles();
+        return p == null ? Collections.<String>emptyList() : Collections.unmodifiableList(p);
+    }
 
     /** Höchstens {@code max} Zeilen, danach „… und N weitere“. */
     public List<String> lines(int max) {
@@ -186,6 +245,41 @@ public final class SnapshotDiff {
             }
             add(out, new Change(Change.Area.DEPENDENCY, k, b, a), null);
         }
+    }
+
+    /**
+     * Versionen, die das Modul unter den Profilen/{@code -D} des jeweiligen Laufs selbst deklariert
+     * ({@link DeclaredVersions}). Ergänzt nur, was der Vergleich der (importierten) Dependencies nicht schon nennt;
+     * nur Versionswechsel – fehlt ein Eintrag, war er im Lauf nicht sicher ablesbar.
+     */
+    private static void declared(List<Change> out, BuildSnapshot.Module g, BuildSnapshot.Module c) {
+        if (g.getDeclaredDependencies().isEmpty() || c.getDeclaredDependencies().isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, String> e : g.getDeclaredDependencies().entrySet()) {
+            String after = c.getDeclaredDependencies().get(e.getKey());
+            if (after == null || after.equals(e.getValue()) || mentions(out, e.getKey())) {
+                continue;
+            }
+            add(out, new Change(Change.Area.DEPENDENCY, e.getKey(), e.getValue(), after), null);
+        }
+    }
+
+    private static boolean mentions(List<Change> out, String dependency) {
+        for (Change ch : out) {
+            if (ch.getArea() == Change.Area.DEPENDENCY && dependency.equals(ch.getSubject())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Map<String, String> prefixed(Map<String, String> properties) {
+        Map<String, String> out = new java.util.TreeMap<String, String>();
+        for (Map.Entry<String, String> e : properties.entrySet()) {
+            out.put("-D" + e.getKey(), e.getValue());
+        }
+        return out;
     }
 
     /** Fügt hinzu oder hängt das Modul an eine gleiche Änderung an. */

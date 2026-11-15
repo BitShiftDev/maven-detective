@@ -4,7 +4,9 @@ import io.github.bitshiftdev.mavendetective.core.diagnosis.Confidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.model.BuildFailure;
+import io.github.bitshiftdev.mavendetective.core.snapshot.BuildSnapshot;
 import io.github.bitshiftdev.mavendetective.core.snapshot.Change;
+import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotDiff;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -71,6 +73,33 @@ class DiagnosisCardTest {
         assertEquals("spring-boot-starter-parent 3.4.1  →  3.5.0", DiagnosisCard.changeText(parent));
         assertEquals("21.0.4  →  17.0.12", DiagnosisCard.changeText(new Change(Change.Area.JDK, null, "21.0.4", "17.0.12")));
         assertTrue(DiagnosisCard.changeText(new Change(Change.Area.DEPENDENCY, "g:neu", null, "1.0")).startsWith("neu neu: 1.0"));
+    }
+
+    /** IDE-Schnappschuss wie nach {@code verify} mit/ohne {@code -Pgreen}: Module aus demselben Import. */
+    private static BuildSnapshot ide(boolean green) {
+        BuildSnapshot s = new BuildSnapshot().setOrigin(BuildSnapshot.ORIGIN_IDE).setCreatedAt("2026-11-15T10:00:00+01:00")
+                .setImportProfiles(List.of()).setRunProperties(java.util.Map.of());
+        if (green) {
+            s.getActiveProfiles().add("green");
+        }
+        BuildSnapshot.Module m = s.module("com.acme.shop:gateway").setDependenciesResolved(true);
+        m.getDependencies().put("com.fasterxml.jackson.core:jackson-databind", "2.15.4");
+        m.getDeclaredDependencies().put("com.fasterxml.jackson.core:jackson-databind", green ? "2.18.2" : "2.15.4");
+        return s;
+    }
+
+    @Test
+    void profilwechselNichtAlsKeineAenderung() {
+        SnapshotDiff diff = SnapshotDiff.compare(ide(true), ide(false));
+        assertEquals("green  →  (keine)", DiagnosisCard.changeText(diff.getChanges().get(0)));
+        assertEquals("jackson-databind 2.18.2  →  2.15.4  (gateway)", DiagnosisCard.changeText(diff.getChanges().get(1)));
+        assertTrue(DiagnosisCard.limitation(diff).contains("Maven-Import"), DiagnosisCard.limitation(diff));
+
+        // gleiche Läufe, beide anders als der Import: leer, aber ehrlich eingeschränkt
+        SnapshotDiff same = SnapshotDiff.compare(ide(true), ide(true));
+        assertTrue(same.isEmpty());
+        assertTrue(DiagnosisCard.limitation(same).contains("(keine)"), DiagnosisCard.limitation(same));
+        assertNull(DiagnosisCard.limitation(SnapshotDiff.compare(ide(false), ide(false))));
     }
 
     @Test

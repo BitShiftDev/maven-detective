@@ -229,7 +229,10 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
     private void showChanges() {
         BuildDoctorService.Run run = service.getLastRun();
         SnapshotDiff diff = run == null || run.green() || run.result() == null ? null : run.result().changes();
-        if (diff != null && diff.isEmpty()) {
+        if (diff != null && diff.isEmpty() && diff.getLimitation() != SnapshotDiff.Limitation.NONE) {
+            changes.update(AllIcons.General.Information, MavenDetectiveBundle.message("tile.changes.limited"),
+                    MavenDetectiveBundle.message("tile.changes.limited.detail"), null, null);
+        } else if (diff != null && diff.isEmpty()) {
             changes.update(AllIcons.General.InspectionsOK, MavenDetectiveBundle.message("tile.changes.nothing"),
                     MavenDetectiveBundle.message("tile.changes.nothing.detail"), null, null);
         } else if (diff != null) {

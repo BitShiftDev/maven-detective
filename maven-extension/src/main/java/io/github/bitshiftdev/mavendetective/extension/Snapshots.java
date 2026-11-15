@@ -71,6 +71,12 @@ final class Snapshots {
             s.setOffline(request.isOffline());
             s.setUserSettings(request.getUserSettingsFile() == null ? null : request.getUserSettingsFile().getAbsolutePath());
             s.getActiveProfiles().addAll(request.getActiveProfiles());
+            // wie die IDE: abgeschaltete Profile (-P !x) mit "!" – sonst sähen "-P !x" und nichts gleich aus
+            if (request.getInactiveProfiles() != null) {
+                for (String p : request.getInactiveProfiles()) {
+                    s.getActiveProfiles().add("!" + p);
+                }
+            }
             List<Mirror> mirrors = request.getMirrors();
             if (mirrors != null) {
                 for (Mirror m : mirrors) {

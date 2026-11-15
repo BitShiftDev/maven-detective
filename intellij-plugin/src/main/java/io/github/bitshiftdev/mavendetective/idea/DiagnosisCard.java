@@ -332,8 +332,17 @@ final class DiagnosisCard {
 
     /** Zweispaltig: Bereich (JDK, Parent …) und vorher → nachher. */
     private static JComponent changes(SnapshotDiff diff) {
+        String limited = limitation(diff);
         if (diff.isEmpty()) {
-            return text(MavenDetectiveBundle.message("card.changes.none"), JBFont.label());
+            if (limited == null) {
+                return text(MavenDetectiveBundle.message("card.changes.none"), JBFont.label());
+            }
+            // Nicht „keine Änderung“ behaupten, wenn die Wirkung von -P/-D des Laufs gar nicht vergleichbar war
+            JPanel box = new JPanel(new VerticalLayout(JBUI.scale(4)));
+            box.setOpaque(false);
+            box.add(text(MavenDetectiveBundle.message("card.changes.none.compared"), JBFont.label()));
+            box.add(note(limited));
+            return box;
         }
         JPanel grid = new JPanel(new GridBagLayout());
         grid.setOpaque(false);
@@ -364,7 +373,36 @@ final class DiagnosisCard {
             c.gridx = 1;
             grid.add(new JBLabel(MavenDetectiveBundle.message("card.changes.more", all.size() - MAX_CHANGES)), c);
         }
+        if (limited != null) {
+            c.gridy = MAX_CHANGES + 1;
+            c.gridx = 0;
+            c.gridwidth = 2;
+            c.weightx = 1;
+            c.fill = GridBagConstraints.HORIZONTAL;
+            c.insets = JBUI.insets(6, 0, 1, 12);
+            grid.add(note(limited), c);
+        }
         return grid;
+    }
+
+    /** Was der Vergleich nicht sehen konnte (Profile/-D des Laufs gegen den Maven-Import), sonst {@code null}. */
+    static @Nullable @Nls String limitation(@NotNull SnapshotDiff diff) {
+        switch (diff.getLimitation()) {
+            case RUN_ARGUMENTS:
+                return MavenDetectiveBundle.message("card.changes.limited.arguments");
+            case IMPORT_PROFILES:
+                String imported = String.join(", ", diff.importProfiles());
+                return MavenDetectiveBundle.message("card.changes.limited.import",
+                        imported.isEmpty() ? MavenDetectiveBundle.message("card.changes.limited.none") : imported);
+            default:
+                return null;
+        }
+    }
+
+    private static JBTextArea note(@Nls String text) {
+        JBTextArea note = text(text, JBFont.small());
+        note.setForeground(NamedColorUtil.getInactiveTextColor());
+        return note;
     }
 
     /**
@@ -388,6 +426,9 @@ final class DiagnosisCard {
         int modules = ch.getModules().size();
         if (modules > 1) {
             sb.append("  ").append(MavenDetectiveBundle.message("card.change.modules", modules));
+        } else if (modules == 1) {
+            String module = ch.getModules().get(0);
+            sb.append("  ").append(MavenDetectiveBundle.message("card.change.module", module.substring(module.lastIndexOf(':') + 1)));
         }
         return sb.toString().trim();
     }

@@ -13,13 +13,17 @@ import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.util.Computable;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.env.BuildSetup;
+import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.snapshot.BuildSnapshot;
+import io.github.bitshiftdev.mavendetective.core.snapshot.DeclaredVersions;
+import io.github.bitshiftdev.mavendetective.core.snapshot.RunArguments;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotStore;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.maven.execution.MavenExternalParameters;
 import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
 import org.jetbrains.idea.maven.execution.MavenRunner;
+import org.jetbrains.idea.maven.execution.MavenRunnerParameters;
 import org.jetbrains.idea.maven.execution.MavenRunnerSettings;
 import org.jetbrains.idea.maven.model.MavenArtifact;
 import org.jetbrains.idea.maven.model.MavenArtifactNode;
@@ -68,9 +72,15 @@ final class IdeMaven {
         return ApplicationManager.getApplication().runReadAction((Computable<T>) action::get);
     }
 
-    /** Schnappschuss aus dem Maven-Modell der IDE (Stand des letzten Imports) und den Runner-Einstellungen. */
+    /**
+     * Schnappschuss aus dem Maven-Modell der IDE (Stand des letzten Imports) und den Runner-Einstellungen.
+     * Profile und {@code -D} stammen aus der Run-Konfiguration; weil das Modell aus dem Import stammt, stehen dessen
+     * Profile als {@code importProfiles} dabei, und je Modul die Versionen, die die POMs unter den Profilen des Laufs
+     * direkt deklarieren.
+     */
     static BuildSnapshot snapshot(@NotNull Project project, @Nullable MavenRunConfiguration cfg) {
         BuildSetup setup = ideSetup(project, cfg);
+        RunArguments run = runArguments(project, cfg);
         BuildSnapshot s = new BuildSnapshot()
                 .setOrigin(BuildSnapshot.ORIGIN_IDE)
                 .setCreatedAt(SnapshotStore.now())
@@ -79,11 +89,22 @@ final class IdeMaven {
                 .setJavaVersion(setup.getJavaVersion())
                 .setJavaHome(setup.getJavaHome())
                 .setUserSettings(setup.getUserSettings());
-        s.getActiveProfiles().addAll(setup.getProfiles());
+        s.getActiveProfiles().addAll(run.profileList());
+        s.setRunProperties(run.getProperties());
         try {
             MavenProjectsManager manager = MavenProjectsManager.getInstance(project);
+            s.setImportProfiles(importArguments(manager).profileList());
             s.setOffline(manager.getGeneralSettings().isWorkOffline());
             List<MavenProject> projects = read(manager::getProjects);
+            List<PomFile> poms = new ArrayList<>();
+            for (MavenProject p : projects) {
+                try {
+                    poms.add(PomFile.read(p.getFile().toNioPath()));
+                } catch (Exception e) {
+                    LOG.info("Maven Detective: POM für den Schnappschuss nicht lesbar: " + p.getFile().getPath() + " – " + e.getMessage());
+                }
+            }
+            Map<String, Map<String, String>> declared = DeclaredVersions.of(poms, run);
             for (MavenProject p : projects) {
                 MavenId id = p.getMavenId();
                 BuildSnapshot.Module m = s.module(id.getGroupId() + ":" + id.getArtifactId()).setVersion(id.getVersion());
@@ -99,7 +120,11 @@ final class IdeMaven {
                         m.getPlugins().put(plugin.getGroupId() + ":" + plugin.getArtifactId(), plugin.getVersion());
                     }
                 }
-                // IntelliJ hält die vollständig (transitiv) aufgelöste Liste
+                Map<String, String> own = declared.get(id.getGroupId() + ":" + id.getArtifactId());
+                if (own != null) {
+                    m.getDeclaredDependencies().putAll(own);
+                }
+                // IntelliJ hält die vollständig (transitiv) aufgelöste Liste – Stand des Imports, nicht des Laufs
                 List<MavenArtifact> deps = p.getDependencies();
                 m.setDependenciesResolved(!deps.isEmpty());
                 for (MavenArtifact a : deps) {
@@ -167,7 +192,7 @@ final class IdeMaven {
         if (repo != null) {
             s.setLocalRepository(repo.toString());
         }
-        s.getProfiles().addAll(profiles(manager, cfg));
+        s.getProfiles().addAll(cfg == null ? importArguments(manager).profileList() : runArguments(project, cfg).profileList());
         // .mvn/maven.config und .mvn/jvm.config liest Maven selbst – in IDE und Terminal gleich
         BuildSetup files = cliSetup(project);
         s.setMavenConfig(files.getMavenConfig());
@@ -490,18 +515,53 @@ final class IdeMaven {
         }
     }
 
-    private static List<String> profiles(MavenProjectsManager manager, @Nullable MavenRunConfiguration cfg) {
-        List<String> out = new ArrayList<>();
-        if (cfg != null) {
-            for (Map.Entry<String, Boolean> e : cfg.getRunnerParameters().getProfilesMap().entrySet()) {
-                if (Boolean.TRUE.equals(e.getValue())) {
-                    out.add(e.getKey());
-                }
-            }
-            return out;
+    /**
+     * Profile und {@code -D} eines Laufs: Profil-Liste der Run-Konfiguration, dazu {@code -P}/{@code -D} in den Goals
+     * und Kommandozeilen-Optionen (z. B. Goals {@code verify -Pgreen}) und die Properties/„Skip tests“ des Runners.
+     * Ohne Run-Konfiguration: Profile des Imports.
+     */
+    static RunArguments runArguments(@NotNull Project project, @Nullable MavenRunConfiguration cfg) {
+        if (cfg == null) {
+            return importArguments(MavenProjectsManager.getInstance(project));
         }
-        Collection<String> enabled = manager.getExplicitProfiles().getEnabledProfiles();
-        out.addAll(enabled);
-        return out;
+        RunArguments a = new RunArguments();
+        try {
+            MavenRunnerParameters params = cfg.getRunnerParameters();
+            for (Map.Entry<String, Boolean> e : params.getProfilesMap().entrySet()) {
+                a.profile(e.getKey(), Boolean.TRUE.equals(e.getValue()));
+            }
+            a.parse(params.getGoals());
+            a.parse(params.getCmdOptions());
+            MavenRunnerSettings runner = cfg.getRunnerSettings() != null ? cfg.getRunnerSettings()
+                    : MavenRunner.getInstance(project).getSettings();
+            Map<String, String> props = runner.getMavenProperties();
+            if (props != null) {
+                props.forEach(a::property);
+            }
+            if (runner.isSkipTests()) {
+                a.property("skipTests", "true");
+            }
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: Argumente der Run-Konfiguration nicht lesbar", e);
+        }
+        return a;
+    }
+
+    /** Profile, mit denen die IDE das Projekt importiert hat (Häkchen im Maven-Tool-Window). */
+    private static RunArguments importArguments(MavenProjectsManager manager) {
+        RunArguments a = new RunArguments();
+        try {
+            Collection<String> enabled = manager.getExplicitProfiles().getEnabledProfiles();
+            Collection<String> disabled = manager.getExplicitProfiles().getDisabledProfiles();
+            enabled.forEach(p -> a.profile(p, true));
+            disabled.forEach(p -> a.profile(p, false));
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            LOG.warn("Maven Detective: Profile des Imports nicht lesbar", e);
+        }
+        return a;
     }
 }

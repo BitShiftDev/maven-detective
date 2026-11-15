@@ -60,6 +60,9 @@ public final class Reports {
             for (String line : changes.lines(MAX_CHANGES)) {
                 out.add("|   - " + line);
             }
+            if (changes.limitationText() != null) {
+                out.add("|   " + changes.limitationText());
+            }
         }
         out.add("+--------------------------------------------------------------");
         return out;
@@ -162,6 +165,9 @@ public final class Reports {
             sb.append("\n**").append(changes.headline()).append("**\n\n");
             for (String line : changes.lines(MAX_CHANGES * 2)) {
                 sb.append("- ").append(line).append('\n');
+            }
+            if (changes.limitationText() != null) {
+                sb.append("\n*").append(changes.limitationText()).append("*\n");
             }
         }
         sb.append("\n**").append(Texts.t("report.environment")).append("**\n\n");

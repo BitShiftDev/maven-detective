@@ -16,6 +16,8 @@ public final class Change {
         OFFLINE,
         SETTINGS,
         PROFILES,
+        /** {@code -D}-Property des Laufs (nur IDE erfasst sie). */
+        RUN_PROPERTY,
         MIRRORS,
         PARENT,
         PROPERTY,

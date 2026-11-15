@@ -94,6 +94,39 @@ public final class PomFile {
         }
     }
 
+    /**
+     * Ein {@code <profile>}: id, Art der Aktivierung, Dependencies und Properties. Für „Was hat sich geändert?“,
+     * wenn ein Lauf andere Profile aktiviert als der Maven-Import der IDE.
+     */
+    public static final class Profile {
+        /** Wie das Profil ohne {@code -P} aktiv würde. */
+        public enum Activation {
+            /** Kein {@code <activation>}: nur über {@code -P}. */
+            NONE,
+            /** Nur {@code <activeByDefault>true}: aktiv, solange kein anderes Profil derselben POM aktiv ist. */
+            BY_DEFAULT,
+            /** JDK, Betriebssystem, Property, Datei …: hängt von der Umgebung ab. */
+            CONDITION
+        }
+
+        String id;
+        boolean activeByDefault;
+        boolean condition;
+        final List<Dep> dependencies = new ArrayList<Dep>();
+        final Map<String, String> properties = new LinkedHashMap<String, String>();
+
+        public String getId() { return id; }
+
+        public Activation getActivation() {
+            return condition ? Activation.CONDITION : activeByDefault ? Activation.BY_DEFAULT : Activation.NONE;
+        }
+
+        /** Dependencies aus {@code profile/dependencies} (nicht aus dessen dependencyManagement). */
+        public List<Dep> getDependencies() { return Collections.unmodifiableList(dependencies); }
+
+        public Map<String, String> getProperties() { return Collections.unmodifiableMap(properties); }
+    }
+
     /** Eine Property mit ihrer Zeile. */
     public static final class Property {
         final String name;
@@ -127,6 +160,7 @@ public final class PomFile {
     final List<Dep> managed = new ArrayList<Dep>();
     final List<String> profilesTouchingVersions = new ArrayList<String>();
     final List<String> profilesWithDependencies = new ArrayList<String>();
+    final List<Profile> profiles = new ArrayList<Profile>();
     boolean relocated;
     String relocationGroupId;
     String relocationArtifactId;
@@ -185,6 +219,8 @@ public final class PomFile {
     public List<String> getModules() { return Collections.unmodifiableList(modules); }
     /** Profile (id), die Dependencies oder dependencyManagement mitbringen – je nach Aktivierung fehlen sie im Modell. */
     public List<String> getProfilesWithDependencies() { return Collections.unmodifiableList(profilesWithDependencies); }
+    /** Alle Profile der POM in Dokumentreihenfolge. */
+    public List<Profile> getProfiles() { return Collections.unmodifiableList(profiles); }
     /** Steht {@code distributionManagement/relocation} in der POM (Artefakt ist umgezogen)? */
     public boolean isRelocated() { return relocated; }
 
@@ -225,6 +261,7 @@ public final class PomFile {
         private String profileId;
         private boolean profileTouches;
         private boolean profileDependencies;
+        private Profile profile;
         private int elementLine;
 
         Handler(PomFile pom) {
@@ -246,10 +283,14 @@ public final class PomFile {
             text.setLength(0);
             elementLine = line();
             String p = joined();
-            if ("project/dependencies/dependency".equals(p) || "project/dependencyManagement/dependencies/dependency".equals(p)) {
+            if ("project/dependencies/dependency".equals(p) || "project/dependencyManagement/dependencies/dependency".equals(p)
+                    || "project/profiles/profile/dependencies/dependency".equals(p)) {
                 dep = new Dep();
                 dep.line = line();
                 depManaged = p.startsWith("project/dependencyManagement");
+                if (p.startsWith("project/profiles")) {
+                    profileDependencies = true;
+                }
             } else if (dep != null && p.endsWith("/dependency/exclusions/exclusion")) {
                 exclusionLine = line();
             } else if ("project/parent".equals(p)) {
@@ -258,12 +299,16 @@ public final class PomFile {
                 profileId = null;
                 profileTouches = false;
                 profileDependencies = false;
+                profile = new Profile();
+            } else if (p.startsWith("project/profiles/profile/activation/") && path.size() == 5
+                    && !"activeByDefault".equals(qName)) {
+                if (profile != null) {
+                    profile.condition = true;
+                }
             } else if (p.startsWith("project/profiles/profile/properties/")
                     || "project/profiles/profile/dependencyManagement".equals(p)) {
                 profileTouches = true;
                 profileDependencies |= "project/profiles/profile/dependencyManagement".equals(p);
-            } else if ("project/profiles/profile/dependencies/dependency".equals(p)) {
-                profileDependencies = true;
             } else if ("project/distributionManagement/relocation".equals(p)) {
                 pom.relocated = true;
             }
@@ -305,12 +350,21 @@ public final class PomFile {
                 } else if ("optional".equals(field)) {
                     dep.optional = value;
                 }
+            } else if (dep != null && "project/profiles/profile/dependencies/dependency".equals(p)) {
+                if (dep.groupId != null && dep.artifactId != null && profile != null) {
+                    profile.dependencies.add(dep);
+                }
+                dep = null;
             } else if (dep != null && ("project/dependencies/dependency".equals(p)
                     || "project/dependencyManagement/dependencies/dependency".equals(p))) {
                 if (dep.groupId != null && dep.artifactId != null) {
                     (depManaged ? pom.managed : pom.dependencies).add(dep);
                 }
                 dep = null;
+            } else if (profile != null && path.size() == 5 && p.startsWith("project/profiles/profile/properties/")) {
+                profile.properties.put(qName, value);
+            } else if (profile != null && "project/profiles/profile/activation/activeByDefault".equals(p)) {
+                profile.activeByDefault = "true".equalsIgnoreCase(value);
             } else if (path.size() == 3 && "project/properties".equals(p.substring(0, p.lastIndexOf('/')))) {
                 // doppelt definiert: wie Maven gewinnt die letzte Angabe
                 pom.properties.put(qName, new Property(qName, value, elementLine));
@@ -335,6 +389,9 @@ public final class PomFile {
                 pom.modules.add(value);
             } else if ("project/profiles/profile/id".equals(p)) {
                 profileId = value;
+                if (profile != null) {
+                    profile.id = value;
+                }
             } else if ("project/distributionManagement/relocation/groupId".equals(p)) {
                 pom.relocationGroupId = value.isEmpty() ? null : value;
             } else if ("project/distributionManagement/relocation/artifactId".equals(p)) {
@@ -348,15 +405,23 @@ public final class PomFile {
                 if (profileDependencies) {
                     pom.profilesWithDependencies.add(profileId == null ? "(ohne id)" : profileId);
                 }
+                if (profile != null) {
+                    pom.profiles.add(profile);
+                    profile = null;
+                }
             }
             path.remove(path.size() - 1);
             text.setLength(0);
         }
 
         private static boolean isDepChild(String p) {
-            return p.startsWith("project/dependencies/dependency/") && p.indexOf('/', "project/dependencies/dependency/".length()) < 0
-                    || p.startsWith("project/dependencyManagement/dependencies/dependency/")
-                    && p.indexOf('/', "project/dependencyManagement/dependencies/dependency/".length()) < 0;
+            return isChild(p, "project/dependencies/dependency/")
+                    || isChild(p, "project/dependencyManagement/dependencies/dependency/")
+                    || isChild(p, "project/profiles/profile/dependencies/dependency/");
+        }
+
+        private static boolean isChild(String p, String prefix) {
+            return p.startsWith(prefix) && p.indexOf('/', prefix.length()) < 0;
         }
 
         private String joined() {
