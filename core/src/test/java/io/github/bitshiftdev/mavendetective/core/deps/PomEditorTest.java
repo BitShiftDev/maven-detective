@@ -727,4 +727,61 @@ class PomEditorTest {
         assertEquals(7, edit.line);
         assertThrows(IllegalArgumentException.class, () -> PomEditor.replaceUrl(xml, "http://nexus.corp/rep", "https://nexus.corp/rep"));
     }
+
+    // --- Werte mit Entities, CDATA und Kommentaren (Review #61/#62)
+
+    @Test
+    void findsDependencyWrittenWithEntityOrCdata() {
+        String xml = """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>org&#46;x</groupId>
+                      <artifactId><![CDATA[lib]]></artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """;
+        String out = PomEditor.setVersion(xml, "dependencies", "org.x", "lib", "2.0").apply(xml);
+        assertTrue(out.contains("<version>2.0</version>"), out);
+        assertTrue(out.contains("<groupId>org&#46;x</groupId>"), out);
+        assertTrue(PomEditor.setScope(xml, "org.x", "lib", "test", null).apply(xml).contains("<scope>test</scope>"));
+    }
+
+    @Test
+    void keepsCommentNextToTheValue() {
+        String xml = """
+                <project>
+                  <parent>
+                    <groupId>org.p</groupId>
+                    <artifactId>parent</artifactId>
+                    <version>1.0<!-- LTS --></version>
+                  </parent>
+                  <properties>
+                    <lib.version> <!-- bitte nicht anfassen -->1.0 </lib.version>
+                  </properties>
+                </project>
+                """;
+        PomEditor.Edit parent = PomEditor.setVersion(xml, "parent", "org.p", "parent", "2.0");
+        assertTrue(parent.apply(xml).contains("<version>2.0<!-- LTS --></version>"), parent.apply(xml));
+        assertTrue(parent.description.contains("1.0"), parent.description);
+        String prop = PomEditor.setProperty(xml, "lib.version", "2.0").apply(xml);
+        assertTrue(prop.contains("<lib.version> <!-- bitte nicht anfassen -->2.0 </lib.version>"), prop);
+    }
+
+    @Test
+    void escapesValuesAndRejectsBadPropertyNames() throws Exception {
+        String xml = "<project>\n  <artifactId>m</artifactId>\n</project>\n";
+        String out = PomEditor.setProperty(xml, "odd", "a&b<c").apply(xml);
+        assertTrue(out.contains("<odd>a&amp;b&lt;c</odd>"), out);
+        PomFile.parse(java.nio.file.Paths.get("pom.xml"), out); // gültiges XML
+        assertThrows(IllegalArgumentException.class, () -> PomEditor.setProperty(xml, "a><b", "1"));
+        String dep = PomEditor.addDependency(xml, "org.x", "lib", "1.0&2", null, null, null).apply(xml);
+        assertTrue(dep.contains("<version>1.0&amp;2</version>"), dep);
+        String withDep = "<project>\n  <dependencies>\n    <dependency>\n      <groupId>org.x</groupId>\n"
+                + "      <artifactId>lib</artifactId>\n      <version>1.0</version>\n    </dependency>\n  </dependencies>\n</project>\n";
+        String updated = PomEditor.setVersion(withDep, "dependencies", "org.x", "lib", "<2>").apply(withDep);
+        assertTrue(updated.contains("<version>&lt;2&gt;</version>"), updated);
+    }
 }

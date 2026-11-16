@@ -52,7 +52,7 @@ final class FixRunner {
         return switch (fix.getType()) {
             case FixAction.OPEN_FILE, FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE, FixAction.REPLACE_URL,
                  FixAction.SET_JVM_OPTION, FixAction.REBUILD, FixAction.SWITCH_JDK,
-                 FixAction.INSERT_PLUGIN_VERSION, FixAction.PIN_VERSION, FixAction.ADD_EXCLUSION,
+                 FixAction.INSERT_PLUGIN_VERSION, FixAction.PIN_VERSION, FixAction.ADD_EXCLUSION, FixAction.REMOVE_EXCLUSION,
                  FixAction.ADD_DEPENDENCY, FixAction.REMOVE_DEPENDENCY, FixAction.SET_SCOPE, FixAction.SET_VERSION -> true;
             // show-dependency: Modul A
             default -> false;
@@ -76,6 +76,12 @@ final class FixRunner {
                 // Fix-und-Prüf-Schleife: aus der Diagnose-Karte gestartete POM-Fixes bauen danach neu
                 case FixAction.ADD_EXCLUSION -> {
                     if (addExclusions(project, List.of(fix)) > 0) {
+                        rebuild(project, result, null, fix.getLabel());
+                    }
+                }
+                // Klassen-Herkunft (Regel 9/10): eine Exclusion entfernt die gesuchte Klasse
+                case FixAction.REMOVE_EXCLUSION -> {
+                    if (editPoms(project, List.of(fix), MavenDetectiveBundle.message("command.remove.exclusions")) > 0) {
                         rebuild(project, result, null, fix.getLabel());
                     }
                 }

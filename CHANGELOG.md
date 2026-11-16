@@ -14,6 +14,9 @@
 - Maven extension: the reference of a green `verify` run kept only the dependencies of the last plugin (runtime scope), so the next red run listed test dependencies such as JUnit as "new".
 - Upgrade simulator: no more "version changed from X to X" steps for modules that already have the target version.
 - Upgrade simulator: when POMs are missing locally, an unknown version is no longer shown as a downgrade ("→ null"); lower versions, removals and new conflicts of such a module only appear once the POMs are there.
+- POM quick fixes find dependencies written with entities or CDATA (`<groupId>org&#46;acme</groupId>`), keep a comment next to the value (`<version>1.0<!-- LTS --></version>`) and escape what they write: a property value like `a&b` no longer produces invalid XML, and an invalid property name is rejected.
+- Loading missing POMs for the upgrade simulator ignores commented-out `<repositories>` and coordinates whose version contains XML characters.
+- IDE: the quick fix "Remove exclusion" (when an exclusion removes the class a `NoClassDefFoundError` is looking for) is now offered on the diagnosis card and runs with diff preview and undo; before, the button was missing.
 
 ## [0.1.0] - 2026-11-14
 

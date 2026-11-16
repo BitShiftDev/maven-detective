@@ -19,8 +19,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-home-cache-strict-match: true
-      - name: Unit-Tests (Kern, Katalog, Prüfungen)
-        run: ./gradlew :core:test
+      - name: Unit-Tests (Kern, Katalog, Prüfungen, Extension)
+        run: ./gradlew :core:test :maven-extension:test
       - name: Extension bauen und Fixtures mit echtem Maven auslösen
         run: ./gradlew :maven-extension:fixtureTest
 

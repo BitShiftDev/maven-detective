@@ -18,12 +18,31 @@ dependencies {
     compileOnly("org.apache.maven.resolver:maven-resolver-api:$mavenResolverVersion")
     compileOnly("javax.inject:javax.inject:1")
     compileOnly("org.slf4j:slf4j-api:1.7.36")
+
+    // Unit-Tests: Maven-Objekte direkt erzeugen, ohne Maven-Lauf (der läuft in fixtureTest)
+    testImplementation(platform("org.junit:junit-bom:5.13.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("org.apache.maven:maven-core:$mavenVersion")
+    testImplementation("org.apache.maven.resolver:maven-resolver-api:$mavenResolverVersion")
+    testImplementation("javax.inject:javax.inject:1")
+    testImplementation("org.slf4j:slf4j-api:1.7.36")
 }
 
 tasks.compileJava {
     options.release.set(8)
     options.encoding = "UTF-8"
     options.compilerArgs.add("-Xlint:-options")
+}
+
+tasks.compileTestJava {
+    options.release.set(17)
+    options.encoding = "UTF-8"
+}
+
+tasks.test {
+    useJUnitPlatform()
+    systemProperty("mavenDetective.language", "de")
 }
 
 tasks.jar {

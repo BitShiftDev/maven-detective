@@ -9,9 +9,7 @@ import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.EnumMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -74,9 +72,7 @@ public final class AnalysisResults implements Disposable {
     }
 
     private final Project project;
-    private final Map<Analysis, Summary> summaries = new EnumMap<>(Analysis.class);
-    /** Stand vor {@link #running}, für Abbruch und Fehler. */
-    private final Map<Analysis, Summary> before = new EnumMap<>(Analysis.class);
+    private final AnalysisStates states = new AnalysisStates(this::changed);
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
     public AnalysisResults(@NotNull Project project) {
@@ -89,7 +85,7 @@ public final class AnalysisResults implements Disposable {
     }
 
     public @NotNull Summary get(@NotNull Analysis analysis) {
-        return summaries.getOrDefault(analysis, Summary.NOT_CHECKED);
+        return states.get(analysis);
     }
 
     /** Meldet sich ab, sobald {@code parent} entsorgt wird. */
@@ -100,46 +96,36 @@ public final class AnalysisResults implements Disposable {
 
     /** Eine Rechnung beginnt; der bisherige Stand bleibt für {@link #aborted} gemerkt. */
     public void running(@NotNull Analysis analysis) {
-        Summary now = get(analysis);
-        if (now.state() != State.RUNNING) {
-            before.put(analysis, now);
+        if (!project.isDisposed()) {
+            states.running(analysis);
         }
-        put(analysis, now.with(State.RUNNING));
     }
 
     public void set(@NotNull Analysis analysis, @NotNull Summary summary) {
-        before.remove(analysis);
-        put(analysis, summary);
+        if (!project.isDisposed()) {
+            states.set(analysis, summary);
+        }
     }
 
     /** Abgebrochen oder fehlgeschlagen: zurück zum Stand vor der Rechnung. */
     public void aborted(@NotNull Analysis analysis) {
-        Summary prev = before.remove(analysis);
-        if (get(analysis).state() == State.RUNNING) {
-            put(analysis, prev != null ? prev : Summary.NOT_CHECKED);
+        if (!project.isDisposed()) {
+            states.aborted(analysis);
         }
     }
 
     /** Nach dem Import: Fertiges ist veraltet (die Zahl verschwindet), dann reagieren die Seiten. */
     void imported() {
-        for (Analysis a : Analysis.values()) {
-            Summary s = get(a);
-            if (s.state() == State.DONE) {
-                put(a, s.with(State.STALE));
-            } else if (s.state() == State.RUNNING && before.get(a) != null && before.get(a).state() == State.DONE) {
-                before.put(a, before.get(a).with(State.STALE));
-            }
+        if (project.isDisposed()) {
+            return;
         }
+        states.imported();
         for (Listener l : listeners) {
             l.mavenImported();
         }
     }
 
-    private void put(Analysis analysis, Summary summary) {
-        if (project.isDisposed()) {
-            return;
-        }
-        summaries.put(analysis, summary);
+    private void changed(Analysis analysis, Summary summary) {
         for (Listener l : listeners) {
             l.changed(analysis, summary);
         }

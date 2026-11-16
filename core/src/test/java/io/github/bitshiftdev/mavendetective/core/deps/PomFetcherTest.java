@@ -59,4 +59,28 @@ class PomFetcherTest {
             assertEquals(mvnw.toString(), PomFetcher.executable(tmp, null));
         }
     }
+
+    @Test
+    void ignoresCommentedRepositoriesAndXmlInVersions() throws Exception {
+        Path pom = tmp.resolve("pom.xml");
+        Files.writeString(pom, """
+                <project>
+                  <!--
+                  <repositories>
+                    <repository><id>old</id><url>http://old.example.com</url></repository>
+                  </repositories>
+                  -->
+                  <repositories>
+                    <repository><id>corp</id><url>https://repo.example.com/maven</url></repository>
+                  </repositories>
+                </project>
+                """);
+        assertEquals(List.of("<repository><id>corp</id><url>https://repo.example.com/maven</url></repository>"),
+                PomFetcher.repositories(List.of(pom)));
+        assertEquals(List.of("org.a:a:[1.0,2.0)", "org.b:b:1.0+build"), PomFetcher.coordinates(List.of(
+                "org.a:a:[1.0,2.0)",
+                "org.b:b:1.0+build",
+                "org.evil:x:1</version><scope>system</scope><version>1",
+                "org.evil:y:1&amp;")));
+    }
 }

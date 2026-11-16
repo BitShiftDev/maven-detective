@@ -39,7 +39,9 @@ public final class PomFetcher {
     /** Feste Plugin-Version: ohne sie hinge das Ergebnis vom Metadaten-Stand im Repository ab. */
     public static final String GOAL = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:collect";
 
-    private static final Pattern GAV = Pattern.compile("^([\\w.\\-]+):([\\w.\\-]+):([^\\s:()]+)(\\s.*)?$");
+    /** Version nur aus Zeichen, die in Versionen und Bereichen vorkommen – nichts, was XML bildet. */
+    private static final Pattern GAV = Pattern.compile("^([\\w.\\-]+):([\\w.\\-]+):([\\w.\\-+\\[\\](),]+)(\\s.*)?$");
+    private static final Pattern COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
     private static final Pattern REPOSITORIES = Pattern.compile("<repositories>(.*?)</repositories>", Pattern.DOTALL);
     private static final Pattern REPOSITORY = Pattern.compile("<repository>.*?</repository>", Pattern.DOTALL);
     private static final Pattern ID = Pattern.compile("<id>\\s*([^<]+?)\\s*</id>");
@@ -85,7 +87,7 @@ public final class PomFetcher {
         Set<String> out = new LinkedHashSet<String>();
         for (String m : missing) {
             Matcher x = GAV.matcher(m.trim());
-            if (x.matches() && !x.group(3).contains("${") && !"?".equals(x.group(3))) {
+            if (x.matches()) {
                 out.add(x.group(1) + ":" + x.group(2) + ":" + x.group(3));
             }
         }
@@ -148,7 +150,8 @@ public final class PomFetcher {
             } catch (IOException e) {
                 continue;
             }
-            Matcher rs = REPOSITORIES.matcher(xml);
+            // auskommentierte Repositories nicht mit anfragen
+            Matcher rs = REPOSITORIES.matcher(COMMENT.matcher(xml).replaceAll(""));
             while (rs.find()) {
                 Matcher r = REPOSITORY.matcher(rs.group(1));
                 while (r.find()) {

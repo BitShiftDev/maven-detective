@@ -42,7 +42,7 @@ jobs:
         run: ./gradlew :intellij-plugin:releaseNotes
 
       - name: Tests (Kern, Plugin, Fixtures mit echtem Maven)
-        run: ./gradlew :core:test :intellij-plugin:test :maven-extension:fixtureTest
+        run: ./gradlew :core:test :maven-extension:test :intellij-plugin:test :maven-extension:fixtureTest
 
       - name: Bauen
         run: ./gradlew :core:jar :maven-extension:jar :intellij-plugin:buildPlugin
