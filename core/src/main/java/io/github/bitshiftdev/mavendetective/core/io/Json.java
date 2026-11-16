@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.io;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -8,13 +9,19 @@ import java.util.Map;
 
 /**
  * Minimaler JSON-Leser und -Schreiber für die Event-Datei. Abbildung:
- * Objekt → {@link LinkedHashMap}, Array → {@link ArrayList}, Zahl → {@link Long}/{@link Double},
- * sonst {@link String}, {@link Boolean} oder {@code null}.
+ * Objekt → {@link LinkedHashMap}, Array → {@link ArrayList}, Zahl → {@link Long}/{@link Double}
+ * (ganze Zahlen über {@code Long.MAX_VALUE} als {@link BigInteger}), sonst {@link String}, {@link Boolean}
+ * oder {@code null}. Tiefer als {@link #MAX_DEPTH} verschachtelte Werte lehnt der Leser ab, statt mit einem
+ * {@link StackOverflowError} abzubrechen.
  */
 public final class Json {
 
+    /** Größte Verschachtelungstiefe von Objekten und Arrays. */
+    public static final int MAX_DEPTH = 256;
+
     private final String s;
     private int pos;
+    private int depth;
 
     private Json(String s) {
         this.s = s;
@@ -48,8 +55,14 @@ public final class Json {
         }
         char c = s.charAt(pos);
         switch (c) {
-            case '{': return readObject();
-            case '[': return readArray();
+            case '{':
+            case '[':
+                if (++depth > MAX_DEPTH) {
+                    throw error("Zu tief verschachtelt");
+                }
+                Object nested = c == '{' ? readObject() : readArray();
+                depth--;
+                return nested;
             case '"': return readString();
             case 't': expect("true"); return Boolean.TRUE;
             case 'f': expect("false"); return Boolean.FALSE;
@@ -170,7 +183,16 @@ public final class Json {
             }
         }
         String n = s.substring(start, pos);
-        return decimal ? (Object) Double.valueOf(n) : (Object) Long.valueOf(n);
+        if (decimal) {
+            return Double.valueOf(n);
+        }
+        // mehr als 18 Ziffern können über Long.MAX_VALUE liegen
+        return n.length() < 19 ? (Object) Long.valueOf(n) : parseInteger(n);
+    }
+
+    private Object parseInteger(String n) {
+        BigInteger big = new BigInteger(n);
+        return big.bitLength() < 64 ? (Object) Long.valueOf(big.longValue()) : big;
     }
 
     private void expect(String word) {

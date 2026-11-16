@@ -235,4 +235,48 @@ class ParsersTest {
         BuildFailure f = MavenLogParser.parse(sb.toString());
         assertEquals(BuildFailure.MAX_LINE_LENGTH, f.searchableLines().get(0).length());
     }
+    /** Review #38: Ausnahmen in Zeilen ohne Präfix sind nur ein schwacher Hinweis. */
+    @Test
+    void exceptionsWithoutPrefixAreWeakEvidence() {
+        String app = "12:00:01.123 WARN  o.a.Feature - falling back: java.lang.NoClassDefFoundError: org/optional/Feature";
+        BuildFailure green = MavenLogParser.parse("[INFO] Running a.ATest\n" + app + "\n[INFO] Tests run: 1, Failures: 0\n[INFO] BUILD SUCCESS\n");
+        assertTrue(!green.hasErrors(), green.searchableLines().toString());
+        assertTrue(green.reportsSuccess() && !green.reportsFailure());
+
+        io.github.bitshiftdev.mavendetective.core.BuildDoctor doctor = io.github.bitshiftdev.mavendetective.core.BuildDoctor.withDefaults();
+        io.github.bitshiftdev.mavendetective.core.env.Environment env = io.github.bitshiftdev.mavendetective.core.env.Environment.builder().build();
+        BuildFailure red = MavenLogParser.parse(app + "\n[INFO] BUILD FAILURE\n"
+                + "[ERROR] Failed to execute goal on project web: Could not resolve dependencies for project com.acme:web:jar:1.0: "
+                + "The following artifacts could not be resolved: org.acme:lib:jar:1.0 (absent): Could not find artifact org.acme:lib:jar:1.0 in central (https://repo.maven.apache.org/maven2)\n");
+        assertTrue(red.hasWeakErrors() && red.reportsFailure());
+        assertEquals("artifact-not-resolvable", doctor.diagnose(red, env).get(0).getRuleId());
+
+        // ohne andere Erklärung zählt die Zeile weiter (Konsolen-Dump eines abgestürzten Forks)
+        BuildFailure only = MavenLogParser.parse("Exception in thread \"main\" java.lang.OutOfMemoryError: Java heap space\n[INFO] BUILD FAILURE\n");
+        assertEquals("out-of-memory", doctor.diagnose(only, env).get(0).getRuleId());
+    }
+    /** Review #65: tiefe Verschachtelung bricht nicht ab, große Zahlen verwerfen die Zeile nicht. */
+    @Test
+    void jsonLimitsDepthAndKeepsLargeNumbers() throws Exception {
+        StringBuilder deep = new StringBuilder("{\"type\":\"x\",\"v\":");
+        for (int i = 0; i < 100000; i++) {
+            deep.append('[');
+        }
+        assertThrows(IllegalArgumentException.class, () -> Json.parse(deep.toString()));
+        Map<String, Object> m = Json.parseObject("{\"n\":123456789012345678901234,\"l\":9223372036854775807,\"s\":-12}");
+        assertEquals(new java.math.BigInteger("123456789012345678901234"), m.get("n"));
+        assertEquals(Long.MAX_VALUE, m.get("l"));
+        assertEquals(-12L, m.get("s"));
+        BuildFailure f = EventLog.read(new StringReader(deep + "\n"));
+        assertTrue(!f.hasErrors());
+    }
+    /** Review #68: Katalog mit BOM, Fix-Parameter bleiben wörtlich. */
+    @Test
+    void catalogWithByteOrderMarkAndVerbatimFixParameters() {
+        assertEquals("1", ((Map<?, ?>) MiniYaml.parse("\uFEFF# Katalog\na: 1\n")).get("a"));
+        Map<String, String> vars = new HashMap<>();
+        vars.put("p", "C:/Max  Mustermann/x");
+        assertEquals("C:/Max  Mustermann/x", Template.renderParameter("{p}", vars));
+        assertEquals("C:/Max Mustermann/x", Template.render("{p}", vars));
+    }
 }

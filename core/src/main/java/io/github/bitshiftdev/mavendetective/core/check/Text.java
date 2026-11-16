@@ -15,6 +15,17 @@ public final class Text {
     private Text() {
     }
 
+    /**
+     * Regex für einen absoluten Pfad mit einer der Endungen ({@code "jar|zip"}): Verzeichnisse dürfen
+     * Leerzeichen enthalten ({@code C:\\Users\\Max Mustermann\\…}), der Dateiname nicht. Ein Leerzeichen vor
+     * einem neuen Pfadanfang beendet den Pfad. Länge begrenzt, damit {@code find()} über lange Zeilen
+     * linear bleibt. Ohne eigene Gruppe.
+     */
+    public static String absolutePath(String extensions) {
+        return "(?:[A-Za-z]:)?[\\\\/](?:(?:[^\\s:;'\"\\[]|[ \\t](?![\\\\/]|[A-Za-z]:)){0,400}?[\\\\/])?"
+                + "[^\\s\\\\/:;'\"\\[]+\\.(?:" + extensions + ")";
+    }
+
     /** Java-Feature-Version: "1.8.0_392" → 8, "17.0.9" → 17, "25-ea" → 25; -1 wenn unbekannt. */
     public static int javaFeatureVersion(String version) {
         if (version == null) {
@@ -27,6 +38,13 @@ public final class Text {
     /** Class-File-Version → Java-Version (65 → 21). */
     public static int javaForClassVersion(int classVersion) {
         return classVersion > 44 ? classVersion - 44 : -1;
+    }
+
+    private static final Pattern USER_INFO = Pattern.compile("^([a-zA-Z][a-zA-Z0-9+.\\-]*://)[^/@\\s]+@");
+
+    /** URL ohne Zugangsdaten: {@code https://user:token@nexus/…} → {@code https://***@nexus/…}. */
+    public static String maskUserInfo(String url) {
+        return url == null || url.indexOf('@') < 0 ? url : USER_INFO.matcher(url).replaceFirst("$1***@");
     }
 
     public static String host(String url) {

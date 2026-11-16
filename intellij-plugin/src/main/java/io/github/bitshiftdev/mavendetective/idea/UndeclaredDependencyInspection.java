@@ -1,13 +1,17 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.codeInspection.BatchQuickFix;
+import com.intellij.codeInspection.CommonProblemDescriptor;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.codeInspection.QuickFix;
 import com.intellij.codeInspection.options.OptPane;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.progress.ProcessCanceledException;
@@ -22,6 +26,7 @@ import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.JavaElementVisitor;
 import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiImportStatementBase;
@@ -39,6 +44,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -52,7 +60,7 @@ public final class UndeclaredDependencyInspection extends LocalInspectionTool {
 
     private static final Logger LOG = Logger.getInstance(UndeclaredDependencyInspection.class);
     private static final Key<com.intellij.psi.util.CachedValue<ModuleClasspath>> CLASSPATH = Key.create("mavenDetective.classpath");
-    private static final PomCache CACHE = new PomCache();
+    private static final PomCache CACHE = IdeCaches.POMS;
 
     /** Auch melden, wenn die Klasse über einen Starter ohne eigene Klassen kommt (Spring Boot & Co.). */
     public boolean reportViaStarters = false;
@@ -165,7 +173,11 @@ public final class UndeclaredDependencyInspection extends LocalInspectionTool {
     }
 
     /** Deklariert die Dependency in der POM des Moduls – ein Undo-Schritt, danach Maven-Import. */
-    static final class DeclareFix implements LocalQuickFix {
+    /**
+     * Auch als {@link BatchQuickFix}: „Alle beheben“ über mehrere Imports aus derselben Dependency deklariert sie einmal
+     * (ein Undo-Schritt, eine Vorschau) statt N-mal mit N−1 Warnungen „schon deklariert“.
+     */
+    static final class DeclareFix implements LocalQuickFix, BatchQuickFix {
         private final FixAction fix;
 
         DeclareFix(FixAction fix) {
@@ -194,7 +206,63 @@ public final class UndeclaredDependencyInspection extends LocalInspectionTool {
 
         @Override
         public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+            if (alreadyDeclared(fix)) {
+                return;   // ein Fix davor (gleiche Dependency, anderer Import) hat sie schon eingetragen
+            }
             FixRunner.editPoms(project, List.of(fix), MavenDetectiveBundle.message("command.declare.dependency"));
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, CommonProblemDescriptor @NotNull [] descriptors,
+                             @NotNull List<PsiElement> psiElementsToIgnore, @Nullable Runnable refreshViews) {
+            Map<String, FixAction> distinct = new LinkedHashMap<>();
+            for (CommonProblemDescriptor d : descriptors) {
+                QuickFix<?>[] fixes = d.getFixes();
+                if (fixes == null) {
+                    continue;
+                }
+                for (QuickFix<?> q : fixes) {
+                    if (q instanceof DeclareFix df && !alreadyDeclared(df.fix)) {
+                        distinct.putIfAbsent(df.fix.param("file") + "|" + df.fix.param("artifact") + "|" + df.fix.param("classifier"), df.fix);
+                    }
+                }
+            }
+            if (!distinct.isEmpty()) {
+                FixRunner.editPoms(project, new ArrayList<>(distinct.values()), MavenDetectiveBundle.message("command.declare.dependency"));
+            }
+            if (refreshViews != null) {
+                refreshViews.run();
+            }
+        }
+
+        /** Steht die Dependency schon unter {@code <dependencies>} der POM (auch ungespeichert im Editor)? */
+        static boolean alreadyDeclared(FixAction fix) {
+            String file = fix.param("file");
+            String artifact = fix.param("artifact");
+            if (file == null || artifact == null) {
+                return false;
+            }
+            VirtualFile vf = LocalFileSystem.getInstance().findFileByNioFile(Paths.get(file));
+            com.intellij.openapi.editor.Document doc = vf == null ? null : FileDocumentManager.getInstance().getDocument(vf);
+            if (doc == null) {
+                return false;
+            }
+            try {
+                PomFile pom = PomFile.parse(Paths.get(file), doc.getText());
+                String classifier = fix.param("classifier");
+                for (PomFile.Dep d : pom.getDependencies()) {
+                    if (artifact.equals(d.ga()) && java.util.Objects.equals(emptyToNull(classifier), emptyToNull(d.getClassifier()))) {
+                        return true;
+                    }
+                }
+            } catch (Exception e) {
+                return false;   // halb getippte POM: dann entscheidet der Fix selbst
+            }
+            return false;
+        }
+
+        private static @Nullable String emptyToNull(@Nullable String s) {
+            return s == null || s.isEmpty() ? null : s;
         }
     }
 }

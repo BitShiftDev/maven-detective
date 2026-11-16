@@ -42,4 +42,11 @@ class BuildFailureConsoleFilterTest {
         assertNotNull(item.getHyperlinkInfo());
         assertNull(new BuildFailureConsoleFilter(project).applyFilter("[INFO] BUILD SUCCESS\n", 50));
     }
+    /** Review #27: der Link merkt sich die Zeile „Finished at“ seines Laufs. */
+    @Test
+    void laufDerKonsoleWirdAmEndzeitpunktErkannt() {
+        assertEquals("Finished at: 2026-11-16T10:00:00+01:00",
+                BuildFailureConsoleFilter.finishedAt("[INFO] Finished at: 2026-11-16T10:00:00+01:00\n"));
+        assertNull(BuildFailureConsoleFilter.finishedAt("[INFO] Total time:  1.234 s"));
+    }
 }

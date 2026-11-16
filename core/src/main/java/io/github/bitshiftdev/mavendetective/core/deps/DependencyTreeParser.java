@@ -38,7 +38,7 @@ public final class DependencyTreeParser {
         List<DepNode> stack = new ArrayList<DepNode>();
         String raw;
         while ((raw = in.readLine()) != null) {
-            String line = ANSI.matcher(raw).replaceAll("");
+            String line = extendedTokens(ANSI.matcher(raw).replaceAll(""));
             Matcher p = PREFIX.matcher(line);
             if (p.find()) {
                 line = line.substring(p.end());
@@ -80,6 +80,17 @@ public final class DependencyTreeParser {
             stack.add(node);
         }
         return roots;
+    }
+
+    /**
+     * {@code -Dtokens=extended} zeichnet den Baum mit Rahmenzeichen ({@code ├─ }, {@code └─ }, {@code │  });
+     * je Ebene ebenfalls drei Zeichen, also auf die Standardzeichen abbilden.
+     */
+    static String extendedTokens(String line) {
+        if (line.indexOf('\u2500') < 0 && line.indexOf('\u2502') < 0) {
+            return line;
+        }
+        return line.replace('\u251C', '+').replace('\u2514', '\\').replace('\u2500', '-').replace('\u2502', '|');
     }
 
     /** Länge des Präfixes aus {@code |}, {@code +-}, {@code \-} und Leerzeichen. */

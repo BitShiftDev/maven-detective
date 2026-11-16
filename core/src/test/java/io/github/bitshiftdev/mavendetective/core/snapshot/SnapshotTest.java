@@ -208,4 +208,50 @@ class SnapshotTest {
         assertTrue(card.contains("|   - JDK 21.0.4 → 17.0.12"), card);
         assertTrue(Reports.markdown(ds, MavenLogParser.parse(""), diff).contains("- JDK 21.0.4 → 17.0.12"));
     }
+    /** Review #70: Tausende gleiche Änderungen über Hunderte Module bleiben schnell. */
+    @Test
+    void manyModulesWithManyChangesStayFast() {
+        BuildSnapshot green = new BuildSnapshot().setOrigin(BuildSnapshot.ORIGIN_EXTENSION);
+        BuildSnapshot now = new BuildSnapshot().setOrigin(BuildSnapshot.ORIGIN_EXTENSION);
+        for (int m = 0; m < 800; m++) {
+            BuildSnapshot.Module g = green.module("g:m" + m).setVersion("1").setDependenciesResolved(true);
+            BuildSnapshot.Module c = now.module("g:m" + m).setVersion("1").setDependenciesResolved(true);
+            for (int d = 0; d < 10; d++) {
+                g.getDependencies().put("lib:l" + (m % 500) + "-" + d, "1.0");
+                c.getDependencies().put("lib:l" + (m % 500) + "-" + d, "2.0");
+            }
+        }
+        long start = System.nanoTime();
+        SnapshotDiff diff = SnapshotDiff.compare(green, now);
+        long millis = (System.nanoTime() - start) / 1_000_000L;
+        assertEquals(5000, diff.getChanges().size());
+        assertTrue(millis < 1000, millis + " ms");
+    }
+
+    /** Review #71: Zugangsdaten in Mirror-URLs maskiert; Symlink und echter Pfad teilen sich die Ablage; Altes wird entfernt. */
+    @Test
+    void storeKeyIsCanonicalAndOldProjectsArePruned(@TempDir Path tmp) throws Exception {
+        assertEquals("https://***@nexus.example.com/repo", io.github.bitshiftdev.mavendetective.core.check.Text.maskUserInfo("https://user:token@nexus.example.com/repo"));
+        assertEquals("https://nexus/repo", io.github.bitshiftdev.mavendetective.core.check.Text.maskUserInfo("https://nexus/repo"));
+
+        SnapshotStore store = new SnapshotStore(tmp.resolve("snapshots"));
+        Path real = Files.createDirectories(tmp.resolve("real"));
+        Path link = tmp.resolve("link");
+        try {
+            Files.createSymbolicLink(link, real);
+            assertEquals(store.projectDir(real), store.projectDir(link));
+        } catch (UnsupportedOperationException | java.io.IOException e) {
+            // ohne Symlinks (Windows ohne Rechte): nur der Rest
+        }
+
+        Path old = Files.createDirectories(store.getRoot().resolve("gone-0123456789ab"));
+        Files.writeString(old.resolve("green-extension.json"), "{}");
+        long longAgo = System.currentTimeMillis() - SnapshotStore.PRUNE_AFTER_MILLIS - 1000;
+        Files.setLastModifiedTime(old.resolve("green-extension.json"), java.nio.file.attribute.FileTime.fromMillis(longAgo));
+        Files.setLastModifiedTime(old, java.nio.file.attribute.FileTime.fromMillis(longAgo));
+        store.saveGreen(real, springBoot("3.4.1", "21.0.4", "2.18.2").setSuccessful(true));
+        store.prune(store.projectDir(real), System.currentTimeMillis() - SnapshotStore.PRUNE_AFTER_MILLIS);
+        assertFalse(Files.exists(old));
+        assertTrue(Files.exists(store.greenFile(real, BuildSnapshot.ORIGIN_EXTENSION)));
+    }
 }

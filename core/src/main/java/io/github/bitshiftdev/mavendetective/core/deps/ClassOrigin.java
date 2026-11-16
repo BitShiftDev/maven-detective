@@ -404,7 +404,9 @@ public final class ClassOrigin {
             Files.walkFileTree(dir, Collections.<java.nio.file.FileVisitOption>emptySet(), 12, new SimpleFileVisitor<Path>() {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    if (file.getFileName().toString().endsWith(".jar")) {
+                    String name = file.getFileName().toString();
+                    if (name.endsWith(".jar") && !name.endsWith("-sources.jar") && !name.endsWith("-javadoc.jar")
+                            && !name.endsWith("-tests.jar")) {
                         out.add(file);
                         if (out.size() > max) {
                             return FileVisitResult.TERMINATE;

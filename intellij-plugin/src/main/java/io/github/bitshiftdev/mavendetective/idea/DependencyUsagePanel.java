@@ -2,6 +2,7 @@ package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.ColoredTreeCellRenderer;
 import com.intellij.ui.JBSplitter;
@@ -106,6 +107,9 @@ public final class DependencyUsagePanel extends DetectivePanel {
         splitter.setSecondComponent(bottom);
         setBody(splitter);
         show(null, 0);
+        // „Auch über Starter“ auf der Einstellungsseite umgestellt: Liste gleich neu filtern, nicht erst nach „Prüfen“
+        ApplicationManager.getApplication().getMessageBus().connect(this)
+                .subscribe(DetectiveSettings.Listener.TOPIC, (DetectiveSettings.Listener) this::applyFilter);
         AnalysisResults.getInstance(project).addListener(new AnalysisResults.Listener() {
             @Override
             public void changed(@NotNull AnalysisResults.Analysis analysis, @NotNull AnalysisResults.Summary summary) {
@@ -156,9 +160,10 @@ public final class DependencyUsagePanel extends DetectivePanel {
         setStatus(null);
         AnalysisResults results = AnalysisResults.getInstance(project);
         results.running(AnalysisResults.Analysis.USAGE);
+        int imports = results.imports();
         checker.run(c -> compute(project, c), r -> {
             result = r;
-            setStale(false);
+            setStale(results.imports() != imports);   // Maven-Import während der Rechnung
             applyFilter();
             results.set(AnalysisResults.Analysis.USAGE, summary(r));
         });

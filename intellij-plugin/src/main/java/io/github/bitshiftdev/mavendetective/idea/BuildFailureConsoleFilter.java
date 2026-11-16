@@ -36,9 +36,25 @@ final class BuildFailureConsoleFilter implements Filter, DumbAware {
     private static final Pattern FAILURE = Pattern.compile("^\\[(?:INFO|ERROR)\\] (BUILD FAILURE)\\s*$");
 
     private final Project project;
+    /**
+     * Lauf, dessen {@code BUILD FAILURE} zuletzt verlinkt wurde und dessen Zeile {@code Finished at: …} noch aussteht.
+     * Ein Filter gehört zu genau einer Konsole; die Zeile macht den Lauf im Verlauf eindeutig.
+     */
+    private volatile @Nullable ConsoleRun pending;
 
     BuildFailureConsoleFilter(@NotNull Project project) {
         this.project = project;
+    }
+
+    /** Kennzeichen des Laufs einer Konsole; wird nach dem Link gefüllt (die Zeile folgt erst danach). */
+    static final class ConsoleRun {
+        volatile @Nullable String finishedAt;
+    }
+
+    /** {@code Finished at: 2026-11-16T10:00:00+01:00} aus der Zeile, sonst {@code null}. */
+    static @Nullable String finishedAt(@NotNull String line) {
+        int i = line.indexOf("Finished at: ");
+        return i < 0 ? null : line.substring(i).strip();
     }
 
     /** Registriert in plugin.xml ({@code consoleFilterProvider}). */
@@ -60,12 +76,23 @@ final class BuildFailureConsoleFilter implements Filter, DumbAware {
 
     @Override
     public @Nullable Result applyFilter(@NotNull String line, int entireLength) {
+        ConsoleRun waiting = pending;
+        if (waiting != null) {
+            String at = finishedAt(line);
+            if (at != null) {
+                waiting.finishedAt = at;
+                pending = null;
+            }
+        }
         int[] range = failureRange(line);
         if (range == null) {
             return null;
         }
         int lineStart = entireLength - line.length();
-        HyperlinkInfo open = p -> Navigator.buildDoctor(p, BuildDoctorPanel::showLatest);
+        // nicht der neueste Lauf, sondern der dieser Konsole (es können mehrere rote Läufe offen sein)
+        ConsoleRun run = new ConsoleRun();
+        pending = run;
+        HyperlinkInfo open = p -> Navigator.buildDoctor(p, panel -> panel.showRun(run.finishedAt));
         return new Result(List.of(new LinkWithHint(lineStart + range[0], lineStart + range[1], open)));
     }
 

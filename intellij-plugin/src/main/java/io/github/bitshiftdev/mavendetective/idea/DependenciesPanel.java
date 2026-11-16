@@ -64,6 +64,8 @@ public final class DependenciesPanel extends DetectivePanel {
     private DepNode tree;
     private VersionExplanation shown;
     private boolean loading;
+    /** Auswahl kommt aus dem Code (Sprung, Neuladen): der Listener erklärt dann nicht noch einmal. */
+    private boolean selecting;
 
     public DependenciesPanel(@NotNull Project project) {
         super(project);
@@ -99,7 +101,7 @@ public final class DependenciesPanel extends DetectivePanel {
             }
         });
         list.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting() && list.getSelectedValue() != null) {
+            if (!e.getValueIsAdjusting() && !selecting && list.getSelectedValue() != null) {
                 DepNode n = list.getSelectedValue().node();
                 explain(n.getGroupId(), n.getArtifactId());
             }
@@ -208,9 +210,18 @@ public final class DependenciesPanel extends DetectivePanel {
                 emptyText(list.getEmptyText(), MavenDetectiveBundle.message("empty.no.match"), null, null);
             }
             applyFilter();
+            VersionExplanation before = shown;
             if (groupId != null) {
                 selectInList(groupId, artifactId);
                 explain(groupId, artifactId);
+            } else if (before != null && contains(before.getGroupId(), before.getArtifactId())) {
+                // anderes Modul oder neu geladen: dieselbe Dependency dort erklären, falls es sie gibt
+                selectInList(before.getGroupId(), before.getArtifactId());
+                explain(before.getGroupId(), before.getArtifactId());
+            } else {
+                // keine alte Erklärung (aus einem anderen Modul) stehen lassen – auch nicht im Markdown
+                shown = null;
+                details.showMessage(MavenDetectiveBundle.message("why.start"));
             }
         });
     }
@@ -254,16 +265,31 @@ public final class DependenciesPanel extends DetectivePanel {
         }
     }
 
-    private void selectInList(String groupId, String artifactId) {
-        for (int i = 0; i < listModel.size(); i++) {
-            DepNode n = listModel.get(i).node();
-            if (n.getGroupId().equals(groupId) && n.getArtifactId().equals(artifactId)) {
-                list.setSelectedIndex(i);
-                list.ensureIndexIsVisible(i);
-                return;
+    private boolean contains(String groupId, String artifactId) {
+        for (Entry e : all) {
+            if (e.node().getGroupId().equals(groupId) && e.node().getArtifactId().equals(artifactId)) {
+                return true;
             }
         }
-        list.clearSelection();
+        return false;
+    }
+
+    /** Wählt die Dependency in der Liste, ohne dass der Listener eine zweite Erklärung startet. */
+    private void selectInList(String groupId, String artifactId) {
+        selecting = true;
+        try {
+            for (int i = 0; i < listModel.size(); i++) {
+                DepNode n = listModel.get(i).node();
+                if (n.getGroupId().equals(groupId) && n.getArtifactId().equals(artifactId)) {
+                    list.setSelectedIndex(i);
+                    list.ensureIndexIsVisible(i);
+                    return;
+                }
+            }
+            list.clearSelection();
+        } finally {
+            selecting = false;
+        }
     }
 
     private void explain(String groupId, String artifactId) {

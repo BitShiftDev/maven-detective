@@ -18,6 +18,7 @@ import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.preflight.Preflight;
 import io.github.bitshiftdev.mavendetective.idea.ui.Badge;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
 import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
 import org.jetbrains.annotations.Nls;
@@ -110,7 +111,7 @@ final class PreflightView extends JPanel {
         detailScroll.setBorder(JBUI.Borders.empty());
         detailScroll.setPreferredSize(JBUI.size(200, 150));
         add(head, BorderLayout.NORTH);
-        add(scroll, BorderLayout.CENTER);
+        add(DetectivePanel.copyable(scroll, this::selectedText), BorderLayout.CENTER);
         add(detailScroll, BorderLayout.SOUTH);
     }
 
@@ -139,17 +140,18 @@ final class PreflightView extends JPanel {
         summary.setText(report.headline());
         network.setText(MavenDetectiveBundle.message(report.isNetworkChecked() ? "preflight.network.done" : "preflight.network.not"));
         getAccessibleContext().setAccessibleDescription(lightText(report.getLight()) + " – " + report.headline());
-        // erste Zeile mit Problem wählen, sonst die erste
-        int select = 0;
+        // die bisher gewählte Zeile, sonst die erste mit Problem, sonst die erste
+        int kept = -1;
+        int firstProblem = -1;
         for (int i = 0; i < model.size(); i++) {
-            if (keep != null && model.get(i).getText().equals(keep.getText())) {
-                select = i;
-                break;
+            if (keep != null && kept < 0 && model.get(i).getText().equals(keep.getText())) {
+                kept = i;
             }
-            if (select == 0 && model.get(i).getStatus().ordinal() >= Preflight.Status.WARNING.ordinal()) {
-                select = i;
+            if (firstProblem < 0 && model.get(i).getStatus().ordinal() >= Preflight.Status.WARNING.ordinal()) {
+                firstProblem = i;
             }
         }
+        int select = kept >= 0 ? kept : firstProblem >= 0 ? firstProblem : 0;
         if (!model.isEmpty()) {
             list.setSelectedIndex(select);
             list.ensureIndexIsVisible(select);

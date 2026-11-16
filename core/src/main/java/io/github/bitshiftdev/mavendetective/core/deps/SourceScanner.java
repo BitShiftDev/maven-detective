@@ -137,7 +137,7 @@ public final class SourceScanner {
     /** Eine Datei: Imports, Wildcards, voll qualifizierte Namen. */
     public static void scanText(String text, boolean test, Path file, ClassUsages into) {
         into.countFile(test);
-        String code = stripCommentsAndStrings(text);
+        String code = stripCommentsAndStrings(text, Language.of(file));
         int[] lineStarts = lineStarts(code);
 
         Matcher pm = PACKAGE.matcher(code);
@@ -176,57 +176,128 @@ public final class SourceScanner {
         }
     }
 
+    /** Sprache einer Quelldatei nach ihrer Endung; ohne Datei Java. */
+    enum Language {
+        /** Text-Blöcke mit Escapes, keine Templates. */
+        JAVA,
+        /** Templates in {@code "…"} und Raw-Strings; Raw-Strings ohne Escapes. */
+        KOTLIN,
+        /** Templates in {@code "…"} und {@code """…"""}; dreifache einfache Anführungszeichen ohne Templates. */
+        GROOVY;
+
+        static Language of(Path file) {
+            String name = file == null || file.getFileName() == null ? "" : file.getFileName().toString();
+            return name.endsWith(".kt") || name.endsWith(".kts") ? KOTLIN : name.endsWith(".groovy") ? GROOVY : JAVA;
+        }
+    }
+
+    /** Wie {@link #stripCommentsAndStrings(String, Language)} für Java. */
+    static String stripCommentsAndStrings(String s) {
+        return stripCommentsAndStrings(s, Language.JAVA);
+    }
+
     /**
      * Kommentare und Zeichenketten durch Leerzeichen ersetzen, Zeilenumbrüche bleiben (für die
-     * Zeilennummern). Kennt {@code //}, {@code /* *&#47;}, {@code "…"}, {@code '…'} und {@code """…"""}.
+     * Zeilennummern). Kennt {@code //}, {@code /* *&#47;}, {@code "…"}, {@code '…'}, Text-Blöcke und in Groovy
+     * dreifache einfache Anführungszeichen; ein Escape vor Anführungszeichen beendet keinen Text-Block. In Kotlin
+     * und Groovy bleibt der Code in {@code ${…}} stehen – dort genannte Klassen sind echte Nutzungen.
      */
-    static String stripCommentsAndStrings(String s) {
-        char[] out = s.toCharArray();
-        int n = out.length;
-        int i = 0;
-        while (i < n) {
-            char c = out[i];
-            if (c == '/' && i + 1 < n && out[i + 1] == '/') {
-                while (i < n && out[i] != '\n') {
-                    out[i++] = ' ';
-                }
-            } else if (c == '/' && i + 1 < n && out[i + 1] == '*') {
-                out[i++] = ' ';
-                out[i++] = ' ';
-                while (i < n && !(out[i] == '*' && i + 1 < n && out[i + 1] == '/')) {
-                    blank(out, i++);
-                }
-                if (i < n) {
-                    out[i++] = ' ';
-                    out[i++] = ' ';
-                }
-            } else if (c == '"' && i + 2 < n && out[i + 1] == '"' && out[i + 2] == '"') {
-                out[i++] = ' ';
-                out[i++] = ' ';
-                out[i++] = ' ';
-                while (i < n && !(out[i] == '"' && i + 2 < n && out[i + 1] == '"' && out[i + 2] == '"')) {
-                    blank(out, i++);
-                }
-                for (int k = 0; k < 3 && i < n; k++) {
-                    out[i++] = ' ';
-                }
-            } else if (c == '"' || c == '\'') {
-                char q = c;
-                out[i++] = ' ';
-                while (i < n && out[i] != q && out[i] != '\n') {
-                    if (out[i] == '\\' && i + 1 < n) {
-                        out[i++] = ' ';
-                    }
-                    blank(out, i++);
-                }
-                if (i < n && out[i] == q) {
-                    out[i++] = ' ';
-                }
-            } else {
-                i++;
-            }
+    static String stripCommentsAndStrings(String s, Language language) {
+        Stripper st = new Stripper(s.toCharArray(), language);
+        st.code(0, false);
+        return new String(st.a);
+    }
+
+    private static final class Stripper {
+        final char[] a;
+        final int n;
+        final Language language;
+        /** Verschachtelte Templates; begrenzt, damit eine präparierte Datei den Stack nicht sprengt. */
+        int nesting;
+
+        Stripper(char[] a, Language language) {
+            this.a = a;
+            this.n = a.length;
+            this.language = language;
         }
-        return new String(out);
+
+        /** Code ab {@code i}; in einem Template bis zur schließenden Klammer (deren Index zurückkommt). */
+        int code(int i, boolean template) {
+            int depth = 0;
+            while (i < n) {
+                char c = a[i];
+                if (c == '/' && i + 1 < n && a[i + 1] == '/') {
+                    while (i < n && a[i] != '\n') {
+                        a[i++] = ' ';
+                    }
+                } else if (c == '/' && i + 1 < n && a[i + 1] == '*') {
+                    a[i++] = ' ';
+                    a[i++] = ' ';
+                    while (i < n && !(a[i] == '*' && i + 1 < n && a[i + 1] == '/')) {
+                        blank(a, i++);
+                    }
+                    if (i < n) {
+                        a[i++] = ' ';
+                        a[i++] = ' ';
+                    }
+                } else if (c == '"' || c == '\'') {
+                    i = string(i);
+                } else if (template && c == '{') {
+                    depth++;
+                    i++;
+                } else if (template && c == '}') {
+                    if (depth == 0) {
+                        return i;
+                    }
+                    depth--;
+                    i++;
+                } else {
+                    i++;
+                }
+            }
+            return i;
+        }
+
+        /** Zeichenkette ab dem Anführungszeichen bei {@code i}; liefert den Index dahinter. */
+        private int string(int i) {
+            char q = a[i];
+            boolean triple = i + 2 < n && a[i + 1] == q && a[i + 2] == q && (q == '"' || language == Language.GROOVY);
+            int len = triple ? 3 : 1;
+            boolean escapes = !(triple && language == Language.KOTLIN);
+            boolean templates = q == '"' && language != Language.JAVA;
+            for (int k = 0; k < len; k++) {
+                a[i++] = ' ';
+            }
+            while (i < n) {
+                if (a[i] == q && (!triple || i + 2 < n && a[i + 1] == q && a[i + 2] == q)) {
+                    for (int k = 0; k < len; k++) {
+                        a[i++] = ' ';
+                    }
+                    return i;
+                }
+                if (!triple && a[i] == '\n') {
+                    return i;   // nicht geschlossen: am Zeilenende aufhören
+                }
+                if (escapes && a[i] == '\\' && i + 1 < n) {
+                    blank(a, i++);
+                    blank(a, i++);
+                    continue;
+                }
+                if (templates && a[i] == '$' && i + 1 < n && a[i + 1] == '{' && nesting < 32) {
+                    a[i++] = ' ';
+                    a[i++] = ' ';
+                    nesting++;
+                    i = code(i, true);
+                    nesting--;
+                    if (i < n) {
+                        a[i++] = ' ';
+                    }
+                    continue;
+                }
+                blank(a, i++);
+            }
+            return i;
+        }
     }
 
     private static void blank(char[] a, int i) {

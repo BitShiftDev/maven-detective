@@ -76,7 +76,11 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
     private final SetupComparisonView setupView;
     private final Background setupCheck = background(MavenDetectiveBundle.message("doctor.setup.loading"));
     private final PreflightView preflightView;
-    private final Background preflightCheck = background(MavenDetectiveBundle.message("preflight.loading"));
+    /**
+     * Ohne Ladeanzeige über dem ganzen Tab: die Prüfung mit Netz kann dauern, Karte und Verlauf bleiben nutzbar;
+     * die Preflight-Ansicht und die Statuszeile zeigen „läuft“, „Stopp“ bricht ab.
+     */
+    private final Background preflightCheck = background(null);
     private final LogNavigatorView logView;
     private @Nullable Run shown;
     private int diagnosisIndex;
@@ -93,6 +97,7 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         actions.add(registered("MavenDetective.CompareSetup"));
         actions.add(registered("MavenDetective.Preflight"));
         actions.add(registered("MavenDetective.ShowLog"));
+        actions.add(registered("MavenDetective.Stop"));
         actions.addSeparator();
         actions.add(registered("MavenDetective.CopyMarkdown"));
         actions.add(registered("MavenDetective.ReportMisdiagnosis"));
@@ -164,7 +169,7 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
     @Override
     public void resultChanged(BuildDoctorService.Result result) {
         // Zwischenablage ohne Fehlerzeilen landet nicht im Verlauf – nur sagen, warum nichts passiert
-        setStatus(result.environment() == null && result.diagnoses().isEmpty()
+        setStatus(!result.fromRun() && result.diagnoses().isEmpty()
                 ? MavenDetectiveBundle.message("doctor.clipboard.no.errors") : null);
     }
 
@@ -180,9 +185,12 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
 
     // ---- Anzeige ------------------------------------------------------------------------------
 
-    /** Liste neu füllen; {@code newest}: den neuesten Lauf zeigen (sonst die Auswahl behalten). */
+    /**
+     * Liste neu füllen; {@code newest}: den neuesten Lauf zeigen (sonst die Auswahl behalten). Steht der Nutzer gerade
+     * im Log-Navigator, Setup-Vergleich oder Preflight, bleibt er dort – ein neuer Lauf erscheint nur in der Liste.
+     */
     private void reloadHistory(boolean newest) {
-        Run keep = newest ? null : shown;
+        Run keep = newest && VIEW_CARD.equals(view) ? null : shown;
         List<Run> runs = service.getHistory();
         historyModel.clear();
         runs.forEach(historyModel::addElement);
@@ -273,7 +281,25 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         views.show(right, id);
     }
 
-    /** Neuesten Lauf zeigen (Link „Ursache anzeigen“ in der Konsole, Benachrichtigung). */
+    /**
+     * Den Lauf zeigen, dessen Log die Zeile {@code finishedAt} enthält ({@code Finished at: …} hinter
+     * {@code BUILD FAILURE}) – Link „Ursache anzeigen“ in der Konsole genau dieses Laufs. Ohne Treffer der neueste.
+     */
+    void showRun(@Nullable String finishedAt) {
+        if (finishedAt != null) {
+            for (int i = 0; i < historyModel.size(); i++) {
+                Run r = historyModel.get(i);
+                if (r.result() != null && r.result().rawLog() != null && r.result().rawLog().contains(finishedAt)) {
+                    history.setSelectedValue(r, true);
+                    show(r, 0);
+                    return;
+                }
+            }
+        }
+        showLatest();
+    }
+
+    /** Neuesten Lauf zeigen (Benachrichtigung, Konsole ohne erkennbaren Lauf). */
     void showLatest() {
         if (!historyModel.isEmpty()) {
             Run newest = historyModel.get(0);
@@ -346,7 +372,7 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         if (preflightView.report() == null) {
             preflightView.loading();
         }
-        setStatus(network ? MavenDetectiveBundle.message("preflight.network.running") : null);
+        setStatus(MavenDetectiveBundle.message(network ? "preflight.network.running" : "preflight.loading"));
         preflightCheck.run(c -> service.preflight(network, c), report -> {
             setStatus(null);
             service.preflightDone(report);
@@ -371,7 +397,7 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
             failure.getSession().setLocalRepository(report.getLocalRepository().toString());
         }
         FixRunner.run(project, new FixAction(fix.getType(), fix.getLabel(), params),
-                new BuildDoctorService.Result(failure, List.of(), "", null, null, null, report.getLocalRepository()));
+                new BuildDoctorService.Result(failure, List.of(), "", null, null, null, null, report.getLocalRepository()));
         if (!FixAction.OPEN_FILE.equals(fix.getType())) {
             setStatus(MavenDetectiveBundle.message("preflight.fix.started", fix.getLabel()));
         }

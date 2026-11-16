@@ -235,6 +235,19 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
         });
     }
 
+    /**
+     * Strg+C für eine Liste oder Tabelle außerhalb einer Seite (Ansichten im Build Doctor): kopiert {@code text} der
+     * Auswahl. Liefert die Komponente, die statt {@code scroll} ins Layout gehört.
+     */
+    public static @NotNull JComponent copyable(@NotNull JComponent scroll, @NotNull Supplier<@Nullable String> text) {
+        return UiDataProvider.wrapComponent(scroll, sink -> {
+            String t = text.get();
+            if (t != null) {
+                sink.set(PlatformDataKeys.COPY_PROVIDER, new TextCopy(t));
+            }
+        });
+    }
+
     /** Leerer Zustand einer Tabelle/Liste: Satz und optional ein Link, der etwas tut. */
     protected static void emptyText(@NotNull StatusText target, @Nls @NotNull String text, @Nls @Nullable String link,
                                     @Nullable Runnable action) {

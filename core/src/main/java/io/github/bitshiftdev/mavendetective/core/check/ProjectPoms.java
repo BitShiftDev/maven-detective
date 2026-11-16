@@ -1,6 +1,7 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
+import io.github.bitshiftdev.mavendetective.core.deps.PomCache;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -96,6 +97,8 @@ public final class ProjectPoms {
     private final Cancellation cancellation;
     private List<Pom> poms;
     private final Map<Path, Pom> cache = new HashMap<Path, Pom>();
+    /** Gelesene POMs über mehrere Instanzen hinweg (IDE: jeder Highlighting-Lauf baut eine neue). */
+    private final PomCache shared;
 
     public ProjectPoms(Path root) {
         this(root, Cancellation.NONE);
@@ -103,9 +106,15 @@ public final class ProjectPoms {
 
     /** Wie oben; {@code cancellation} wird je durchsuchtem Verzeichnis geprüft (IDE). */
     public ProjectPoms(Path root, Cancellation cancellation) {
+        this(root, cancellation, null);
+    }
+
+    /** Wie oben; liest die POMs über {@code shared}, solange sie sich nicht ändern. */
+    public ProjectPoms(Path root, Cancellation cancellation, PomCache shared) {
         // absolut, damit relativize() gegen die (absoluten) POM-Pfade funktioniert
         this.root = root == null ? null : root.toAbsolutePath().normalize();
         this.cancellation = cancellation == null ? Cancellation.NONE : cancellation;
+        this.shared = shared;
     }
 
     public Path root() { return root; }
@@ -173,16 +182,28 @@ public final class ProjectPoms {
             return cache.get(key);
         }
         Pom pom = null;
-        if (Files.isRegularFile(key)) {
+        if (shared != null) {
+            pom = shared.view(key, new PomCache.Reader<Pom>() {
+                @Override
+                public Pom read(Path file) throws Exception {
+                    return parse(file);
+                }
+            });
+        } else if (Files.isRegularFile(key)) {
             try {
-                List<String> lines = Arrays.asList(new String(Files.readAllBytes(key), StandardCharsets.UTF_8).split("\\r?\\n", -1));
-                pom = new Pom(key, lines);
-                parseCoordinates(pom);
+                pom = parse(key);
             } catch (IOException e) {
                 pom = null;
             }
         }
         cache.put(key, pom);
+        return pom;
+    }
+
+    private static Pom parse(Path key) throws IOException {
+        List<String> lines = Arrays.asList(new String(Files.readAllBytes(key), StandardCharsets.UTF_8).split("\\r?\\n", -1));
+        Pom pom = new Pom(key, lines);
+        parseCoordinates(pom);
         return pom;
     }
 

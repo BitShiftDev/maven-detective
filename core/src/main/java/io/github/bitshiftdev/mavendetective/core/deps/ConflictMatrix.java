@@ -148,6 +148,7 @@ public final class ConflictMatrix {
         private final String groupId;
         private final String artifactId;
         private final Map<Module, Cell> cells = new LinkedHashMap<Module, Cell>();
+        private List<String> versions;
         private Pin pin;
         private String pinProblem;
 
@@ -163,14 +164,20 @@ public final class ConflictMatrix {
         public Map<Module, Cell> getCells() { return Collections.unmodifiableMap(cells); }
 
         /** Unterschiedliche Versionen, aufsteigend. */
+        /** Verschiedene Versionen der Zeile, aufsteigend; gemerkt (die IDE fragt je Zelle und Neuzeichnen). */
         public List<String> versions() {
+            List<String> known = versions;
+            if (known != null) {
+                return known;
+            }
             Set<String> set = new LinkedHashSet<String>();
             for (Cell c : cells.values()) {
                 set.add(c.version);
             }
             List<String> out = new ArrayList<String>(set);
             Collections.sort(out, MavenVersion.ORDER);
-            return out;
+            versions = Collections.unmodifiableList(out);
+            return versions;
         }
 
         public boolean isDivergent() {
@@ -263,6 +270,7 @@ public final class ConflictMatrix {
                     rows.put(e.getKey(), row);
                 }
                 row.cells.put(module, e.getValue());
+                row.versions = null;
             }
         }
         List<Row> out = new ArrayList<Row>(rows.values());

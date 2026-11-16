@@ -95,11 +95,11 @@ rules:
       - 'invalid CEN header'
       - 'error in opening zip file'
       - 'zip file is empty'
-      - 'error reading (?<file>\S+\.jar)'
+      - 'error reading (?<file>[^;\r\n]{1,500}?\.jar)'
       - 'ZipException'
       - 'Checksum validation failed'
     extract:
-      - '(?<![^\s;:''"=(\[,])(?<file>(?:[A-Za-z]:)?[\\/][^\s;:''"]*\.jar)'
+      - '(?<![^\s;:''"=(\[,])(?<file>(?:[A-Za-z]:)?[\\/](?:(?:[^\s:;''"\[]|[ \t](?![\\/]|[A-Za-z]:)){0,400}?[\\/])?[^\s\\/:;''"\[]+\.jar)'
       - '(?:artifact|for) (?<artifact>[^\s:,]+:[^\s:,]+:jar(?::[^\s:,]+)?:[^\s:,()]+)'
       - 'descriptor for (?<artifact>[^\s:,]+:[^\s:,]+:[^\s:,()]+)[:\s]'
     cause: 'Ein JAR im lokalen Repository ist beschädigt ({file|Datei unbekannt}) – meist ein abgebrochener Download.'
@@ -118,7 +118,7 @@ rules:
     priority: 88
     confidence: certain
     patterns:
-      - regex: 'Child module (?<module>\S+) of (?<file>\S+) does not exist'
+      - regex: 'Child module (?<module>.+) of (?<file>.+?\.xml) does not exist'
         cause: 'In {file} ist ein Modul eingetragen, dessen Verzeichnis fehlt: {moduleName,module}.'
         cause_en: '{file} lists a module whose directory is missing: {moduleName,module}.'
       - regex: 'contain a cyclic reference: .*cycle in the graph (?<cycle>.+?)(?: @|$)'
@@ -154,11 +154,11 @@ rules:
       - regex: 'Non-resolvable parent POM'
         cause: 'Die Parent-POM ist weder über relativePath noch im Repository zu finden.'
         cause_en: 'The parent POM can be found neither via relativePath nor in the repository.'
-      - regex: 'Malformed POM (?<file>\S+?): (?<detail>.+?)\s+@'
+      - regex: 'Malformed POM (?<file>.+?\.xml): (?<detail>.+?)\s+@'
         cause: 'Die POM ist kein gültiges Maven-XML: {detail}.'
         cause_en: 'The POM is not valid Maven XML: {detail}.'
         confidence: certain
-      - regex: 'Non-parseable POM (?<file>\S+?): (?<detail>.+?)\s+@'
+      - regex: 'Non-parseable POM (?<file>.+?\.xml): (?<detail>.+?)\s+@'
         cause: 'Die POM ist kein wohlgeformtes XML: {detail}.'
         cause_en: 'The POM is not well-formed XML: {detail}.'
         confidence: certain

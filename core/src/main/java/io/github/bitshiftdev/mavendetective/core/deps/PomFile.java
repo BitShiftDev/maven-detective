@@ -194,7 +194,9 @@ public final class PomFile {
         f.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         SAXParser parser = f.newSAXParser();
-        parser.parse(new org.xml.sax.InputSource(new java.io.StringReader(xml)), new Handler(pom));
+        // Text aus einer Datei mit UTF-8-BOM: der SAX-Parser kennt das Zeichen nur im Bytestrom
+        String text = xml.startsWith("\uFEFF") ? xml.substring(1) : xml;
+        parser.parse(new org.xml.sax.InputSource(new java.io.StringReader(text)), new Handler(pom));
         return pom;
     }
 

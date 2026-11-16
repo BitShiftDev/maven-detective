@@ -102,14 +102,12 @@ final class RemoteRepositories {
             }
             return new ArrayList<Repo>(repos.values());
         }
+        List<MavenSettings> settings = ctx.settings();
         for (Repo r : repos.values()) {
-            for (MavenSettings s : ctx.settings()) {
-                MavenSettings.Mirror m = s.mirrorFor(r.id, r.url);
-                if (m != null) {
-                    r.mirror = m;
-                    r.mirrorSettings = s;
-                    break;
-                }
+            MavenSettings.Chosen<MavenSettings.Mirror> m = MavenSettings.mirrorFor(settings, r.id, r.url);
+            if (m != null) {
+                r.mirror = m.value;
+                r.mirrorSettings = m.from;
             }
         }
         return new ArrayList<Repo>(repos.values());
@@ -212,7 +210,7 @@ final class RemoteRepositories {
             }
             Item item = Item.info(Topic.REPOSITORY, Texts.t("preflight.remote.not.checked", usable.size()));
             for (Repo r : usable) {
-                item.evidence(Evidence.hint(r.listLabel() + " → " + r.effectiveUrl()));
+                item.evidence(Evidence.hint(r.listLabel() + " → " + Text.maskUserInfo(r.effectiveUrl())));
             }
             items.add(item);
             return items;
@@ -227,7 +225,7 @@ final class RemoteRepositories {
             }
             if (MavenSettings.unresolved(url)) {
                 // Platzhalter, den nur die Build-Umgebung kennt: nicht anfragen, kein Urteil (fehlt in reachable)
-                Item item = Item.info(Topic.REPOSITORY, Texts.t("preflight.remote.unresolved", r.label(), url));
+                Item item = Item.info(Topic.REPOSITORY, Texts.t("preflight.remote.unresolved", r.label(), Text.maskUserInfo(url)));
                 if (r.mirrorSettings != null && r.mirror != null && url.equals(r.mirror.url)) {
                     int line = Math.max(1, r.mirrorSettings.lineOf(url));
                     item.evidence(Evidence.setting(url, r.mirrorSettings.getFile().toString(), line));
@@ -275,7 +273,8 @@ final class RemoteRepositories {
             }
             return null;
         }
-        Item item = Item.error(Topic.REPOSITORY, Texts.t("preflight.remote.http", r.label(), r.viaNexus ? r.effectiveUrl() : r.url));
+        Item item = Item.error(Topic.REPOSITORY, Texts.t("preflight.remote.http", r.label(),
+                Text.maskUserInfo(r.viaNexus ? r.effectiveUrl() : r.url)));
         if (!r.viaNexus && r.pom != null && PreflightChecks.isRemoteHttp(r.url)) {
             String https = "https://" + r.url.substring("http://".length());
             item.evidence(Evidence.file(Texts.t("check.http.pom.evidence"), r.pom.file.toString(), r.line))
@@ -303,7 +302,7 @@ final class RemoteRepositories {
                 default: key = "preflight.remote.failed"; break;
             }
             Item item = Item.error(Topic.REPOSITORY, Texts.t(key, r.label(), host))
-                    .evidence(Evidence.hint(url));
+                    .evidence(Evidence.hint(Text.maskUserInfo(url)));
             if (response.message != null) {
                 item.evidence(Evidence.log(Text.truncate(response.message, 200)));
             }
@@ -316,7 +315,7 @@ final class RemoteRepositories {
         if ((code == 401 || code == 403) && r.viaNexus && r.mirrorSettings == null) {
             // ohne Mirror-Eintrag gibt es keine ID, unter der ein <server> stehen könnte
             return Item.info(Topic.REPOSITORY, Texts.t("preflight.remote.nexus.login", r.label(), code))
-                    .evidence(Evidence.hint(url));
+                    .evidence(Evidence.hint(Text.maskUserInfo(url)));
         }
         if (code == 401 || code == 403) {
             MavenSettings withServer = serverFor(ctx, r.effectiveId());
@@ -326,7 +325,7 @@ final class RemoteRepositories {
                         .evidence(Evidence.setting(Texts.t("preflight.remote.server", r.effectiveId()), withServer.getFile().toString(), line));
             }
             Item item = Item.error(Topic.REPOSITORY, Texts.t("preflight.remote.login.missing", r.label(), code, r.effectiveId()))
-                    .evidence(Evidence.hint(url));
+                    .evidence(Evidence.hint(Text.maskUserInfo(url)));
             MavenSettings user = ctx.userSettings();
             if (user != null) {
                 item.fix(PreflightChecks.open(user.getFile(), Math.max(1, user.lineOf("<servers>")), Texts.t("preflight.open.settings")));
@@ -337,14 +336,14 @@ final class RemoteRepositories {
         }
         if (code == 407) {
             return Item.warning(Topic.REPOSITORY, Texts.t("preflight.remote.proxy.login", r.label()))
-                    .evidence(Evidence.hint(url));
+                    .evidence(Evidence.hint(Text.maskUserInfo(url)));
         }
         if (code >= 500) {
             return Item.warning(Topic.REPOSITORY, Texts.t("preflight.remote.server.error", r.label(), code))
-                    .evidence(Evidence.hint(url));
+                    .evidence(Evidence.hint(Text.maskUserInfo(url)));
         }
         return Item.ok(Topic.REPOSITORY, Texts.t("preflight.remote.ok", r.label(), code, response.millis))
-                .evidence(Evidence.hint(url));
+                .evidence(Evidence.hint(Text.maskUserInfo(url)));
     }
 
     /** Parents/BOMs, die lokal fehlen: liegt die POM in einem der erreichbaren Repositories? */
@@ -403,20 +402,9 @@ final class RemoteRepositories {
         return null;
     }
 
-    /** Proxy aus settings.xml: gleiches Protokoll zuerst, sonst ein http-Proxy (gilt bei Maven oft für beide). */
+    /** Proxy aus settings.xml, gewählt wie von Maven ({@link MavenSettings#proxyFor(List, String)}). */
     static MavenSettings.Proxy proxyFor(PreflightContext ctx, String url) {
-        String protocol = url.toLowerCase(java.util.Locale.ROOT).startsWith("https") ? "https" : "http";
-        String host = Text.host(url);
-        for (MavenSettings s : ctx.settings()) {
-            MavenSettings.Proxy p = s.activeProxy(protocol);
-            if (p == null) {
-                p = s.activeProxy("http");
-            }
-            if (p != null) {
-                return p.bypasses(host) ? null : p;
-            }
-        }
-        return null;
+        return MavenSettings.proxyFor(ctx.settings(), url);
     }
 
     private static String slash(String url) {

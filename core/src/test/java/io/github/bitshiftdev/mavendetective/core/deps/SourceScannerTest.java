@@ -72,4 +72,25 @@ class SourceScannerTest {
         SourceScanner.scanText(kt, false, Paths.get("F.kt"), u);
         assertTrue(u.names(false).containsAll(List.of("org.x.Y", "org.x.W")), u.names(false).toString());
     }
+    /** Review #63: Escapes in Text-Blöcken, Groovy-Strings mit drei einfachen Anführungszeichen, Templates in Kotlin/Groovy. */
+    @Test
+    void stringsWithEscapesAndTemplates() {
+        String java = "class A {\n  String t = \"\"\"\n    say \\\"\"\" org.fake.Inside\n    \"\"\";\n  org.real.Used u;\n}\n";
+        ClassUsages u = new ClassUsages();
+        SourceScanner.scanText(java, false, Paths.get("A.java"), u);
+        assertTrue(u.names(false).contains("org.real.Used"), u.names(false).toString());
+        assertFalse(u.names(false).contains("org.fake.Inside"), u.names(false).toString());
+
+        String kt = "fun f() = \"value: ${org.x.T.f()} and {org.fake.Text}\"\nval raw = \"\"\"C:\\\"\"\"\nval y = org.real.Y()\n";
+        u = new ClassUsages();
+        SourceScanner.scanText(kt, false, Paths.get("F.kt"), u);
+        assertTrue(u.names(false).containsAll(List.of("org.x.T", "org.real.Y")), u.names(false).toString());
+        assertFalse(u.names(false).contains("org.fake.Text"), u.names(false).toString());
+
+        String groovy = "def s = '''\norg.fake.Single\n'''\ndef g = \"${org.x.G.name}\"\norg.real.Z z\n";
+        u = new ClassUsages();
+        SourceScanner.scanText(groovy, false, Paths.get("S.groovy"), u);
+        assertTrue(u.names(false).containsAll(List.of("org.x.G", "org.real.Z")), u.names(false).toString());
+        assertFalse(u.names(false).contains("org.fake.Single"), u.names(false).toString());
+    }
 }

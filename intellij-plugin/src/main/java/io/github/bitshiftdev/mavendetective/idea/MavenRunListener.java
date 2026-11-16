@@ -9,7 +9,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,9 +43,17 @@ public final class MavenRunListener implements ExecutionListener {
      */
     static final int HEAD_CHARS = 200_000;
 
-    /** Platzhalter für die weggefallene Mitte; eine eigene Zeile, damit der Log-Parser sie als INFO liest. */
+    /**
+     * Platzhalter für die weggefallene Mitte; eine eigene Zeile, damit der Log-Parser sie als INFO liest. Nur Zeichen
+     * aus Latin-1: ein einziges anderes Zeichen ließe Java den ganzen Log doppelt so groß (UTF-16) speichern.
+     */
     static String cutMarker() {
-        return "\n[INFO] … " + MavenDetectiveBundle.message("log.cut") + " …\n";
+        return "\n[INFO] ... " + MavenDetectiveBundle.message("log.cut") + " ...\n";
+    }
+
+    /** Wie {@link #cutMarker()}, für einen Log, von dem nur das Ende blieb (älterer Eintrag im Verlauf). */
+    static String startCutMarker() {
+        return "[INFO] ... " + MavenDetectiveBundle.message("log.cut.start") + " ...\n";
     }
 
     private final Project project;
@@ -76,9 +83,8 @@ public final class MavenRunListener implements ExecutionListener {
 
     @Override
     public void processStarting(@NotNull String executorId, @NotNull ExecutionEnvironment env, @NotNull ProcessHandler handler) {
-        Object profile = env.getRunProfile();
-        if (!(profile instanceof MavenRunConfiguration)) {
-            LOG.debug("Maven Detective: kein Maven-Lauf, ignoriert: " + profile.getClass().getName());
+        if (!IdeMaven.isMavenRun(env)) {
+            LOG.debug("Maven Detective: kein Maven-Lauf, ignoriert: " + env.getRunProfile().getClass().getName());
             return;
         }
         LOG.info("Maven Detective: Maven-Lauf gestartet (" + env.getRunProfile().getName() + ", Handler "

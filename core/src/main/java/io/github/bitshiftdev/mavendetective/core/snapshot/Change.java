@@ -36,6 +36,7 @@ public final class Change {
     private final String before;
     private final String after;
     private final List<String> modules = new ArrayList<String>();
+    private final java.util.Set<String> moduleSet = new java.util.HashSet<String>();
 
     public Change(Area area, String subject, String before, String after) {
         this.area = area;
@@ -59,9 +60,14 @@ public final class Change {
     public List<String> getModules() { return Collections.unmodifiableList(modules); }
 
     void addModule(String module) {
-        if (module != null && !modules.contains(module)) {
+        if (module != null && moduleSet.add(module)) {
             modules.add(module);
         }
+    }
+
+    /** Schlüssel für {@link #sameAs(Change)}. */
+    String key() {
+        return area.name() + '\u0000' + subject + '\u0000' + before + '\u0000' + after;
     }
 
     boolean sameAs(Change o) {

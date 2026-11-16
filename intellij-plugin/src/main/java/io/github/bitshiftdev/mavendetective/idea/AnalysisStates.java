@@ -20,6 +20,9 @@ final class AnalysisStates {
     /** Stand vor {@link #running}, für Abbruch und Fehler. */
     private final Map<Analysis, Summary> before = new EnumMap<>(Analysis.class);
     private final BiConsumer<Analysis, Summary> onChange;
+    /** Zähler der Maven-Importe; eine Rechnung, die vor einem Import begann, ist danach veraltet. */
+    private int imports;
+    private final Map<Analysis, Integer> startedAt = new EnumMap<>(Analysis.class);
 
     AnalysisStates(@NotNull BiConsumer<Analysis, Summary> onChange) {
         this.onChange = onChange;
@@ -35,16 +38,26 @@ final class AnalysisStates {
         if (now.state() != State.RUNNING) {
             before.put(analysis, now);
         }
+        startedAt.put(analysis, imports);
         put(analysis, now.with(State.RUNNING));
     }
 
+    /** Zahl der Maven-Importe bisher; Seiten merken sie sich beim Start einer Rechnung. */
+    int imports() {
+        return imports;
+    }
+
+    /** Ergebnis einer Rechnung; begann sie vor dem letzten Import, gilt es gleich als veraltet. */
     void set(@NotNull Analysis analysis, @NotNull Summary summary) {
         before.remove(analysis);
-        put(analysis, summary);
+        Integer started = startedAt.remove(analysis);
+        boolean outdated = started != null && started != imports && summary.state() == State.DONE;
+        put(analysis, outdated ? summary.with(State.STALE) : summary);
     }
 
     /** Abgebrochen oder fehlgeschlagen: zurück zum Stand vor der Rechnung. */
     void aborted(@NotNull Analysis analysis) {
+        startedAt.remove(analysis);
         Summary prev = before.remove(analysis);
         if (get(analysis).state() == State.RUNNING) {
             put(analysis, prev != null ? prev : Summary.NOT_CHECKED);
@@ -56,6 +69,7 @@ final class AnalysisStates {
      * der gemerkte Stand veraltet – ein Abbruch darf danach kein „fertig“ von vor dem Import zurückbringen.
      */
     void imported() {
+        imports++;
         for (Analysis a : Analysis.values()) {
             Summary s = get(a);
             if (s.state() == State.DONE) {

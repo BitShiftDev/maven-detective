@@ -110,4 +110,48 @@ class BuildSetupTest {
         assertFalse(c.getRows().get(0).isDifferent(), "Patch-Versionen des JDK zählen nicht");
         assertEquals("IDE und Kommandozeile bauen mit derselben Umgebung.", c.summary());
     }
+    /** Review #55: Homebrew legt die Installation unter libexec ab. */
+    @Test
+    void homebrewInstallationLivesInLibexec(@TempDir Path tmp) throws Exception {
+        Path cellar = tmp.resolve("Cellar/maven/3.9.11");
+        write(cellar.resolve("bin/mvn"), "#!/bin/bash\nexec libexec/bin/mvn \"$@\"");
+        write(cellar.resolve("libexec/lib/maven-core-3.9.11.jar"), "");
+        write(cellar.resolve("libexec/conf/settings.xml"), "<settings/>");
+        Map<String, String> env = new HashMap<String, String>();
+        env.put("MAVEN_HOME", cellar.toString());
+        BuildSetup cli = BuildSetup.detectCommandLine(Files.createDirectories(tmp.resolve("p")), tmp, env);
+        assertEquals("3.9.11", cli.getMavenVersion());
+        assertEquals(cellar.resolve("libexec").toString(), cli.getMavenHome());
+    }
+
+    /** Review #67: ein relatives -Dmaven.repo.local gilt relativ zum Projekt. */
+    @Test
+    void relativeLocalRepositoryIsResolvedAgainstTheProject(@TempDir Path tmp) throws Exception {
+        Path project = tmp.resolve("project");
+        write(project.resolve(".mvn/maven.config"), "-Dmaven.repo.local=.m2/repository\n");
+        BuildSetup cli = BuildSetup.detectCommandLine(project, tmp.resolve("home"), new HashMap<String, String>());
+        assertEquals(project.resolve(".m2/repository").toString(), cli.getLocalRepository());
+    }
+    /** Review #66: Mirror und Proxy wie Maven über Nutzer- und globale settings.xml. */
+    @Test
+    void mirrorAndProxyAreChosenLikeMaven(@TempDir Path tmp) throws Exception {
+        write(tmp.resolve("user.xml"), "<settings><mirrors><mirror><id>all</id><mirrorOf>*</mirrorOf><url>https://all/</url></mirror></mirrors>"
+                + "<proxies><proxy><id>p1</id><protocol>https</protocol><host>p1</host><nonProxyHosts>*.example.org</nonProxyHosts></proxy>"
+                + "<proxy><id>p2</id><protocol>http</protocol><host>p2</host></proxy></proxies></settings>");
+        write(tmp.resolve("global.xml"), "<settings><mirrors><mirror><id>c</id><mirrorOf>central</mirrorOf><url>https://c/</url></mirror>"
+                + "<mirror><id>all</id><mirrorOf>other</mirrorOf><url>https://ignored/</url></mirror></mirrors></settings>");
+        MavenSettings user = MavenSettings.read(tmp.resolve("user.xml"));
+        MavenSettings global = MavenSettings.read(tmp.resolve("global.xml"));
+        java.util.List<MavenSettings> both = Arrays.asList(user, global);
+
+        MavenSettings.Chosen<MavenSettings.Mirror> central = MavenSettings.mirrorFor(both, "central", "https://repo.maven.apache.org/maven2");
+        assertEquals("c", central.value.id, "exakte ID in global schlägt * beim Nutzer");
+        assertTrue(central.from == global);
+        assertEquals("all", MavenSettings.mirrorFor(both, "other", "https://x/").value.id);
+        assertEquals("https://all/", MavenSettings.mirrorFor(both, "other", "https://x/").value.url, "gleiche ID in global fällt weg");
+
+        assertEquals("p2", MavenSettings.proxyFor(both, "https://nexus.example.org/repo").host, "https-Proxy ausgenommen → http-Proxy");
+        assertEquals("p1", MavenSettings.proxyFor(both, "https://repo.maven.apache.org/maven2").host);
+        assertEquals("p2", MavenSettings.proxyFor(both, "http://x/").host);
+    }
 }

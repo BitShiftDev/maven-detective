@@ -48,11 +48,103 @@ public final class SnapshotStore {
         return root;
     }
 
-    /** Ordner für ein Projekt; lesbarer Name plus Hash des absoluten Pfads. */
+    /**
+     * Ordner für ein Projekt; lesbarer Name plus Hash des Pfads. Der Pfad ist kanonisch (Symlinks aufgelöst, unter
+     * Windows ohne Unterschied in der Schreibweise): IDE und {@code mvn.cmd} in einem klein geschriebenen Pfad landen im
+     * selben Ordner. Eine Ablage unter dem früheren Schlüssel (nur absoluter Pfad) wird übernommen.
+     */
     public Path projectDir(Path projectDirectory) {
         Path abs = projectDirectory.toAbsolutePath().normalize();
-        String name = abs.getFileName() == null ? "root" : abs.getFileName().toString().replaceAll("[^A-Za-z0-9._-]", "_");
-        return root.resolve(name + "-" + sha256(abs.toString()).substring(0, 12));
+        Path real;
+        try {
+            real = abs.toRealPath();
+        } catch (IOException e) {
+            real = abs;
+        }
+        String key = real.toString();
+        if (WINDOWS) {
+            key = key.toLowerCase(java.util.Locale.ROOT);
+        }
+        Path dir = root.resolve(folderName(real) + "-" + sha256(key).substring(0, 12));
+        Path legacy = root.resolve(folderName(abs) + "-" + sha256(abs.toString()).substring(0, 12));
+        if (!legacy.equals(dir) && !Files.isDirectory(dir) && Files.isDirectory(legacy)) {
+            try {
+                Files.move(legacy, dir);
+            } catch (IOException e) {
+                return legacy;
+            }
+        }
+        return dir;
+    }
+
+    private static final boolean WINDOWS = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+
+    private static String folderName(Path p) {
+        return p.getFileName() == null ? "root" : p.getFileName().toString().replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    /** Projektordner, in die so lange nichts geschrieben wurde, werden beim Schreiben entfernt. */
+    static final long PRUNE_AFTER_MILLIS = 180L * 24 * 60 * 60 * 1000;
+    private static volatile boolean pruned;
+
+    /** Entfernt einmal je JVM verwaiste Projektordner (gelöschte oder lange nicht gebaute Projekte). */
+    void pruneOldProjects(Path keep) {
+        if (pruned) {
+            return;
+        }
+        pruned = true;
+        prune(keep, System.currentTimeMillis() - PRUNE_AFTER_MILLIS);
+    }
+
+    void prune(Path keep, long olderThan) {
+        java.nio.file.DirectoryStream<Path> dirs = null;
+        try {
+            dirs = Files.newDirectoryStream(root);
+            for (Path dir : dirs) {
+                if (!Files.isDirectory(dir) || dir.equals(keep) || newest(dir) >= olderThan) {
+                    continue;
+                }
+                java.nio.file.DirectoryStream<Path> files = Files.newDirectoryStream(dir);
+                try {
+                    for (Path f : files) {
+                        String n = f.getFileName().toString();
+                        if (n.endsWith(".json") || n.endsWith(".tmp")) {
+                            Files.deleteIfExists(f);
+                        }
+                    }
+                } finally {
+                    files.close();
+                }
+                try {
+                    Files.deleteIfExists(dir);
+                } catch (IOException notEmpty) {
+                    // fremde Dateien darin: stehen lassen
+                }
+            }
+        } catch (IOException e) {
+            // Aufräumen ist nur nett, nie ein Fehler
+        } finally {
+            if (dirs != null) {
+                try {
+                    dirs.close();
+                } catch (IOException ignored) {
+                    // nichts zu tun
+                }
+            }
+        }
+    }
+
+    private static long newest(Path dir) throws IOException {
+        long newest = Files.getLastModifiedTime(dir).toMillis();
+        java.nio.file.DirectoryStream<Path> files = Files.newDirectoryStream(dir);
+        try {
+            for (Path f : files) {
+                newest = Math.max(newest, Files.getLastModifiedTime(f).toMillis());
+            }
+        } finally {
+            files.close();
+        }
+        return newest;
     }
 
     public Path greenFile(Path projectDirectory, String origin) {
@@ -75,7 +167,9 @@ public final class SnapshotStore {
         if (previous != null) {
             carryOver(previous, snapshot);
         }
-        return write(target, snapshot);
+        Path written = write(target, snapshot);
+        pruneOldProjects(target.getParent());
+        return written;
     }
 
     static void carryOver(BuildSnapshot previous, BuildSnapshot next) {

@@ -30,7 +30,7 @@ final class PomChecks {
     // ------------------------------------------------------------------ pom-location
 
     static final class PomLocation implements Check {
-        private static final Pattern WITH_FILE = Pattern.compile("@ (\\S+?\\.xml), line (\\d+), column (\\d+)");
+        private static final Pattern WITH_FILE = Pattern.compile("@ ([^,\\r\\n]{1,500}?\\.xml), line (\\d+), column (\\d+)");
         private static final Pattern LINE_ONLY = Pattern.compile("@ line (\\d+), column (\\d+)");
         private static final Pattern PROJECT_FILE = Pattern.compile("The project \\S+ \\(([^)]+\\.xml)\\) has \\d+ errors?");
 

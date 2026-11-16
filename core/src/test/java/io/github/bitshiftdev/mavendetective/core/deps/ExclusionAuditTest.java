@@ -320,4 +320,32 @@ class ExclusionAuditTest {
         assertTrue(jaxb.message().contains("jdk11"), jaxb.message());
         assertTrue(a.removable().isEmpty());
     }
+    /** Review #41: eine Exclusion im Parent ist nur veraltet, wenn sie in keinem erbenden Modul mehr wirkt. */
+    @Test
+    void parentExclusionIsCheckedInEveryInheritingModule() throws IOException {
+        artifact("org.d", "d", "1.0", "<dependencies>" + dep("org.m", "m", "1.0", "") + "</dependencies>");
+        artifact("org.m", "m", "1.0", "");
+        artifact("org.m", "m", "2.0", "<dependencies>" + dep("org.x", "x", "1.0", "") + "</dependencies>");
+        artifact("org.x", "x", "1.0", "");
+        Path root = tmp.resolve("inherit");
+        write(root.resolve("pom.xml"), "<project><groupId>com.acme</groupId><artifactId>parent</artifactId><version>1.0</version>"
+                + "<packaging>pom</packaging><modules><module>child</module></modules><dependencies>"
+                + dep("org.d", "d", "1.0", "<exclusions><exclusion><groupId>org.x</groupId><artifactId>x</artifactId></exclusion></exclusions>")
+                + "</dependencies></project>");
+        write(root.resolve("child/pom.xml"), "<project><parent><groupId>com.acme</groupId><artifactId>parent</artifactId>"
+                + "<version>1.0</version></parent><artifactId>child</artifactId><dependencyManagement><dependencies>"
+                + dep("org.m", "m", "2.0", "") + "</dependencies></dependencyManagement></project>");
+        PomLocator locator = new PomLocator(root, repo);
+        List<Finding> f = ExclusionAudit.audit(locator, locator.load(root.resolve("pom.xml")), null);
+        assertEquals(1, f.size());
+        assertEquals(Status.USED, f.get(0).getStatus(), f.get(0).message());
+        assertNull(f.get(0).fix());
+
+        // ohne das Management im Kind ist sie wirklich veraltet
+        write(root.resolve("child/pom.xml"), "<project><parent><groupId>com.acme</groupId><artifactId>parent</artifactId>"
+                + "<version>1.0</version></parent><artifactId>child</artifactId></project>");
+        locator = new PomLocator(root, repo);
+        f = ExclusionAudit.audit(locator, locator.load(root.resolve("pom.xml")), null);
+        assertEquals(Status.STALE, f.get(0).getStatus(), f.get(0).message());
+    }
 }

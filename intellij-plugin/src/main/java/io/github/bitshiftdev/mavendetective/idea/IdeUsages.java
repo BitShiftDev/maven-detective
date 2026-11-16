@@ -43,8 +43,8 @@ import java.util.List;
  */
 final class IdeUsages {
 
-    /** JAR-Inhalte über alle Läufe (mtime + Größe) – für Tab, Inspection und „Doppelte Klassen“. */
-    static final JarIndex JARS = new JarIndex();
+    /** JAR-Inhalte über alle Läufe (mtime + Größe) – für Tab, Inspection und „Doppelte Klassen“; siehe {@link IdeCaches}. */
+    static final JarIndex JARS = IdeCaches.JARS;
 
     private IdeUsages() {
     }

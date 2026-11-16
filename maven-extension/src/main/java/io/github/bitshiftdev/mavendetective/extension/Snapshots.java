@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.extension;
 
+import io.github.bitshiftdev.mavendetective.core.check.Text;
 import io.github.bitshiftdev.mavendetective.core.snapshot.BuildSnapshot;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotDiff;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotStore;
@@ -33,13 +34,14 @@ final class Snapshots {
      */
     static SnapshotDiff record(SnapshotStore store, MavenExecutionRequest request, MavenExecutionResult result,
                                String mavenVersion, String projectDirectory, Map<String, ? extends Set<String>> resolvedScopes,
-                               Map<String, ? extends Set<Artifact>> resolvedArtifacts, Logger log) {
+                               Map<String, ? extends Set<Artifact>> resolvedArtifacts, Map<String, String> pomHashes,
+                               Logger log) {
         try {
             if (projectDirectory == null) {
                 return null;
             }
             Path project = Paths.get(projectDirectory);
-            BuildSnapshot current = build(request, result, mavenVersion, projectDirectory, resolvedScopes, resolvedArtifacts)
+            BuildSnapshot current = build(request, result, mavenVersion, projectDirectory, resolvedScopes, resolvedArtifacts, pomHashes)
                     .setSuccessful(!result.hasExceptions());
             store.saveLatest(project, current);
             if (!result.hasExceptions()) {
@@ -63,6 +65,13 @@ final class Snapshots {
     static BuildSnapshot build(MavenExecutionRequest request, MavenExecutionResult result,
                                String mavenVersion, String projectDirectory, Map<String, ? extends Set<String>> resolvedScopes,
                                Map<String, ? extends Set<Artifact>> resolvedArtifacts) {
+        return build(request, result, mavenVersion, projectDirectory, resolvedScopes, resolvedArtifacts, null);
+    }
+
+    /** @param pomHashes groupId:artifactId → Hash vor dem ersten Mojo ({@link #hashes}); fehlt einer, zählt das Modell am Ende */
+    static BuildSnapshot build(MavenExecutionRequest request, MavenExecutionResult result,
+                               String mavenVersion, String projectDirectory, Map<String, ? extends Set<String>> resolvedScopes,
+                               Map<String, ? extends Set<Artifact>> resolvedArtifacts, Map<String, String> pomHashes) {
         BuildSnapshot s = new BuildSnapshot()
                 .setOrigin(BuildSnapshot.ORIGIN_EXTENSION)
                 .setCreatedAt(SnapshotStore.now())
@@ -83,7 +92,8 @@ final class Snapshots {
             List<Mirror> mirrors = request.getMirrors();
             if (mirrors != null) {
                 for (Mirror m : mirrors) {
-                    s.getMirrors().put(String.valueOf(m.getId()), m.getUrl() + " (" + m.getMirrorOf() + ")");
+                    // Zugangsdaten in der URL (https://user:token@…) gehören nicht in die Ablage, Karte oder Markdown
+                    s.getMirrors().put(String.valueOf(m.getId()), Text.maskUserInfo(m.getUrl()) + " (" + m.getMirrorOf() + ")");
                 }
             }
         }
@@ -98,7 +108,8 @@ final class Snapshots {
                 org.apache.maven.model.Parent parent = p.getModel().getParent();
                 m.setParent(parent.getGroupId() + ":" + parent.getArtifactId() + ":" + parent.getVersion());
             }
-            m.setEffectivePomHash(hash(p.getModel()));
+            String early = pomHashes == null ? null : pomHashes.get(p.getGroupId() + ":" + p.getArtifactId());
+            m.setEffectivePomHash(early != null ? early : hash(p.getModel()));
             if (p.getProperties() != null) {
                 for (Map.Entry<Object, Object> e : p.getProperties().entrySet()) {
                     m.addPropertyIfVersion(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
@@ -146,6 +157,20 @@ final class Snapshots {
 
     private static String key(String groupId, String artifactId, String classifier) {
         return groupId + ":" + artifactId + (classifier == null || classifier.isEmpty() ? "" : ":" + classifier);
+    }
+
+    /** Hashes der Effective POMs aller Projekte, solange noch kein Mojo Properties gesetzt hat. */
+    static Map<String, String> hashes(List<MavenProject> projects) {
+        Map<String, String> out = new java.util.HashMap<String, String>();
+        if (projects != null) {
+            for (MavenProject p : projects) {
+                String h = hash(p.getModel());
+                if (h != null) {
+                    out.put(p.getGroupId() + ":" + p.getArtifactId(), h);
+                }
+            }
+        }
+        return out;
     }
 
     /** SHA-256 der Effective POM, wie Maven sie schreiben würde. */

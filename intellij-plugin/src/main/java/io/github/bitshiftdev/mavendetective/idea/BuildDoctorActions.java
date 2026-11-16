@@ -54,7 +54,10 @@ public final class BuildDoctorActions {
                 if (text == null || text.isBlank()) {
                     panel.showMessage(MavenDetectiveBundle.message("doctor.clipboard.empty"));
                 } else {
-                    BuildDoctorService.getInstance(project).analyzeLog(text, null, false);
+                    // ein 50-MB-CI-Log aus der Zwischenablage: wie bei Läufen nur Anfang und Ende behalten
+                    StringBuilder capped = new StringBuilder();
+                    MavenRunListener.append(capped, text);
+                    BuildDoctorService.getInstance(project).analyzeLog(capped.toString(), null, false);
                 }
             });
         }
@@ -77,7 +80,7 @@ public final class BuildDoctorActions {
         public void update(@NotNull AnActionEvent e) {
             MavenDetectiveBundle.localize(this, e.getPresentation());
             BuildDoctorService.Result r = target(e);
-            e.getPresentation().setEnabled(r != null && (!r.diagnoses().isEmpty() || r.environment() != null));
+            e.getPresentation().setEnabled(r != null && (!r.diagnoses().isEmpty() || r.fromRun()));
         }
 
         @Override

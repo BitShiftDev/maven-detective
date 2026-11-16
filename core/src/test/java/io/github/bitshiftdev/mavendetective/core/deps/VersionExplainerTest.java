@@ -372,4 +372,29 @@ class VersionExplainerTest {
         assertEquals("2.5", risks.get(0).getWanted());
         assertEquals("2.0", risks.get(0).getChosen());
     }
+    /** Review #35: ein Property, das sich selbst enthält, bleibt offen statt den Speicher zu füllen. */
+    @Test
+    void selfReferencingPropertiesStayUnresolved() throws Exception {
+        PomFile pom = PomFile.parse(tmp.resolve("cycle/pom.xml"), "<project><groupId>g</groupId><artifactId>a</artifactId><version>1</version>"
+                + "<properties><x>${x}${x}${x}${x}${x}${x}</x><a>${b}</a><b>${a}</b><ok>${v}-x</ok><v>2</v>"
+                + "<p1>${p2}${p2}</p1><p2>${p3}${p3}</p2><p3>${p4}${p4}</p3><p4>${p5}${p5}</p4><p5>${p6}${p6}</p5>"
+                + "<p6>${p7}${p7}</p6><p7>${p8}${p8}</p7><p8>${p9}${p9}</p8><p9>0123456789012345678901234567890123456789</p9>"
+                + "</properties></project>");
+        EffectiveModel m = new PomLocator(null, repo).model(pom);
+        assertTrue(!m.interpolate("${x}").isResolved());
+        EffectiveModel.Interpolated cycle = m.interpolate("${a}");
+        assertTrue(!cycle.isResolved(), cycle.value);
+        assertEquals("2-x", m.interpolate("${ok}").value);
+        EffectiveModel.Interpolated big = m.interpolate("${p1}${p1}${p1}");
+        assertTrue(big.value.length() <= EffectiveModel.MAX_VALUE_LENGTH, String.valueOf(big.value.length()));
+        assertTrue(!big.isResolved());
+    }
+
+    /** Review #34: Text mit UTF-8-BOM liest sich wie die Datei. */
+    @Test
+    void pomTextWithByteOrderMarkIsParsed() throws Exception {
+        PomFile pom = PomFile.parse(tmp.resolve("bom/pom.xml"), "\uFEFF<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                + "<project><groupId>g</groupId><artifactId>a</artifactId><version>1</version></project>");
+        assertEquals("a", pom.getArtifactId());
+    }
 }

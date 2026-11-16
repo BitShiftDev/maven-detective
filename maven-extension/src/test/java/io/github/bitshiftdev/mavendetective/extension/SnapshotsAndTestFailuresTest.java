@@ -102,6 +102,21 @@ class SnapshotsAndTestFailuresTest {
         assertNotNull(m.getEffectivePomHash());
     }
 
+    /** Review #54: der Hash gilt für das Modell vor dem ersten Mojo, nicht für das mit Laufzeit-Properties. */
+    @Test
+    void effectivePomHashIsTakenBeforeTheFirstMojo() {
+        MavenProject p = app("1.0");
+        Map<String, String> early = Snapshots.hashes(List.of(p));
+        p.getModel().getProperties().setProperty("argLine", "-javaagent:/x/jacoco.jar=destfile=/x/jacoco.exec");
+        p.getModel().getProperties().setProperty("buildNumber", "2026-11-16T10:00");
+        BuildSnapshot late = Snapshots.build(null, result(p, false), "3.9.11", tmp.toString(), null, null);
+        BuildSnapshot fixed = Snapshots.build(null, result(p, false), "3.9.11", tmp.toString(), null, null, early);
+        String before = early.get("org.acme:app");
+        assertNotNull(before);
+        assertEquals(before, fixed.module("org.acme:app").getEffectivePomHash());
+        assertFalse(before.equals(late.module("org.acme:app").getEffectivePomHash()));
+    }
+
     @Test
     void withoutResolutionFallsBackToDeclaredDependencies() {
         MavenProject p = project(tmp.resolve("app"), "app");
@@ -122,11 +137,11 @@ class SnapshotsAndTestFailuresTest {
         SnapshotStore store = new SnapshotStore(tmp.resolve("home/snapshots"));
         DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
 
-        assertNull(Snapshots.record(store, request, result(app("1.0"), false), "3.9.11", tmp.toString(), null, null,
+        assertNull(Snapshots.record(store, request, result(app("1.0"), false), "3.9.11", tmp.toString(), null, null, null,
                 NOPLogger.NOP_LOGGER), "grüner Lauf: kein Vergleich");
         assertTrue(Files.isRegularFile(store.greenFile(tmp, BuildSnapshot.ORIGIN_EXTENSION)));
 
-        SnapshotDiff diff = Snapshots.record(store, request, result(app("2.0"), true), "3.9.11", tmp.toString(), null, null,
+        SnapshotDiff diff = Snapshots.record(store, request, result(app("2.0"), true), "3.9.11", tmp.toString(), null, null, null,
                 NOPLogger.NOP_LOGGER);
         assertNotNull(diff);
         assertFalse(diff.isEmpty());
@@ -139,8 +154,8 @@ class SnapshotsAndTestFailuresTest {
     @Test
     void recordNeverThrows() {
         SnapshotStore store = new SnapshotStore(tmp.resolve("snapshots"));
-        assertNull(Snapshots.record(store, null, null, null, tmp.toString(), null, null, NOPLogger.NOP_LOGGER));
-        assertNull(Snapshots.record(store, null, new DefaultMavenExecutionResult(), null, null, null, null, NOPLogger.NOP_LOGGER));
+        assertNull(Snapshots.record(store, null, null, null, tmp.toString(), null, null, null, NOPLogger.NOP_LOGGER));
+        assertNull(Snapshots.record(store, null, new DefaultMavenExecutionResult(), null, null, null, null, null, NOPLogger.NOP_LOGGER));
     }
 
     // --- TestFailures ----------------------------------------------------------------------------

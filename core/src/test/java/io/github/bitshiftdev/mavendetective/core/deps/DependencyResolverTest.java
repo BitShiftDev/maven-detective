@@ -210,4 +210,46 @@ class DependencyResolverTest {
             append(sb, c, depth + 1);
         }
     }
+    /** Review #42: Exclusions aus dem Management der Dependency-POM gelten für ihre Dependencies ohne eigene. */
+    @Test
+    void exclusionsFromTheManagementOfTheDependencyPomApply() throws Exception {
+        Path dir = repo.resolve("org/l/l/1.0");
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("l-1.0.pom"), "<project><groupId>org.l</groupId><artifactId>l</artifactId><version>1.0</version>"
+                + "<dependencyManagement><dependencies>" + dep("org.x", "x", "1.0", "<exclusions><exclusion><groupId>org.y</groupId>"
+                + "<artifactId>y</artifactId></exclusion></exclusions>") + "</dependencies></dependencyManagement>"
+                + "<dependencies>" + dep("org.x", "x", null, "") + "</dependencies></project>");
+        DepNode root = resolve(project("<dependencies>" + dep("org.l", "l", "1.0", "") + "</dependencies>")).getRoot();
+        assertNotNull(root.findIncluded("org.x", "x"));
+        assertNull(root.findIncluded("org.y", "y"), root.toString());
+        assertNull(root.findIncluded("org.z", "z"));
+    }
+
+    /** Review #64: ein Weg zurück zum Modul selbst ist ein Zyklus, kein Eintrag im eigenen Baum. */
+    @Test
+    void pathBackToTheModuleIsACycle() throws Exception {
+        artifact("org.l", "l", "1.0", dep("com.acme", "app", "0.9", ""));
+        DepNode root = resolve(project("<dependencies>" + dep("org.l", "l", "1.0", "") + "</dependencies>")).getRoot();
+        assertNull(root.findIncluded("com.acme", "app"), root.toString());
+        List<DepNode> all = root.findAll("com.acme", "app");
+        assertEquals(1, all.size());
+        assertEquals(DepNode.State.CYCLE, all.get(0).getState());
+    }
+    /** Review #68: -Dtokens=extended und transitive system-Dependencies. */
+    @Test
+    void extendedTreeTokensAndTransitiveSystemScope() throws Exception {
+        List<DepNode> roots = DependencyTreeParser.parse(new java.io.StringReader(String.join("\n",
+                "[INFO] com.acme:app:jar:1.0",
+                "[INFO] \u251C\u2500 org.a:a:jar:1.0:compile",
+                "[INFO] \u2502  \u2514\u2500 org.c:c:jar:1.0:compile",
+                "[INFO] \u2514\u2500 org.b:b:jar:1.0:compile")));
+        assertEquals(1, roots.size());
+        assertEquals(2, roots.get(0).getChildren().size());
+        assertNotNull(roots.get(0).findIncluded("org.c", "c"));
+
+        artifact("org.s", "s", "1.0", dep("org.tools", "tools", "1.8", "<scope>system</scope><systemPath>/x/tools.jar</systemPath>"));
+        artifact("org.tools", "tools", "1.8", "");
+        DepNode root = resolve(project("<dependencies>" + dep("org.s", "s", "1.0", "") + "</dependencies>")).getRoot();
+        assertNotNull(root.findIncluded("org.tools", "tools"), root.toString());
+    }
 }

@@ -17,7 +17,18 @@ public final class Template {
     private Template() {
     }
 
+    /** Text für Menschen: doppelte Leerzeichen (von leeren Platzhaltern) werden zu einem. */
     public static String render(String template, Map<String, String> vars) {
+        String s = substitute(template, vars);
+        return s == null ? null : s.replaceAll("  +", " ").trim();
+    }
+
+    /** Parameter eines Quick-Fixes: Werte bleiben, wie sie sind (auch Leerzeichen in Pfaden oder Argumenten). */
+    public static String renderParameter(String template, Map<String, String> vars) {
+        return substitute(template, vars);
+    }
+
+    private static String substitute(String template, Map<String, String> vars) {
         if (template == null) {
             return null;
         }
@@ -38,6 +49,6 @@ public final class Template {
             m.appendReplacement(sb, Matcher.quoteReplacement(value));
         }
         m.appendTail(sb);
-        return sb.toString().replaceAll("  +", " ").trim();
+        return sb.toString();
     }
 }

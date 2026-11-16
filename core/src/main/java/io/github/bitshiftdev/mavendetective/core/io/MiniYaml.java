@@ -38,7 +38,9 @@ public final class MiniYaml {
     private int index;
 
     private MiniYaml(String text) {
-        rawLines = text.replace("\r\n", "\n").split("\n", -1);
+        // Katalog aus einer Datei mit UTF-8-BOM (Windows-Editoren)
+        String t = text.startsWith("\uFEFF") ? text.substring(1) : text;
+        rawLines = t.replace("\r\n", "\n").split("\n", -1);
         for (int i = 0; i < rawLines.length; i++) {
             String raw = rawLines[i];
             if (raw.indexOf('\t') >= 0 && raw.trim().length() > 0 && raw.substring(0, indentOf(raw)).indexOf('\t') >= 0) {

@@ -2,6 +2,8 @@ package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
@@ -130,17 +132,44 @@ final class LogNavigatorView extends JPanel implements Disposable {
         add(split, BorderLayout.CENTER);
     }
 
-    /** Log zeigen; derselbe Text wird nicht neu aufgebaut. {@code jumpToError}: gleich zum ersten Fehler. */
+    /**
+     * Log zeigen; derselbe Text wird nicht neu aufgebaut. {@code jumpToError}: gleich zum ersten Fehler. Bereinigen und
+     * Gliedern laufen im Hintergrund (bei 80.000 Zeilen einige Hundert Millisekunden), nur Editor und Markierungen
+     * entstehen auf dem EDT.
+     */
     void show(@Nullable String rawLog, boolean jumpToError) {
         String log = rawLog == null ? "" : rawLog;
-        if (!log.equals(shownLog)) {
-            shownLog = log;
-            build(clean(log));
+        if (log.equals(shownLog)) {
+            if (jumpToError && !loading) {
+                jumpFirstError();
+            }
+            return;
         }
-        if (jumpToError) {
-            jumpFirstError();
-        }
+        shownLog = log;
+        int gen = ++generation;
+        loading = true;
+        summary.setText(MavenDetectiveBundle.message("log.loading"));
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            List<String> lines = clean(log);
+            LogOutline o = LogOutline.of(lines);
+            String text = String.join("\n", lines);
+            ApplicationManager.getApplication().invokeLater(() -> {
+                if (gen != generation || disposed) {
+                    return;   // inzwischen ein anderer Log oder die Ansicht ist zu
+                }
+                loading = false;
+                build(lines, o, text);
+                if (jumpToError) {
+                    jumpFirstError();
+                }
+            }, ModalityState.stateForComponent(this));
+        });
     }
+
+    /** Zählt jeden Aufbau; ein älteres Ergebnis aus dem Hintergrund wird verworfen. Nur EDT. */
+    private int generation;
+    private boolean loading;
+    private boolean disposed;
 
     /** ANSI-Farben weg, Fortschrittszeilen ({@code \r}) auf ihren letzten Stand – das Dokument kennt nur {@code \n}. */
     static List<String> clean(String log) {
@@ -159,11 +188,10 @@ final class LogNavigatorView extends JPanel implements Disposable {
         return out;
     }
 
-    private void build(List<String> lines) {
-        LogOutline o = LogOutline.of(lines);
+    private void build(List<String> lines, LogOutline o, String text) {
         outline = o;
         releaseEditor();
-        Document doc = EditorFactory.getInstance().createDocument(String.join("\n", lines));
+        Document doc = EditorFactory.getInstance().createDocument(text);
         doc.setReadOnly(true);
         Editor e = EditorFactory.getInstance().createViewer(doc, project);
         EditorSettings s = e.getSettings();
@@ -376,6 +404,7 @@ final class LogNavigatorView extends JPanel implements Disposable {
 
     @Override
     public void dispose() {
+        disposed = true;
         releaseEditor();
     }
 

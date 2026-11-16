@@ -40,8 +40,8 @@ import java.util.regex.Pattern;
  */
 final class ClasspathChecks {
 
-    /** Gemeinsamer Cache für alle Diagnosen dieser JVM (IDE: über viele Läufe). */
-    static final JarIndex JARS = new JarIndex();
+    /** Gemeinsamer Cache für alle Diagnosen dieser JVM (IDE: über viele Läufe, geteilt mit A3/A5). */
+    static final JarIndex JARS = JarIndex.shared();
 
     private static final int MAX_REPOSITORY_JARS = 600;
 
@@ -89,7 +89,7 @@ final class ClasspathChecks {
             List<Hit> onCp = o.hits(Where.CLASSPATH);
             CheckResult r;
             if (onCp.size() >= 2) {
-                r = duplicates(o, onCp, className, moduleName);
+                r = duplicates(o, onCp, className, moduleName, project.cancel);
             } else if (onCp.size() == 1) {
                 r = single(ctx, project, module, o, onCp.get(0), className, moduleName);
             } else {
@@ -101,7 +101,8 @@ final class ClasspathChecks {
     }
 
     /** Mehrere Fassungen im Classpath: die erste lädt die JVM. */
-    private static CheckResult duplicates(ClassOrigin o, List<Hit> onCp, String className, String moduleName) {
+    private static CheckResult duplicates(ClassOrigin o, List<Hit> onCp, String className, String moduleName,
+                                          Cancellation cancel) {
         Hit winner = onCp.get(0);
         ClassFile.Member member = o.getTarget().getMember();
         Hit better = null;
@@ -128,7 +129,7 @@ final class ClasspathChecks {
             r = CheckResult.info().evidence(Evidence.hint(Texts.t("check.origin.dup.identical", className, onCp.size())));
         }
         jarEvidence(r, onCp, member);
-        DuplicateClasses.Clash clash = clash(o, winner);
+        DuplicateClasses.Clash clash = clash(o, winner, cancel);
         if (clash != null) {
             if (better != null) {
                 for (FixAction f : clash.fixesFor(winner.getEntry())) {
@@ -227,8 +228,9 @@ final class ClasspathChecks {
         if (!o.getWithoutFile().isEmpty()) {
             r.evidence(Evidence.hint(Texts.t("check.origin.unchecked", o.getWithoutFile().size(), o.getWithoutFile().get(0).gav())));
         }
-        List<Hit> local = ClassOrigin.searchRepository(project.locator.getLocalRepository(), o.getTarget(), JARS, MAX_REPOSITORY_JARS,
-                Cancellation.NONE);
+        // eigener, kurzlebiger Index: die bis zu 600 JARs liegen auf keinem Classpath und gehören nicht in den geteilten
+        List<Hit> local = ClassOrigin.searchRepository(project.locator.getLocalRepository(), o.getTarget(), new JarIndex(),
+                MAX_REPOSITORY_JARS, project.cancel);
         if (!local.isEmpty()) {
             Hit h = local.get(0);
             r.cause(Texts.t("check.origin.repository.cause", className, moduleName, h.label()));
@@ -429,8 +431,8 @@ final class ClasspathChecks {
         return sb.toString();
     }
 
-    private static DuplicateClasses.Clash clash(ClassOrigin o, Hit winner) {
-        DuplicateClasses.ModuleResult result = DuplicateClasses.analyze(o.getClasspath(), JARS, Cancellation.NONE);
+    private static DuplicateClasses.Clash clash(ClassOrigin o, Hit winner, Cancellation cancel) {
+        DuplicateClasses.ModuleResult result = DuplicateClasses.analyze(o.getClasspath(), JARS, cancel);
         for (DuplicateClasses.Clash c : result.getClashes()) {
             if (c.getJars().contains(winner.getEntry()) && c.getClasses().contains(winner.getClassName().split("\\$")[0])) {
                 return c;
@@ -446,10 +448,12 @@ final class ClasspathChecks {
         final List<PomFile> poms = new ArrayList<PomFile>();
         final Map<String, PomFile> reactor = new LinkedHashMap<String, PomFile>();
         final Set<Path> files = new HashSet<Path>();
+        final Cancellation cancel;
 
-        private Project(PomLocator locator, Path root) {
+        private Project(PomLocator locator, Path root, Cancellation cancel) {
             this.locator = locator;
             this.root = root;
+            this.cancel = cancel;
         }
 
         static Project of(CheckContext ctx) {
@@ -458,7 +462,7 @@ final class ClasspathChecks {
             if (root == null || repo == null) {
                 return null;
             }
-            Project p = new Project(new PomLocator(root, repo), root);
+            Project p = new Project(new PomLocator(root, repo, null, ctx.cancellation()), root, ctx.cancellation());
             for (ProjectPoms.Pom pom : ctx.projectPoms().all()) {
                 if (!pom.parseable) {
                     continue;
@@ -540,7 +544,7 @@ final class ClasspathChecks {
         }
 
         ClassOrigin origin(PomFile module, Target target) {
-            return ClassOrigin.find(locator, module, reactor, null, files, target, JARS, Cancellation.NONE);
+            return ClassOrigin.find(locator, module, reactor, null, files, target, JARS, cancel);
         }
 
         /**
@@ -558,7 +562,7 @@ final class ClasspathChecks {
             try {
                 UpgradeSimulator.Result result = UpgradeSimulator.simulate(locator, chain,
                         UpgradeSimulator.Request.artifact(d.getGroupId(), d.getArtifactId(), d.getVersion()),
-                        new HashMap<String, io.github.bitshiftdev.mavendetective.core.deps.DepNode>(), Cancellation.NONE);
+                        new HashMap<String, io.github.bitshiftdev.mavendetective.core.deps.DepNode>(), cancel);
                 if (result.getSteps().size() != 1 || !result.getProblems().isEmpty()) {
                     return Collections.emptyList();
                 }
@@ -570,6 +574,7 @@ final class ClasspathChecks {
                 }
                 return result.fixes();
             } catch (RuntimeException e) {
+                cancel.check();
                 return Collections.emptyList();
             }
         }

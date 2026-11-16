@@ -101,6 +101,11 @@ public class DetectiveEventSpy extends AbstractEventSpy {
      */
     private final Map<String, java.util.Set<org.apache.maven.artifact.Artifact>> resolvedArtifacts =
             new java.util.concurrent.ConcurrentHashMap<String, java.util.Set<org.apache.maven.artifact.Artifact>>();
+    /**
+     * groupId:artifactId → Hash der Effective POM vor dem ersten Mojo. Am Ende des Builds enthält das Modell Properties,
+     * die Plugins zur Laufzeit setzen (jacoco {@code argLine}, buildnumber-Zeitstempel) – jeder Lauf sähe „geändert“ aus.
+     */
+    private final Map<String, String> pomHashes = new java.util.concurrent.ConcurrentHashMap<String, String>();
 
     @Override
     public void init(Context context) {
@@ -143,7 +148,11 @@ public class DetectiveEventSpy extends AbstractEventSpy {
                     record(e);
                 }
             } else if (event instanceof ExecutionEvent) {
-                rememberScopes((ExecutionEvent) event);
+                ExecutionEvent ee = (ExecutionEvent) event;
+                if (ee.getType() == ExecutionEvent.Type.SessionStarted && ee.getSession() != null && snapshots) {
+                    pomHashes.putAll(Snapshots.hashes(ee.getSession().getProjects()));
+                }
+                rememberScopes(ee);
                 Map<String, Object> e = execution((ExecutionEvent) event);
                 if (e != null) {
                     record(e);
@@ -158,7 +167,8 @@ public class DetectiveEventSpy extends AbstractEventSpy {
                     record(e);
                 }
                 SnapshotDiff changes = snapshots && store != null
-                        ? Snapshots.record(store, request, result, mavenVersion, projectDirectory, resolvedScopes, resolvedArtifacts, log) : null;
+                        ? Snapshots.record(store, request, result, mavenVersion, projectDirectory, resolvedScopes, resolvedArtifacts,
+                                pomHashes, log) : null;
                 if (report && result.hasExceptions()) {
                     printDiagnosis(changes);
                 }

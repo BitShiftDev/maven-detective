@@ -7,6 +7,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,8 +42,6 @@ public final class MavenLogParser {
     };
     private static final Pattern HELP_LINK = Pattern.compile("^\\[Help \\d+\\] https?://\\S+$");
 
-    private static final int MAX_LOG_LINES = 20000;
-
     private MavenLogParser() {
     }
 
@@ -59,14 +59,13 @@ public final class MavenLogParser {
         String raw;
         boolean previousWasError = false;
         boolean inTestOutput = false;
+        List<String> loose = new ArrayList<String>();
         while ((raw = br.readLine()) != null) {
             String line = raw.indexOf('\u001B') >= 0 ? ANSI.matcher(raw).replaceAll("") : raw;
-            if (failure.getLogLines().size() < MAX_LOG_LINES) {
-                failure.getLogLines().add(line);
-            }
             LogPrefix parsed = LogPrefix.parse(line);
             String text = parsed.getText();
             readSessionHints(text, failure);
+            readResult(text, failure);
 
             String lvl = parsed.getLevel();
             if (lvl != null) {
@@ -93,12 +92,36 @@ public final class MavenLogParser {
             } else {
                 previousWasError = false;
             }
-            // Ausnahmen, die ohne [ERROR] im Log landen (Surefire-Reports, Konsolen-Dumps)
-            if (!previousWasError && looksLikeRuntimeError(text)) {
-                addError(failure, text.trim(), inTestOutput);
+            // Ausnahmen, die ohne [ERROR] im Log landen (Surefire-Reports, Konsolen-Dumps), aber auch
+            // Meldungen der Anwendung aus grünen Tests: nur als schwacher Hinweis, bei BUILD SUCCESS gar nicht
+            if (!previousWasError && looksLikeRuntimeError(text) && loose.size() < MAX_LOOSE) {
+                loose.add(text.trim());
+            }
+        }
+        if (failure.reportsFailure() || !failure.reportsSuccess()) {
+            for (String t : loose) {
+                ErrorRecord r = addError(failure, t, false);
+                if (r != null) {
+                    r.setWeak(true);
+                }
             }
         }
         return failure;
+    }
+
+    /** Höchstens so viele Zeilen ohne Präfix merken (eine Anwendung kann Tausende loggen). */
+    private static final int MAX_LOOSE = 50;
+
+    /** Ergebniszeile von Maven, auch hinter einem unbekannten Präfix. */
+    private static void readResult(String text, BuildFailure failure) {
+        int i = text.length() > 200 ? -1 : text.indexOf("BUILD ");
+        if (i >= 0) {
+            if (text.startsWith("BUILD FAILURE", i)) {
+                failure.setReportsFailure(true);
+            } else if (text.startsWith("BUILD SUCCESS", i)) {
+                failure.setReportsSuccess(true);
+            }
+        }
     }
 
     private static boolean looksLikeRuntimeError(String line) {
@@ -109,10 +132,10 @@ public final class MavenLogParser {
                 || line.contains("There is insufficient memory for the Java Runtime");
     }
 
-    private static void addError(BuildFailure failure, String text, boolean testOutput) {
+    private static ErrorRecord addError(BuildFailure failure, String text, boolean testOutput) {
         String t = text.trim();
         if (t.isEmpty() || isNoise(t)) {
-            return;
+            return null;
         }
         // Maven 3.9 verschachtelt manchmal: "[ERROR] [ERROR] Some problems were encountered…"
         while (t.startsWith("[ERROR] ") || t.startsWith("[FATAL] ")) {
@@ -121,7 +144,7 @@ public final class MavenLogParser {
         // " -> [Help 2]" am Zeilenende abschneiden
         t = t.replaceAll("\\s*->\\s*\\[Help \\d+\\]$", "");
         if (t.isEmpty()) {
-            return;
+            return null;
         }
         ErrorRecord r = ErrorRecord.ofText(t);
         r.setTestOutput(testOutput);
@@ -132,6 +155,7 @@ public final class MavenLogParser {
             r.setProject(goal.group(3));
         }
         failure.getErrors().add(r);
+        return r;
     }
 
     private static boolean isNoise(String t) {

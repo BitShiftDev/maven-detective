@@ -136,6 +136,16 @@ public final class JarIndex {
     /** Nur in {@link #forRun()}: Verzeichnisse, die dieser Lauf schon gelesen hat. */
     private final Map<Path, Contents> run;
 
+    private static final JarIndex SHARED = new JarIndex();
+
+    /**
+     * Ein Index für die ganze JVM: Diagnose (Klassen-Herkunft) und die IDE-Analysen A3/A5 halten dieselben JARs
+     * nur einmal im Speicher.
+     */
+    public static JarIndex shared() {
+        return SHARED;
+    }
+
     public JarIndex() {
         this(new ConcurrentHashMap<Path, Entry>(), new ConcurrentHashMap<Path, DirEntry>(), null);
     }
@@ -144,6 +154,12 @@ public final class JarIndex {
         this.entries = entries;
         this.dirs = dirs;
         this.run = run;
+    }
+
+    /** Alles vergessen (IDE: wenig Speicher). Laufende Sichten aus {@link #forRun()} behalten ihre Verzeichnisse. */
+    public void clear() {
+        entries.clear();
+        dirs.clear();
     }
 
     /**
@@ -178,6 +194,11 @@ public final class JarIndex {
                     return FileVisitResult.TERMINATE;
                 }
                 return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                return FileVisitResult.CONTINUE;   // während des Builds gelöscht oder nicht lesbar
             }
         });
         return found[0];
@@ -262,7 +283,11 @@ public final class JarIndex {
                     if (known != null && known[0] == modified && known[1] == size) {
                         crc = known[2];
                     } else {
-                        crc = crc(file);
+                        try {
+                            crc = crc(file);
+                        } catch (IOException e) {
+                            return FileVisitResult.CONTINUE;   // gerade gelöscht (Build läuft): Datei auslassen
+                        }
                         changed[0] = true;
                     }
                     files.put(rel, new long[] {modified, size, crc});
@@ -272,6 +297,11 @@ public final class JarIndex {
                     services.add(rel);
                 }
                 return names.size() >= MAX_DIR_CLASSES ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                return FileVisitResult.CONTINUE;
             }
         });
         if (before != null && !changed[0] && files.size() == previous.size()

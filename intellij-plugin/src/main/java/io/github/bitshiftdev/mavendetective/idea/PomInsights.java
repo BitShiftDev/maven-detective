@@ -8,6 +8,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.ModificationTracker;
 import com.intellij.openapi.util.SimpleModificationTracker;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
@@ -50,7 +51,7 @@ public final class PomInsights implements Disposable {
     private static final Logger LOG = Logger.getInstance(PomInsights.class);
 
     /** Repository-POMs ändern sich praktisch nie; über alle Läufe hinweg gecacht (prüft Änderungszeit). */
-    private static final PomCache CACHE = new PomCache();
+    private static final PomCache CACHE = IdeCaches.POMS;
 
     /**
      * Befunde einer POM, nach Schlüssel des {@code <dependency>}-Tags.
@@ -107,7 +108,7 @@ public final class PomInsights implements Disposable {
         if (imported) {
             duplicates = null;
         }
-        tracker.incModificationCount();
+        changed();   // Editoren neu hervorheben – sie rechnen die Matrix dann neu an
     }
 
     /** Neue Matrix aus der Seite „Konflikte“ – spart die eigene Rechnung. */
@@ -144,8 +145,15 @@ public final class PomInsights implements Disposable {
                 } finally {
                     computing.set(false);
                 }
-                if (gen == generation.get() && !project.isDisposed()) {
+                if (project.isDisposed()) {
+                    return;
+                }
+                if (gen == generation.get()) {
                     setConflicts(m);
+                } else {
+                    // Während der Rechnung änderte sich eine POM: Ergebnis verwerfen, aber die Editoren neu
+                    // hervorheben lassen – der nächste Lauf startet die Rechnung mit dem neuen Stand
+                    changed();
                 }
             });
         }
@@ -158,10 +166,17 @@ public final class PomInsights implements Disposable {
                 .restart("Maven Detective: neue Grundlage für POM-Hinweise"), project.getDisposed());
     }
 
-    /** Befunde der POM; gecacht bis zur nächsten VFS-Änderung oder neuen Grundlage (Read-Action). */
+    /**
+     * Befunde der POM; gecacht bis zur nächsten neuen Grundlage (gespeicherte {@code pom.xml}, Maven-Import, neue
+     * Matrix oder Prüfung) – nicht bei jeder beliebigen Dateiänderung im Projekt (Read-Action).
+     */
     @NotNull Facts facts(@NotNull XmlFile file) {
-        return CachedValuesManager.getCachedValue(file, () -> CachedValueProvider.Result.create(compute(file),
-                VirtualFileManager.getInstance(), tracker));
+        return CachedValuesManager.getCachedValue(file, () -> CachedValueProvider.Result.create(compute(file), tracker));
+    }
+
+    /** Ändert sich bei jeder gespeicherten {@code pom.xml} und jedem Maven-Import (für Caches der Inspections). */
+    @NotNull ModificationTracker pomTracker() {
+        return tracker;
     }
 
     private Facts compute(XmlFile file) {

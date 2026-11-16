@@ -17,7 +17,8 @@ public final class BuildFailure {
     private final SessionInfo session = new SessionInfo();
     private final List<ErrorRecord> errors = new ArrayList<ErrorRecord>();
     private final List<RepositoryRequest> repositoryRequests = new ArrayList<RepositoryRequest>();
-    private final List<String> logLines = new ArrayList<String>();
+    private boolean reportsFailure;
+    private boolean reportsSuccess;
 
     public BuildFailure(Source source) {
         this.source = source;
@@ -31,10 +32,25 @@ public final class BuildFailure {
 
     public List<RepositoryRequest> getRepositoryRequests() { return repositoryRequests; }
 
-    /** Vollständiges Log (nur bei {@link Source#LOG}), für Prüfungen, die Kontext brauchen. */
-    public List<String> getLogLines() { return logLines; }
+    /** Das Text-Log enthält {@code BUILD FAILURE}. */
+    public boolean reportsFailure() { return reportsFailure; }
+    public void setReportsFailure(boolean reportsFailure) { this.reportsFailure = reportsFailure; }
+
+    /** Das Text-Log enthält {@code BUILD SUCCESS}. */
+    public boolean reportsSuccess() { return reportsSuccess; }
+    public void setReportsSuccess(boolean reportsSuccess) { this.reportsSuccess = reportsSuccess; }
 
     public boolean hasErrors() { return !errors.isEmpty(); }
+
+    /** Es gibt Fehler aus Zeilen ohne {@code [ERROR]} ({@link ErrorRecord#isWeak()}). */
+    public boolean hasWeakErrors() {
+        for (ErrorRecord e : errors) {
+            if (e.isWeak()) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * Längste durchsuchte Zeile. Längere (Classpath, Base64, minifizierter Text) werden gekürzt: Regex mit
@@ -44,14 +60,19 @@ public final class BuildFailure {
 
     /** Alle Fehlertexte zeilenweise und ohne Duplikate – das ist der Suchraum der Regeln. */
     public List<String> searchableLines() {
-        return searchableLines(true);
+        return searchableLines(true, true);
     }
 
     /** Wie {@link #searchableLines()}; ohne {@code withTestOutput} fehlen Zeilen aus gescheiterten Tests. */
     public List<String> searchableLines(boolean withTestOutput) {
+        return searchableLines(withTestOutput, true);
+    }
+
+    /** Wie {@link #searchableLines(boolean)}; ohne {@code withWeak} fehlen {@link ErrorRecord#isWeak() schwache} Fehler. */
+    public List<String> searchableLines(boolean withTestOutput, boolean withWeak) {
         Set<String> seen = new LinkedHashSet<String>();
         for (ErrorRecord e : errors) {
-            if (!withTestOutput && e.isTestOutput()) {
+            if (!withTestOutput && e.isTestOutput() || !withWeak && e.isWeak()) {
                 continue;
             }
             for (String line : e.lines()) {

@@ -14,6 +14,7 @@ public final class ErrorRecord {
     private String execution;
     private String text;
     private boolean testOutput;
+    private boolean weak;
     private final List<ExceptionInfo> chain = new ArrayList<ExceptionInfo>();
     private final List<PomProblem> problems = new ArrayList<PomProblem>();
 
@@ -42,6 +43,14 @@ public final class ErrorRecord {
      */
     public boolean isTestOutput() { return testOutput; }
     public void setTestOutput(boolean testOutput) { this.testOutput = testOutput; }
+
+    /**
+     * Ausnahme aus einer Logzeile ohne {@code [ERROR]} (Ausgabe der Anwendung, Konsolen-Dump): nur ein
+     * schwacher Hinweis. {@link io.github.bitshiftdev.mavendetective.core.BuildDoctor} zieht solche Zeilen nur
+     * heran, wenn die übrigen Fehler keine Diagnose ergeben.
+     */
+    public boolean isWeak() { return weak; }
+    public void setWeak(boolean weak) { this.weak = weak; }
 
     public List<ExceptionInfo> getChain() { return chain; }
 

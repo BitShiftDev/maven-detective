@@ -28,6 +28,63 @@ public final class PomCache {
     }
 
     private final Map<Path, Entry> entries = new ConcurrentHashMap<Path, Entry>();
+    /** Andere Sichten auf dieselben Dateien (z. B. {@code ProjectPoms.Pom} beim Durchsuchen des Reactors). */
+    private final Map<Path, View> views = new ConcurrentHashMap<Path, View>();
+
+    /** Liest eine Datei in eine eigene Sicht; {@code null} = nicht lesbar. */
+    public interface Reader<T> {
+        T read(Path file) throws Exception;
+    }
+
+    private static final class View {
+        final long modified;
+        final long size;
+        final Object value;
+
+        View(long modified, long size, Object value) {
+            this.modified = modified;
+            this.size = size;
+            this.value = value;
+        }
+    }
+
+    /**
+     * Wie {@link #load}, aber für eine andere Sicht auf die Datei: gecacht, solange Änderungszeit und Größe gleich
+     * sind. Eine Sicht je Datei; {@code reader} muss für dieselbe Datei immer denselben Typ liefern.
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T view(Path file, Reader<T> reader) {
+        long modified;
+        long size;
+        try {
+            modified = Files.getLastModifiedTime(file).toMillis();
+            size = Files.size(file);
+        } catch (IOException e) {
+            views.remove(file);
+            return null;
+        }
+        View v = views.get(file);
+        if (v != null && v.modified == modified && v.size == size) {
+            return (T) v.value;
+        }
+        T value;
+        try {
+            value = reader.read(file);
+        } catch (Exception ex) {
+            value = null;
+        }
+        if (views.size() >= MAX_ENTRIES) {
+            views.clear();
+        }
+        views.put(file, new View(modified, size, value));
+        return value;
+    }
+
+    /** Alles vergessen (IDE: wenig Speicher). */
+    public void clear() {
+        entries.clear();
+        views.clear();
+    }
 
     /** Gecachte oder frisch gelesene POM; {@code null}, wenn sie fehlt oder kaputt ist. */
     PomFile load(Path file) {

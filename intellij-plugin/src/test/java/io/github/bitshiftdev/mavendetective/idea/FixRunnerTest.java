@@ -109,7 +109,7 @@ class FixRunnerTest {
     void testfallNameTraegtRegelUndZeit() {
         BuildDoctorService.Result result = new BuildDoctorService.Result(new BuildFailure(BuildFailure.Source.LOG),
                 List.of(new Diagnosis("corrupt-jar", 4, "Kaputtes JAR", "x", Confidence.CERTAIN, List.of(), List.of())),
-                "[ERROR] x", null, null, null, null);
+                "[ERROR] x", null, null, null, null, null);
         LocalDateTime at = LocalDateTime.of(2026, 11, 16, 9, 5, 7);
         assertEquals("missing-artifact__erkannt-als-corrupt-jar-20261116-090507.log",
                 FixRunner.testCaseName(result, "missing-artifact", at));
@@ -118,7 +118,7 @@ class FixRunnerTest {
         assertTrue(odd.startsWith(".._b_se_regel__"), odd);
         assertFalse(odd.contains("/"), odd);
         BuildDoctorService.Result none = new BuildDoctorService.Result(new BuildFailure(BuildFailure.Source.LOG), List.of(),
-                "", null, null, null, null);
+                "", null, null, null, null, null);
         assertTrue(FixRunner.testCaseName(none, null, at).contains("erkannt-als-none-"));
     }
 }

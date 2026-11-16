@@ -117,6 +117,7 @@ public final class BuildSetup {
                 home = mavenHomeFromPath(env);
             }
             if (home != null) {
+                home = installation(home);
                 s.mavenVersion = mavenVersionOf(home);
                 s.mavenSource = home.toString();
                 s.mavenHome = home.toString();
@@ -161,7 +162,9 @@ public final class BuildSetup {
         }
         String repo = argValue(configArgs, "-Dmaven.repo.local", null);
         if (repo != null) {
-            s.localRepository = repo;
+            // relativ: gegen das Projekt, in dem ./mvnw bzw. mvn läuft – nicht gegen das Arbeitsverzeichnis dieser JVM
+            Path r = Paths.get(repo);
+            s.localRepository = r.isAbsolute() || projectDir == null ? repo : projectDir.resolve(r).normalize().toString();
         }
         for (String profile : argValues(configArgs, "-P", "--activate-profiles")) {
             for (String p : profile.split(",")) {
@@ -259,6 +262,17 @@ public final class BuildSetup {
         }
         int first = Integer.parseInt(m.group(1));
         return first == 1 && m.group(2) != null ? Integer.parseInt(m.group(2)) : first;
+    }
+
+    /**
+     * Homebrew legt neben {@code bin/mvn} (ein Skript) nur {@code libexec/} mit der eigentlichen Installation ab:
+     * {@code Cellar/maven/X/libexec/{bin,lib,conf}}. Ohne {@code lib/} dort nachsehen.
+     */
+    static Path installation(Path home) {
+        if (!Files.isDirectory(home.resolve("lib")) && Files.isDirectory(home.resolve("libexec").resolve("lib"))) {
+            return home.resolve("libexec");
+        }
+        return home;
     }
 
     private static Path mavenHomeFromEnv(Map<String, String> env) {

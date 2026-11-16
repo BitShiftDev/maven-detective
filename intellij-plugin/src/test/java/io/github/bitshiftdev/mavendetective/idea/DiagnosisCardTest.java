@@ -36,7 +36,7 @@ class DiagnosisCardTest {
     }
 
     private static BuildDoctorService.Result result(List<Diagnosis> ds) {
-        return new BuildDoctorService.Result(new BuildFailure(BuildFailure.Source.LOG), ds, "[ERROR] x", null, null, null, null);
+        return new BuildDoctorService.Result(new BuildFailure(BuildFailure.Source.LOG), ds, "[ERROR] x", null, null, null, null, null);
     }
 
     @Test
@@ -65,6 +65,8 @@ class DiagnosisCardTest {
         String log = "a\n\n\u001B[1;31m[ERROR]\u001B[m b\n  \nc\n";
         assertEquals("[ERROR] b\nc", DiagnosisCard.tail(log, 2));
         assertEquals("a\n[ERROR] b\nc", DiagnosisCard.tail(log, 10));
+        assertEquals("[ERROR] b\nc", DiagnosisCard.tail("a\r\n[ERROR] b\r\n\r\nc\r\n", 2), "Windows-Zeilenenden");
+        assertEquals("50%\n100%", DiagnosisCard.tail("x\n50%\r100%\n", 2), "Fortschritt mit \\r");
     }
 
     @Test

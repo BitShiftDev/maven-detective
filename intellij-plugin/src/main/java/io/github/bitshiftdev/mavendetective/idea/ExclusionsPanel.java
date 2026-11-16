@@ -95,10 +95,10 @@ public final class ExclusionsPanel extends DetectivePanel {
             /** Günstig (nur POMs): nach jedem Import von selbst neu rechnen. */
             @Override
             public void mavenImported() {
-                reload();
+                reload(false);
             }
         }, this);
-        reload();
+        reload(false);
     }
 
     @Override
@@ -113,7 +113,7 @@ public final class ExclusionsPanel extends DetectivePanel {
 
     @Override
     public void refresh() {
-        reload();
+        reload(true);
     }
 
     @Override
@@ -126,8 +126,11 @@ public final class ExclusionsPanel extends DetectivePanel {
         return result == null ? null : result.markdown(withAll);
     }
 
-    void reload() {
-        DependenciesPanel.saveUnsavedPoms();
+    /** @param save ungespeicherte POMs vorher speichern – nur auf Klick, nicht beim automatischen Lauf */
+    void reload(boolean save) {
+        if (save) {
+            DependenciesPanel.saveUnsavedPoms();
+        }
         AnalysisResults results = AnalysisResults.getInstance(project);
         results.running(AnalysisResults.Analysis.EXCLUSIONS);
         checker.run(c -> compute(project, c), audit -> {

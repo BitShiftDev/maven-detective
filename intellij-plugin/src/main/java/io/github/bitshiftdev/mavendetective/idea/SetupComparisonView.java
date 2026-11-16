@@ -14,6 +14,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.NamedColorUtil;
 import io.github.bitshiftdev.mavendetective.core.env.SetupComparison;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
+import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -66,7 +67,7 @@ final class SetupComparisonView extends JPanel {
         JBScrollPane scroll = new JBScrollPane(table);
         scroll.setBorder(JBUI.Borders.customLine(com.intellij.ui.JBColor.border(), 1, 0, 1, 0));
         add(head, BorderLayout.NORTH);
-        add(scroll, BorderLayout.CENTER);
+        add(DetectivePanel.copyable(scroll, this::selectedText), BorderLayout.CENTER);
         add(hints, BorderLayout.SOUTH);
     }
 

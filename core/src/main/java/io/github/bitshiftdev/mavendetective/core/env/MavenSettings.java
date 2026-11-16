@@ -15,8 +15,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -265,6 +269,75 @@ public final class MavenSettings {
     public Boolean getOffline() { return offline; }
 
     public String getLocalRepository() { return localRepository; }
+
+    /** Ein Eintrag samt der settings.xml, aus der er stammt. */
+    public static final class Chosen<T> {
+        public final T value;
+        public final MavenSettings from;
+
+        Chosen(T value, MavenSettings from) {
+            this.value = value;
+            this.from = from;
+        }
+    }
+
+    /**
+     * Mirror wie Maven über mehrere Dateien: Nutzer- und globale settings.xml werden zusammengeführt (Nutzer zuerst,
+     * ein globaler Eintrag mit derselben ID fällt weg), dann gewinnt eine exakte ID über alle Dateien vor jedem
+     * Muster ({@code DefaultMirrorSelector}). {@code null}, wenn keiner greift.
+     */
+    public static Chosen<Mirror> mirrorFor(List<MavenSettings> files, String repositoryId, String repositoryUrl) {
+        for (int pass = 0; pass < 2; pass++) {
+            Set<String> ids = new HashSet<String>();
+            for (MavenSettings s : files) {
+                List<String> here = new ArrayList<String>();
+                for (Mirror m : s.mirrors) {
+                    if (m.id != null && ids.contains(m.id)) {
+                        continue;
+                    }
+                    here.add(m.id);
+                    boolean hit = pass == 0 ? m.mirrorOf != null && m.mirrorOf.trim().equals(repositoryId)
+                            : m.matches(repositoryId, repositoryUrl);
+                    if (hit) {
+                        return new Chosen<Mirror>(m, s);
+                    }
+                }
+                ids.addAll(here);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Proxy wie Mavens {@code DefaultProxySelector} über mehrere Dateien: aktive Proxies, deren
+     * {@code nonProxyHosts} den Host nicht ausnehmen, je Protokoll der erste; für https ersatzweise der für http.
+     */
+    public static Proxy proxyFor(List<MavenSettings> files, String url) {
+        String protocol = url.toLowerCase(Locale.ROOT).startsWith("https") ? "https" : "http";
+        String host = io.github.bitshiftdev.mavendetective.core.check.Text.host(url);
+        Map<String, Proxy> candidates = new HashMap<String, Proxy>();
+        Set<String> ids = new HashSet<String>();
+        for (MavenSettings s : files) {
+            List<String> here = new ArrayList<String>();
+            for (Proxy p : s.proxies) {
+                String id = p.id == null ? "default" : p.id;
+                if (ids.contains(id)) {
+                    continue;
+                }
+                here.add(id);
+                if (!p.active || p.host == null || p.bypasses(host)) {
+                    continue;
+                }
+                String key = p.protocol == null ? "http" : p.protocol.toLowerCase(Locale.ROOT);
+                if (!candidates.containsKey(key)) {
+                    candidates.put(key, p);
+                }
+            }
+            ids.addAll(here);
+        }
+        Proxy p = candidates.get(protocol);
+        return p == null && "https".equals(protocol) ? candidates.get("http") : p;
+    }
 
     /** Erster Mirror, der für das Repository greift – so wählt ihn auch Maven. */
     public Mirror mirrorFor(String repositoryId, String repositoryUrl) {

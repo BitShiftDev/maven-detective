@@ -277,6 +277,31 @@ class ChecksTest {
         assertEquals(jar.toString(), d.getPrimaryFix().param("files"));
     }
 
+    /** Review #37: Pfade mit Leerzeichen bleiben ganz (Projekt, Repository und Modul). */
+    @Test
+    void pathsWithSpacesAreKeptWhole() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        Path dir = project.resolve("Max Mustermann/OneDrive - Acme");
+        Path jar = dir.resolve("repo/com/x/lib/1.0/lib-1.0.jar");
+        write(jar, "not a zip");
+        Diagnosis d = diagnose(env, "[ERROR] error reading " + jar + "; zip END header not found");
+        assertEquals("corrupt-jar", d.getRuleId());
+        assertEquals(jar.toString(), d.getPrimaryFix().param("files"));
+        d = diagnose(env, "[ERROR] Failed to execute goal x on project y: Execution failed: invalid LOC header (bad signature) in " + jar);
+        assertEquals(jar.toString(), d.getPrimaryFix().param("files"));
+
+        Path source = dir.resolve("app/src/main/java/A.java");
+        write(source, "class A {}");
+        d = diagnose(env, "[ERROR] COMPILATION ERROR :\n[ERROR] " + source + ":[3,8] package org.x does not exist");
+        assertTrue(d.getFixes().stream().anyMatch(f -> source.toString().equals(f.param("file"))), d.getFixes().toString());
+
+        write(dir.resolve("pom.xml"), "<project>\n  <modules>\n    <module>servcie</module>\n  </modules>\n</project>\n");
+        Files.createDirectories(dir.resolve("service"));
+        d = diagnose(env, "[ERROR] Child module " + dir.resolve("servcie") + " of " + dir.resolve("pom.xml") + " does not exist");
+        assertEquals("reactor-problem", d.getRuleId());
+        assertTrue(d.getEvidence().stream().anyMatch(e -> e.getText().contains("'service'")), d.getEvidence().toString());
+    }
+
     @Test
     void missingChildModuleSuggestsSimilarDirectory() throws Exception {
         Environment env = env(new HashMap<>(), null);
@@ -336,6 +361,11 @@ class ChecksTest {
         assertEquals("tests", c.classifier);
         assertEquals("lib-1.0-tests.jar", c.fileName());
         assertEquals(null, Coordinates.parse("not coordinates"));
+        // Review #68: nur Punkte führen aus dem lokalen Repository hinaus
+        assertNull(Coordinates.parse("com.acme:..:1.0"));
+        assertNull(Coordinates.parse("com.acme:lib:.."));
+        assertNull(Coordinates.parse("..:lib:1.0"));
+        assertNull(Coordinates.parse("com..acme:lib:1.0"));
         assertEquals(8, Text.javaFeatureVersion("1.8.0_392"));
         assertEquals(25, Text.javaFeatureVersion("25-ea"));
         assertEquals(21, Text.javaForClassVersion(65));

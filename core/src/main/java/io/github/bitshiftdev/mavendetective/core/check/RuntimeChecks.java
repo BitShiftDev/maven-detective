@@ -83,7 +83,8 @@ final class RuntimeChecks {
     // ------------------------------------------------------------------ source-location
 
     static final class SourceLocation implements Check {
-        private static final Pattern LOCATION = Pattern.compile("(?<![^\\s:\\[(])((?:[A-Za-z]:)?[^\\s:\\[]+\\.(?:java|kt|groovy)):\\[(\\d+),(\\d+)\\]");
+        private static final Pattern LOCATION = Pattern.compile("(?<![^\\s:\\[(])(" + Text.absolutePath("java|kt|groovy")
+                + "|[^\\s:\\[\\\\/][^\\s:\\[]*\\.(?:java|kt|groovy)):\\[(\\d+),(\\d+)\\]");
 
         @Override
         public String id() { return "source-location"; }

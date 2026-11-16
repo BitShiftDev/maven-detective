@@ -53,7 +53,7 @@ public final class PomLocator {
      */
     public PomLocator(Path projectRoot, Path localRepository, PomCache shared, Cancellation cancellation) {
         this.cancellation = cancellation == null ? Cancellation.NONE : cancellation;
-        this.reactor = new ProjectPoms(projectRoot, this.cancellation);
+        this.reactor = new ProjectPoms(projectRoot, this.cancellation, shared);
         this.localRepository = localRepository;
         this.shared = shared;
         this.overrides = Collections.emptyMap();
@@ -121,6 +121,18 @@ public final class PomLocator {
                 }
             }
         }
+    }
+
+    /** Alle lesbaren POMs des Reactors (über den Cache). */
+    public List<PomFile> reactorPoms() {
+        List<PomFile> out = new ArrayList<PomFile>();
+        for (ProjectPoms.Pom p : reactor.all()) {
+            PomFile f = load(p.file);
+            if (f != null) {
+                out.add(f);
+            }
+        }
+        return out;
     }
 
     /** Koordinaten, deren POM weder im Projekt noch im lokalen Repository lag. */

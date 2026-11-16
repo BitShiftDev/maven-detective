@@ -1,6 +1,8 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
 import com.intellij.execution.ExecutionException;
+import com.intellij.execution.configurations.RunConfiguration;
+import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.ide.projectView.impl.nodes.NamedLibraryElement;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.DataContext;
@@ -11,6 +13,7 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.util.Computable;
+import com.intellij.openapi.vfs.VirtualFile;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.env.BuildSetup;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
@@ -47,8 +50,10 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -78,7 +83,49 @@ final class IdeMaven {
      * Profile als {@code importProfiles} dabei, und je Modul die Versionen, die die POMs unter den Profilen des Laufs
      * direkt deklarieren.
      */
-    static BuildSnapshot snapshot(@NotNull Project project, @Nullable MavenRunConfiguration cfg) {
+    // ------------------------------------------------------------------ Läufe
+
+    private static @Nullable MavenRunConfiguration maven(@Nullable RunConfiguration run) {
+        return run instanceof MavenRunConfiguration m ? m : null;
+    }
+
+    /** Ist das ein Maven-Lauf (Run-Konfiguration des Maven-Plugins)? */
+    static boolean isMavenRun(@Nullable ExecutionEnvironment env) {
+        return env != null && env.getRunProfile() instanceof MavenRunConfiguration;
+    }
+
+    /** Run-Konfiguration eines Maven-Laufs, sonst {@code null}. */
+    static @Nullable RunConfiguration mavenConfiguration(@Nullable ExecutionEnvironment env) {
+        return env != null && env.getRunProfile() instanceof MavenRunConfiguration m ? m : null;
+    }
+
+    /** Hat die Run-Konfiguration eigene Runner-Einstellungen (eigenes JDK)? */
+    static boolean hasOwnRunnerSettings(@Nullable RunConfiguration run) {
+        MavenRunConfiguration cfg = maven(run);
+        return cfg != null && cfg.getRunnerSettings() != null;
+    }
+
+    /**
+     * Startet eine temporäre Kopie der Maven-Run-Konfiguration mit zusätzlichen Kommandozeilen-Optionen (z. B.
+     * {@code -U}); die gespeicherte Konfiguration bleibt unverändert. {@code false}, wenn es kein Maven-Lauf ist.
+     */
+    static boolean runWithExtraArgs(@NotNull Project project, @Nullable RunConfiguration run, @NotNull String args) {
+        MavenRunConfiguration cfg = maven(run);
+        if (cfg == null) {
+            return false;
+        }
+        MavenRunnerParameters params = cfg.getRunnerParameters().clone();
+        String old = params.getCmdOptions();
+        if (!args.isBlank()) {
+            params.setCmdOptions(old == null || old.isBlank() ? args.trim() : old.trim() + " " + args.trim());
+        }
+        org.jetbrains.idea.maven.execution.MavenRunConfigurationType.runConfiguration(project, params, cfg.getGeneralSettings(),
+                cfg.getRunnerSettings(), null);
+        return true;
+    }
+
+    static BuildSnapshot snapshot(@NotNull Project project, @Nullable RunConfiguration configuration) {
+        MavenRunConfiguration cfg = maven(configuration);
         BuildSetup setup = ideSetup(project, cfg);
         RunArguments run = runArguments(project, cfg);
         BuildSnapshot s = new BuildSnapshot()
@@ -142,7 +189,8 @@ final class IdeMaven {
     }
 
     /** Womit die IDE baut: Maven aus den Einstellungen, JDK und VM-Optionen des Runners, Profile. */
-    static BuildSetup ideSetup(@NotNull Project project, @Nullable MavenRunConfiguration cfg) {
+    static BuildSetup ideSetup(@NotNull Project project, @Nullable RunConfiguration run) {
+        MavenRunConfiguration cfg = maven(run);
         BuildSetup s = new BuildSetup("IDE");
         MavenProjectsManager manager = MavenProjectsManager.getInstance(project);
         MavenGeneralSettings general = cfg != null && cfg.getGeneralSettings() != null ? cfg.getGeneralSettings() : manager.getGeneralSettings();
@@ -490,6 +538,46 @@ final class IdeMaven {
         }
     }
 
+    /**
+     * Nach einer Änderung an einzelnen POMs nur die betroffenen Maven-Projekte neu lesen: die geänderten und alle,
+     * die (auch über mehrere Ebenen) von ihnen erben. Ein voller Import über Hunderte Module dauerte Minuten und
+     * ließe danach jede Analyse veralten. Kennt die IDE eine Datei nicht, doch alles.
+     */
+    static void reimport(@NotNull Project project, @NotNull Collection<VirtualFile> changed) {
+        try {
+            MavenProjectsManager manager = MavenProjectsManager.getInstance(project);
+            Set<MavenProject> touched = new LinkedHashSet<>();
+            for (VirtualFile f : changed) {
+                MavenProject mp = manager.findProject(f);
+                if (mp == null) {
+                    reimport(project);
+                    return;
+                }
+                touched.add(mp);
+            }
+            List<MavenProject> update = new ArrayList<>(touched);
+            for (MavenProject mp : manager.getProjects()) {
+                if (touched.contains(mp)) {
+                    continue;
+                }
+                MavenProject p = mp;
+                for (int depth = 0; depth < 20 && p != null && p.getParentId() != null; depth++) {
+                    p = manager.findProject(p.getParentId());
+                    if (p != null && touched.contains(p)) {
+                        update.add(mp);
+                        break;
+                    }
+                }
+            }
+            manager.scheduleForceUpdateMavenProjects(update);
+        } catch (ProcessCanceledException e) {
+            throw e;
+        } catch (RuntimeException | LinkageError e) {
+            LOG.warn("Maven Detective: gezielter Maven-Import nicht möglich, importiere alles", e);
+            reimport(project);
+        }
+    }
+
     private static void convert(DepNode parent, MavenArtifactNode n, int depth) {
         MavenArtifact a = n.getArtifact();
         DepNode node = parent.add(new DepNode(a.getGroupId(), a.getArtifactId(), a.getType(), a.getClassifier(),
@@ -520,7 +608,8 @@ final class IdeMaven {
      * und Kommandozeilen-Optionen (z. B. Goals {@code verify -Pgreen}) und die Properties/„Skip tests“ des Runners.
      * Ohne Run-Konfiguration: Profile des Imports.
      */
-    static RunArguments runArguments(@NotNull Project project, @Nullable MavenRunConfiguration cfg) {
+    static RunArguments runArguments(@NotNull Project project, @Nullable RunConfiguration run) {
+        MavenRunConfiguration cfg = maven(run);
         if (cfg == null) {
             return importArguments(MavenProjectsManager.getInstance(project));
         }

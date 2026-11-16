@@ -90,6 +90,29 @@ public final class ExclusionAudit {
         public String getFile() { return pom.getFile().toString(); }
         public int getLine() { return exclusion.getLine() > 0 ? exclusion.getLine() : dependency.getLine(); }
 
+        /** Wie gewichtig der Status ist: ein Modul, das die Exclusion braucht, schlägt alle anderen. */
+        private int weight() {
+            switch (status) {
+                case USED: return 3;
+                case UNKNOWN: return 2;
+                case REDUNDANT: return 1;
+                default: return 0;
+            }
+        }
+
+        /** Übernimmt das Ergebnis aus dem Kontext eines erbenden Moduls, wenn es gewichtiger ist. */
+        private void raiseTo(Finding heir) {
+            if (heir.weight() <= weight()) {
+                return;
+            }
+            status = heir.status;
+            path = heir.path;
+            coveredBy = heir.coveredBy;
+            missing = heir.missing;
+            limits = heir.limits;
+            alsoIncludedVia = heir.alsoIncludedVia;
+        }
+
         /** Kann (und sollte) entfernt werden. */
         public boolean isRemovable() {
             return status == Status.STALE || status == Status.REDUNDANT;
@@ -183,7 +206,11 @@ public final class ExclusionAudit {
         return new ExclusionAudit(out, poms.size());
     }
 
-    /** Exclusions einer einzelnen POM prüfen (nur die dort notierten, nicht geerbte). */
+    /**
+     * Exclusions einer einzelnen POM prüfen (nur die dort notierten, nicht geerbte). Steht die Exclusion in
+     * einem Parent, zählt sie erst als veraltet, wenn sie auch im Kontext jedes erbenden Reactor-Moduls nichts
+     * mehr ausschließt – dort kann eigenes Management eine andere Version mit anderen Dependencies wählen.
+     */
     public static List<Finding> audit(PomLocator locator, PomFile pom, DepNode tree) {
         List<Finding> out = new ArrayList<Finding>();
         EffectiveModel consumer = locator.model(pom);
@@ -193,6 +220,51 @@ public final class ExclusionAudit {
         for (PomFile.Dep d : pom.getManagedDependencies()) {
             if (!d.isImport()) {
                 auditDependency(locator, consumer, pom, d, true, null, out);
+            }
+        }
+        if ("pom".equals(pom.getPackaging())) {
+            recheckInHeirs(locator, pom, out);
+        }
+        return out;
+    }
+
+    private static void recheckInHeirs(PomLocator locator, PomFile pom, List<Finding> findings) {
+        List<EffectiveModel> heirs = null;
+        for (Finding f : findings) {
+            if (!f.isRemovable()) {
+                continue;
+            }
+            if (heirs == null) {
+                heirs = heirs(locator, pom);
+            }
+            for (EffectiveModel heir : heirs) {
+                List<Finding> there = new ArrayList<Finding>();
+                auditDependency(locator, heir, pom, f.dependency, f.managed, null, there);
+                for (Finding h : there) {
+                    if (h.exclusion == f.exclusion) {
+                        f.raiseTo(h);
+                    }
+                }
+                if (f.status == Status.USED) {
+                    break;
+                }
+            }
+        }
+    }
+
+    /** Modelle der Reactor-Module, deren Parent-Kette über {@code pom} läuft. */
+    private static List<EffectiveModel> heirs(PomLocator locator, PomFile pom) {
+        List<EffectiveModel> out = new ArrayList<EffectiveModel>();
+        for (PomFile p : locator.reactorPoms()) {
+            if (p.getFile().equals(pom.getFile())) {
+                continue;
+            }
+            EffectiveModel m = locator.model(p);
+            for (PomFile c : m.getChain()) {
+                if (c.getFile().equals(pom.getFile())) {
+                    out.add(m);
+                    break;
+                }
             }
         }
         return out;
@@ -360,10 +432,21 @@ public final class ExclusionAudit {
                         c.missing.add(ga + " (" + Texts.t("excl.missing.undetermined", n.groupId + ":" + n.artifactId) + ")");
                         continue;
                     }
+                    // Exclusions der Deklaration (ohne eigene: aus dem Management ihrer POM) und aus dem
+                    // Management des prüfenden Moduls – wie DependencyResolver
                     List<PomFile.Exclusion> childExclusions = n.exclusions;
-                    if (!d.dep.getExclusionEntries().isEmpty()) {
+                    List<PomFile.Exclusion> own = d.dep.getExclusionEntries();
+                    if (own.isEmpty()) {
+                        Managed om = model.managed(d.dep);
+                        own = om == null ? own : om.dep.getExclusionEntries();
+                    }
+                    Managed cm = consumer.managed(d.dep);
+                    List<PomFile.Exclusion> managedByConsumer = cm == null ? Collections.<PomFile.Exclusion>emptyList()
+                            : cm.dep.getExclusionEntries();
+                    if (!own.isEmpty() || !managedByConsumer.isEmpty()) {
                         childExclusions = new ArrayList<PomFile.Exclusion>(n.exclusions);
-                        childExclusions.addAll(d.dep.getExclusionEntries());
+                        childExclusions.addAll(own);
+                        childExclusions.addAll(managedByConsumer);
                     }
                     queue.add(new Node(d.dep.getGroupId(), d.dep.getArtifactId(), v, path, childExclusions));
                 }

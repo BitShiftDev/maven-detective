@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.check;
 
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
 import io.github.bitshiftdev.mavendetective.core.model.BuildFailure;
 
@@ -18,9 +19,16 @@ public final class CheckContext {
     private final Map<String, String> vars;
     private final List<String> lines;
     private final ProjectPoms projectPoms;
+    private final Cancellation cancellation;
 
     public CheckContext(BuildFailure failure, Environment environment, Map<String, String> vars,
                         List<String> lines, ProjectPoms projectPoms) {
+        this(failure, environment, vars, lines, projectPoms, Cancellation.NONE);
+    }
+
+    public CheckContext(BuildFailure failure, Environment environment, Map<String, String> vars,
+                        List<String> lines, ProjectPoms projectPoms, Cancellation cancellation) {
+        this.cancellation = cancellation == null ? Cancellation.NONE : cancellation;
         this.failure = failure;
         this.environment = environment;
         this.vars = Collections.unmodifiableMap(vars);
@@ -40,6 +48,9 @@ public final class CheckContext {
     public List<String> lines() { return lines; }
 
     public ProjectPoms projectPoms() { return projectPoms; }
+
+    /** Abbruch der IDE für lange Suchen (Klassen-Herkunft); sonst {@link Cancellation#NONE}. */
+    public Cancellation cancellation() { return cancellation; }
 
     /** Erste Zeile, in der die Regex trifft, als Matcher – oder {@code null}. */
     public Matcher find(Pattern p) {

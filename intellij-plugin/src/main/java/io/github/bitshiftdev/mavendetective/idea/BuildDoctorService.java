@@ -1,5 +1,6 @@
 package io.github.bitshiftdev.mavendetective.idea;
 
+import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.notification.NotificationAction;
 import com.intellij.notification.NotificationGroupManager;
@@ -28,7 +29,6 @@ import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotDiff;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotStore;
 import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import com.intellij.openapi.diagnostic.Logger;
-import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -58,16 +58,33 @@ public final class BuildDoctorService {
      * @param setup   IDE gegen Kommandozeile ({@code null}: nicht ermittelbar)
      */
     /**
+     * @param environment     Lauf zum Neustarten; nur beim neuesten Eintrag des Verlaufs (er hält Konsole und Prozess)
+     * @param configuration   Maven-Run-Konfiguration des Laufs ({@code null}: Log aus der Zwischenablage)
      * @param localRepository lokales Repository, mit dem die Diagnose gerechnet hat (Lauf, IDE-Einstellung oder
      *                        {@code <localRepository>} der settings.xml) – dort darf {@code delete-files} löschen
      */
     public record Result(BuildFailure failure, List<Diagnosis> diagnoses, String rawLog,
-                         @Nullable ExecutionEnvironment environment,
+                         @Nullable ExecutionEnvironment environment, @Nullable RunConfiguration configuration,
                          @Nullable SnapshotDiff changes, @Nullable SetupComparison setup,
                          @Nullable Path localRepository) {
 
-        public @Nullable MavenRunConfiguration configuration() {
-            return environment != null && environment.getRunProfile() instanceof MavenRunConfiguration c ? c : null;
+        /** Höchstens so viel Log behält ein älterer Eintrag im Verlauf (das Ende, dort stehen die Fehler). */
+        static final int SLIM_LOG_CHARS = 256 * 1024;
+
+        /** Kommt aus einem Lauf der IDE, nicht aus der Zwischenablage. */
+        public boolean fromRun() {
+            return environment != null || configuration != null;
+        }
+
+        /**
+         * Für ältere Einträge im Verlauf: ohne {@link ExecutionEnvironment} (hält Konsole, Prozess und Daten-Kontext)
+         * und nur mit dem Ende des Logs. Neu bauen geht dann über die Run-Konfiguration.
+         */
+        @NotNull Result slim() {
+            String log = rawLog == null || rawLog.length() <= SLIM_LOG_CHARS ? rawLog
+                    : MavenRunListener.startCutMarker() + rawLog.substring(rawLog.length() - SLIM_LOG_CHARS);
+            return environment == null && log == rawLog ? this
+                    : new Result(failure, diagnoses, log, null, configuration, changes, setup, localRepository);
         }
     }
 
@@ -102,7 +119,13 @@ public final class BuildDoctorService {
     public record Run(boolean green, long at, @Nullable Result result, @Nullable String name, @Nullable FixCheck check) {
 
         public boolean fromClipboard() {
-            return result != null && result.environment() == null;
+            return result != null && !result.fromRun();
+        }
+
+        /** Derselbe Eintrag mit {@link Result#slim()}. */
+        @NotNull Run slim() {
+            Result r = result == null ? null : result.slim();
+            return r == result ? this : new Run(green, at, r, name, check);
         }
 
         /** Regel der ersten Diagnose ({@code null}: grün oder keine erkannt). */
@@ -217,16 +240,21 @@ public final class BuildDoctorService {
             Result result;
             try {
                 BuildFailure failure = MavenLogParser.parse(log);
-                MavenRunConfiguration cfg = env != null && env.getRunProfile() instanceof MavenRunConfiguration c ? c : null;
+                RunConfiguration cfg = IdeMaven.mavenConfiguration(env);
                 // Lauf aus der IDE: Der Text-Log nennt weder settings.xml noch lokales Repository – es gelten die
                 // Maven-Einstellungen der IDE, nicht ~/.m2. Ein Log aus der Zwischenablage stammt eher vom Terminal.
                 BuildSetup ide = env == null ? null : ideSetup(cfg);
                 Environment environment = Environment.forBuild(failure, projectDir(), ide);
-                List<Diagnosis> diagnoses = doctor.diagnose(failure, environment);
+                // die Klassen-Herkunft durchsucht bis zu 600 JARs: beim Schließen des Projekts abbrechen
+                List<Diagnosis> diagnoses = doctor.diagnose(failure, environment, () -> {
+                    if (project.isDisposed()) {
+                        throw new ProcessCanceledException();
+                    }
+                });
                 LOG.info("Maven Detective: Analyse " + (env == null ? "Zwischenablage" : "Lauf") + ", " + failure.getErrors().size()
                         + " Fehlerblöcke, Diagnose: " + (diagnoses.isEmpty() ? "keine" : diagnoses.get(0).getRuleId()));
                 SnapshotDiff changes = env == null ? null : changesSinceGreen(cfg);
-                result = new Result(failure, diagnoses, log, env, changes, compareSetups(cfg), environment.getLocalRepository());
+                result = new Result(failure, diagnoses, log, env, cfg, changes, compareSetups(cfg), environment.getLocalRepository());
             } catch (ProcessCanceledException e) {
                 throw e;
             } catch (RuntimeException e) {
@@ -258,7 +286,7 @@ public final class BuildDoctorService {
         if (dir == null || store == null) {
             return;
         }
-        MavenRunConfiguration cfg = env != null && env.getRunProfile() instanceof MavenRunConfiguration c ? c : null;
+        RunConfiguration cfg = IdeMaven.mavenConfiguration(env);
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 BuildSnapshot s = IdeMaven.snapshot(project, cfg).setSuccessful(true);
@@ -286,7 +314,7 @@ public final class BuildDoctorService {
         }
     }
 
-    private @Nullable SnapshotDiff changesSinceGreen(@Nullable MavenRunConfiguration cfg) {
+    private @Nullable SnapshotDiff changesSinceGreen(@Nullable RunConfiguration cfg) {
         Path dir = projectDir();
         SnapshotStore store = DetectiveSettings.getInstance().snapshotStore();
         if (dir == null || store == null) {
@@ -342,7 +370,7 @@ public final class BuildDoctorService {
 
     /** IDE gegen Kommandozeile ({@code null}: nicht ermittelbar); liest Dateien, nicht auf dem EDT aufrufen. */
     /** Maven-Einstellungen der IDE für diesen Lauf (samt Maven-Installation); {@code null}, wenn nicht ermittelbar. */
-    private @Nullable BuildSetup ideSetup(@Nullable MavenRunConfiguration cfg) {
+    private @Nullable BuildSetup ideSetup(@Nullable RunConfiguration cfg) {
         try {
             BuildSetup s = IdeMaven.ideSetup(project, cfg);
             if (s.getMavenHome() == null) {
@@ -360,7 +388,7 @@ public final class BuildDoctorService {
         }
     }
 
-    public @Nullable SetupComparison compareSetups(@Nullable MavenRunConfiguration cfg) {
+    public @Nullable SetupComparison compareSetups(@Nullable RunConfiguration cfg) {
         try {
             return SetupComparison.compare(IdeMaven.ideSetup(project, cfg), IdeMaven.cliSetup(project));
         } catch (RuntimeException e) {
@@ -413,9 +441,15 @@ public final class BuildDoctorService {
     }
 
     private void remember(Run run) {
+        // ältere Einträge ohne Konsole/Prozess und mit gekürztem Log: 20 große Läufe hielten sonst Hunderte MB
+        List<Run> older = new ArrayList<>(history);
+        history.clear();
         history.addFirst(run);
-        while (history.size() > HISTORY_SIZE) {
-            history.removeLast();
+        for (Run r : older) {
+            if (history.size() >= HISTORY_SIZE) {
+                break;
+            }
+            history.addLast(r.slim());
         }
         for (Listener l : listeners) {
             l.historyChanged(run);

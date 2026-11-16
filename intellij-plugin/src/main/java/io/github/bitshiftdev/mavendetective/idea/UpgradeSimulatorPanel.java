@@ -92,6 +92,10 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
     private UpgradeSimulator.Result result;
     /** Fehlermeldung des letzten Ladens fehlender POMs. */
     private String fetchError;
+    /** {@link AnalysisResults#imports()} beim Start der Simulation. */
+    private int startedAtImport;
+    /** Schon übernommenes Ergebnis – „Übernehmen“ bleibt dafür aus. */
+    private @Nullable UpgradeSimulator.Result appliedResult;
     /** Fehlende POMs werden gerade geladen (nur EDT). */
     private boolean fetching;
 
@@ -275,9 +279,19 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
     }
 
     private void fireResult() {
+        updateApply();
         for (Runnable r : resultListeners) {
             r.run();
         }
+    }
+
+    /**
+     * „Übernehmen“ nur für ein fertiges, aktuelles und noch nicht übernommenes Ergebnis – nicht, während neu simuliert
+     * wird, und nicht nach einem Maven-Import (das Ergebnis beruht dann auf alten Bäumen).
+     */
+    private void updateApply() {
+        UpgradeSimulator.Result res = result;
+        apply.setEnabled(res != null && !res.getSteps().isEmpty() && res != appliedResult && !isStale() && !isBusy());
     }
 
     /** Ergebnis im Editor-Tab zeigen (Vorher/Nachher braucht Breite); öffnet ihn bei Bedarf, ohne den Fokus zu nehmen. */
@@ -394,6 +408,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         DependenciesPanel.saveUnsavedPoms();
         setStatus(null);
         AnalysisResults.getInstance(project).running(AnalysisResults.Analysis.UPGRADE);
+        startedAtImport = AnalysisResults.getInstance(project).imports();
         simulation.run(c -> compute(project, r, c), res -> display(res, null));
         fireResult();
     }
@@ -443,6 +458,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         UpgradeSimulator.Request r = start.getRequest();
         fetch.setEnabled(false);
         fetching = true;
+        startedAtImport = AnalysisResults.getInstance(project).imports();
         fireResult();
         int gen = simulation.next();
         new Task.Backgroundable(project, MavenDetectiveBundle.message("upgrade.fetch.task"), true) {
@@ -508,6 +524,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
 
     private void applied(int n) {
         if (n > 0) {
+            appliedResult = result;
             apply.setEnabled(false);
             fetch.setEnabled(false);
         }
@@ -534,7 +551,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             table.getColumnModel().getColumn(2).setPreferredWidth(320);
             table.getColumnModel().getColumn(5).setPreferredWidth(420);
         }
-        apply.setEnabled(res != null && !res.getSteps().isEmpty());
+        updateApply();
         openEditor.setEnabled(res != null);
         fetch.setEnabled(res != null && !PomFetcher.coordinates(res.getMissing()).isEmpty());
         if (res == null) {
@@ -548,7 +565,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                     + (res.isComplete() ? "" : " – " + MavenDetectiveBundle.message("upgrade.status.incomplete")));
         }
         this.fetchError = error;
-        setStale(false);
+        setStale(AnalysisResults.getInstance(project).imports() != startedAtImport);
         AnalysisResults.getInstance(project).set(AnalysisResults.Analysis.UPGRADE, res == null ? AnalysisResults.Summary.NOT_CHECKED
                 : AnalysisResults.Summary.done(-1, MavenDetectiveBundle.message("summary.upgrade", res.getRequest().label() + " " + res.getRequest().getVersion(),
                 res.changed().size())));

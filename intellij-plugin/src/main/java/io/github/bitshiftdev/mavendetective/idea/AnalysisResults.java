@@ -101,6 +101,15 @@ public final class AnalysisResults implements Disposable {
         }
     }
 
+    /**
+     * Zahl der Maven-Importe seit dem Start. Eine Seite merkt sie sich beim Start einer Rechnung; ist sie danach
+     * eine andere, beruht das Ergebnis auf Bäumen von vor dem Import und ist gleich veraltet.
+     */
+    public int imports() {
+        return states.imports();
+    }
+
+    /** Ergebnis; begann die Rechnung vor dem letzten Import, wird es als {@link State#STALE veraltet} abgelegt. */
     public void set(@NotNull Analysis analysis, @NotNull Summary summary) {
         if (!project.isDisposed()) {
             states.set(analysis, summary);

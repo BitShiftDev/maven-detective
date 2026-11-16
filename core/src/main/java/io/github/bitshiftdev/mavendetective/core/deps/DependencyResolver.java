@@ -22,8 +22,8 @@ import java.util.Set;
  *
  * <p>Nachgebaut wird Mavens Collector: Breitensuche, nearest wins (bei gleicher Tiefe gewinnt, was
  * zuerst deklariert ist), {@code dependencyManagement} des Moduls gilt für Version, Scope und
- * Exclusions transitiver Dependencies, transitive {@code test}/{@code provided}/{@code system}- und
- * {@code optional}-Dependencies fallen weg, Exclusions gelten für den ganzen Teilbaum, Scopes werden
+ * Exclusions transitiver Dependencies, transitive {@code test}/{@code provided}- und
+ * {@code optional}-Dependencies fallen weg ({@code system} bleibt wie im {@code ScopeDependencySelector}), Exclusions gelten für den ganzen Teilbaum, Scopes werden
  * wie im {@code JavaScopeDeriver} abgeleitet und bei Konflikten wie im {@code JavaScopeSelector}
  * gewählt. Fehlt eine POM lokal, endet der Ast dort und die Koordinaten stehen in
  * {@link Tree#getMissing()}.
@@ -170,8 +170,8 @@ public final class DependencyResolver {
                 Managed own = owner.managed(dep);
                 String ownScope = dep.getScope() != null && !dep.getScope().isEmpty() ? dep.getScope()
                         : own != null && own.dep.getScope() != null ? own.dep.getScope() : "compile";
-                if (!"compile".equals(ownScope) && !"runtime".equals(ownScope)) {
-                    continue;   // test, provided, system: nicht transitiv
+                if ("test".equals(ownScope) || "provided".equals(ownScope)) {
+                    continue;   // nicht transitiv
                 }
                 String ownVersion = ownVersion(owner, dep, own);
                 Managed cm = consumer.managed(dep);
@@ -181,6 +181,11 @@ public final class DependencyResolver {
                 String premanagedScope = null;
                 List<PomFile.Exclusion> exclusions = new ArrayList<PomFile.Exclusion>(n.exclusions);
                 exclusions.addAll(dep.getExclusionEntries());
+                if (dep.getExclusionEntries().isEmpty() && own != null) {
+                    // das Model-Building der Dependency-POM übernimmt Exclusions aus ihrem Management,
+                    // wenn die Deklaration selbst keine hat
+                    exclusions.addAll(own.dep.getExclusionEntries());
+                }
                 if (cm != null) {
                     Interpolated v = cm.version();
                     if (v.isResolved() && isFixed(v.value) && !v.value.equals(ownVersion)) {
@@ -210,6 +215,17 @@ public final class DependencyResolver {
     private static void offer(N parent, N child, Map<String, N> winners, List<N> queue) {
         parent.children.add(child);
         N w = winners.get(child.key());
+        if (w == null) {
+            // Rückweg zum Modul selbst: Maven lässt ihn als Zyklus weg, das Modul gewinnt immer
+            N root = parent;
+            while (root.parent != null) {
+                root = root.parent;
+            }
+            if (root.groupId.equals(child.groupId) && root.artifactId.equals(child.artifactId)) {
+                child.winner = root;
+                return;
+            }
+        }
         if (w == null) {
             child.winner = child;
             child.occurrences.add(child);

@@ -72,10 +72,25 @@ public final class BuildDoctor {
      * Diagnose mit {@link Diagnosis#UNKNOWN_RULE}. Ohne Fehler im Build: leere Liste.
      */
     public List<Diagnosis> diagnose(BuildFailure failure, Environment env) {
+        return diagnose(failure, env, Cancellation.NONE);
+    }
+
+    /** Wie oben; {@code cancel} bricht lange Prüfungen ab (IDE: Projekt geschlossen). */
+    public List<Diagnosis> diagnose(BuildFailure failure, Environment env, Cancellation cancel) {
         if (!failure.hasErrors()) {
             return Collections.emptyList();
         }
-        List<String> lines = failure.searchableLines();
+        Cancellation c = cancel == null ? Cancellation.NONE : cancel;
+        // Ausnahmen aus Zeilen ohne [ERROR] (Ausgabe der Anwendung) dürfen echte Maven-Fehler nicht überstimmen
+        List<Diagnosis> out = diagnose(failure, env, false, c);
+        if (failure.hasWeakErrors() && out.get(0).isUnknown()) {
+            out = diagnose(failure, env, true, c);
+        }
+        return out;
+    }
+
+    private List<Diagnosis> diagnose(BuildFailure failure, Environment env, boolean withWeak, Cancellation cancel) {
+        List<String> lines = failure.searchableLines(true, withWeak);
         ProjectPoms poms = new ProjectPoms(env.getProjectDirectory());
         List<Rule> rules = new ArrayList<Rule>(catalog.getRules());
         Collections.sort(rules, new Comparator<Rule>() {
@@ -86,7 +101,7 @@ public final class BuildDoctor {
         });
         List<Diagnosis> out = new ArrayList<Diagnosis>();
         for (Rule rule : rules) {
-            Diagnosis d = apply(rule, failure, env, lines, poms);
+            Diagnosis d = apply(rule, failure, env, lines, poms, withWeak, cancel);
             if (d != null) {
                 out.add(d);
             }
@@ -103,8 +118,9 @@ public final class BuildDoctor {
         return all.isEmpty() ? null : all.get(0);
     }
 
-    private Diagnosis apply(Rule rule, BuildFailure failure, Environment env, List<String> allLines, ProjectPoms poms) {
-        List<String> lines = rule.isOutsideTests() ? failure.searchableLines(false) : allLines;
+    private Diagnosis apply(Rule rule, BuildFailure failure, Environment env, List<String> allLines, ProjectPoms poms,
+                            boolean withWeak, Cancellation cancel) {
+        List<String> lines = rule.isOutsideTests() ? failure.searchableLines(false, withWeak) : allLines;
         for (Pattern unless : rule.getUnless()) {
             for (String line : lines) {
                 if (unless.matcher(line).find()) {
@@ -155,8 +171,9 @@ public final class BuildDoctor {
             Check check = checks.get(id);
             CheckResult result;
             try {
-                result = check.run(new CheckContext(failure, env, vars, lines, poms));
+                result = check.run(new CheckContext(failure, env, vars, lines, poms, cancel));
             } catch (RuntimeException e) {
+                cancel.check();   // ein Abbruch der IDE geht durch, außerhalb des catch
                 // Eine fehlerhafte Prüfung darf die Diagnose nicht verhindern
                 result = CheckResult.info().evidence(Evidence.hint(Texts.t("check.failed", id, e)));
             }
@@ -244,7 +261,7 @@ public final class BuildDoctor {
     private static FixAction render(Rule.FixSpec spec, Map<String, String> vars) {
         Map<String, String> params = new LinkedHashMap<String, String>();
         for (Map.Entry<String, String> e : spec.getParams().entrySet()) {
-            params.put(e.getKey(), Template.render(e.getValue(), vars));
+            params.put(e.getKey(), Template.renderParameter(e.getValue(), vars));
         }
         return new FixAction(spec.getType(), Template.render(spec.getLabel(), vars), params);
     }

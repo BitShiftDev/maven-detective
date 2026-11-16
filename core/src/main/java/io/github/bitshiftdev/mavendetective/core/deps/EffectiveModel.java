@@ -27,7 +27,10 @@ public final class EffectiveModel {
 
     private static final Pattern EXPRESSION = Pattern.compile("\\$\\{([^}]+)}");
     private static final int MAX_CHAIN = 20;
+    /** Längste Kette von Properties, die auf Properties verweisen. */
     private static final int MAX_INTERPOLATION = 10;
+    /** Längster Wert nach dem Einsetzen; schützt vor {@code <x>${y}${y}</x>}-Kaskaden. */
+    static final int MAX_VALUE_LENGTH = 10000;
 
     /** Woher ein Property-Wert stammt. {@code shadowed} sind gleichnamige Definitionen weiter oben in der Kette. */
     public static final class PropertyOrigin {
@@ -360,38 +363,58 @@ public final class EffectiveModel {
         return value == null ? null : new PropertyOrigin(name, value, null, -1);
     }
 
-    /** Setzt {@code ${…}} ein und merkt sich, welche Properties beteiligt waren. */
+    /**
+     * Setzt {@code ${…}} ein und merkt sich, welche Properties beteiligt waren. Ein Property, das sich über
+     * eine Kette selbst enthält ({@code a → b → a}), bleibt als Ausdruck stehen und zählt als unaufgelöst;
+     * ebenso Werte, die beim Einsetzen länger als {@link #MAX_VALUE_LENGTH} würden.
+     */
     public Interpolated interpolate(String raw) {
         List<PropertyOrigin> used = new ArrayList<PropertyOrigin>();
         List<String> unresolved = new ArrayList<String>();
         if (raw == null) {
             return new Interpolated(null, null, used, unresolved);
         }
-        String value = raw;
-        for (int round = 0; round < MAX_INTERPOLATION && value.contains("${"); round++) {
-            Matcher m = EXPRESSION.matcher(value);
-            StringBuffer sb = new StringBuffer();
-            boolean changed = false;
-            while (m.find()) {
-                String name = m.group(1);
-                PropertyOrigin o = property(name);
+        String value = expand(raw, used, unresolved, new ArrayList<String>(), new HashMap<String, String>());
+        return new Interpolated(raw, value, used, unresolved);
+    }
+
+    private String expand(String text, List<PropertyOrigin> used, List<String> unresolved,
+                          List<String> stack, Map<String, String> done) {
+        if (!text.contains("${")) {
+            return text;
+        }
+        Matcher m = EXPRESSION.matcher(text);
+        StringBuilder sb = new StringBuilder();
+        int last = 0;
+        while (m.find()) {
+            sb.append(text, last, m.start());
+            last = m.end();
+            String name = m.group(1);
+            String v = done.get(name);
+            if (v == null) {
+                PropertyOrigin o = stack.contains(name) || stack.size() >= MAX_INTERPOLATION ? null : property(name);
                 if (o == null || o.value == null) {
+                    v = m.group();
                     if (!unresolved.contains(name)) {
                         unresolved.add(name);
                     }
-                    m.appendReplacement(sb, Matcher.quoteReplacement(m.group()));
                 } else {
                     used.add(o);
-                    changed = true;
-                    m.appendReplacement(sb, Matcher.quoteReplacement(o.value));
+                    stack.add(name);
+                    v = expand(o.value, used, unresolved, stack, done);
+                    stack.remove(stack.size() - 1);
+                }
+                done.put(name, v);
+            }
+            if (sb.length() + v.length() > MAX_VALUE_LENGTH) {
+                v = m.group();
+                if (!unresolved.contains(name)) {
+                    unresolved.add(name);
                 }
             }
-            m.appendTail(sb);
-            value = sb.toString();
-            if (!changed) {
-                break;
-            }
+            sb.append(v);
         }
-        return new Interpolated(raw, value, used, unresolved);
+        sb.append(text, last, text.length());
+        return sb.toString();
     }
 }

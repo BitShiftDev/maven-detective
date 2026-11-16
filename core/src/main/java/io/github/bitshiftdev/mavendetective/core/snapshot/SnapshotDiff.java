@@ -47,7 +47,7 @@ public final class SnapshotDiff {
     }
 
     public static SnapshotDiff compare(BuildSnapshot green, BuildSnapshot current) {
-        List<Change> out = new ArrayList<Change>();
+        List<Change> out = new IndexedChanges();
         // IDE- und Extension-Schnappschüsse messen nicht alles gleich (Mirrors kennt nur die Extension,
         // die IDE löst alle Scopes auf). Über Herkünfte hinweg zählt deshalb nur, was beide gleich messen.
         boolean sameOrigin = green.getOrigin() != null && green.getOrigin().equals(current.getOrigin());
@@ -282,8 +282,36 @@ public final class SnapshotDiff {
         return out;
     }
 
+    /**
+     * Liste mit Index über (Bereich, Gegenstand, vorher, nachher): Bei Hunderten Modulen mit derselben Änderung
+     * wäre die Suche nach einer gleichen Änderung sonst quadratisch.
+     */
+    private static final class IndexedChanges extends ArrayList<Change> {
+        private static final long serialVersionUID = 1L;
+        final transient Map<String, Change> index = new java.util.HashMap<String, Change>();
+
+        @Override
+        public boolean add(Change c) {
+            Change before = index.get(c.key());
+            if (before == null) {
+                index.put(c.key(), c);
+            }
+            return super.add(c);
+        }
+    }
+
     /** Fügt hinzu oder hängt das Modul an eine gleiche Änderung an. */
     private static void add(List<Change> out, Change change, String module) {
+        if (out instanceof IndexedChanges) {
+            Change existing = ((IndexedChanges) out).index.get(change.key());
+            if (existing != null) {
+                existing.addModule(module);
+            } else {
+                change.addModule(module);
+                out.add(change);
+            }
+            return;
+        }
         for (Change existing : out) {
             if (existing.sameAs(change)) {
                 existing.addModule(module);

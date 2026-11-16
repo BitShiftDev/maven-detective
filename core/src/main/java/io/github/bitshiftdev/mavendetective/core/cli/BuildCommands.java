@@ -56,7 +56,7 @@ final class BuildCommands {
                 : failure.getSession().getProjectDirectory() == null ? null : Paths.get(failure.getSession().getProjectDirectory());
         SnapshotDiff changes = snapshotProject == null || o.idOnly ? null : SnapshotStore.defaultStore().changesSinceGreen(snapshotProject);
         if (result.isEmpty()) {
-            if (reportsFailure(failure)) {
+            if (failure.reportsFailure()) {
                 // Log endet mit BUILD FAILURE, aber keine Fehlerzeile war lesbar (unbekanntes Zeilenformat)
                 out.println(Texts.t("cli.no.errors.but.failure"));
                 return 4;
@@ -74,15 +74,6 @@ final class BuildCommands {
             }
         }
         return result.get(0).isUnknown() ? 4 : 0;
-    }
-
-    private static boolean reportsFailure(BuildFailure failure) {
-        for (String line : failure.getLogLines()) {
-            if (line.contains("BUILD FAILURE")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

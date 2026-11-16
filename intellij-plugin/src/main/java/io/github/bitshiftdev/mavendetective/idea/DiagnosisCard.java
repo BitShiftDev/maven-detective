@@ -494,15 +494,26 @@ final class DiagnosisCard {
     }
 
     /** Letzte nicht leere Zeilen, ohne ANSI-Farbcodes. */
+    private static final java.util.regex.Pattern ANSI_CODES = java.util.regex.Pattern.compile("\u001B\\[[0-9;]*[A-Za-z]");
+
     static @NotNull String tail(@Nullable String log, int lines) {
         if (log == null || log.isBlank()) {
             return MavenDetectiveBundle.message("card.unknown.no.output");
         }
-        String[] all = log.replaceAll("\u001B\\[[0-9;]*[A-Za-z]", "").split("\\R");
+        // vom Ende her: bei einem 20-MB-Log nicht den ganzen Text durch Regex und split schicken (EDT, jeder Klick)
         List<String> out = new ArrayList<>();
-        for (int i = all.length - 1; i >= 0 && out.size() < lines; i--) {
-            if (!all[i].isBlank()) {
-                out.add(0, all[i]);
+        int end = log.length();
+        while (end > 0 && out.size() < lines) {
+            int nl = log.lastIndexOf('\n', end - 1);
+            String chunk = log.substring(nl + 1, end);
+            end = nl < 0 ? 0 : nl;
+            // \r trennt wie \R (Windows-Zeilenende, Fortschrittsanzeigen)
+            String[] parts = chunk.indexOf('\r') < 0 ? new String[] {chunk} : chunk.split("\r", -1);
+            for (int k = parts.length - 1; k >= 0 && out.size() < lines; k--) {
+                String line = parts[k].indexOf('\u001B') >= 0 ? ANSI_CODES.matcher(parts[k]).replaceAll("") : parts[k];
+                if (!line.isBlank()) {
+                    out.add(0, line);
+                }
             }
         }
         return String.join("\n", out);

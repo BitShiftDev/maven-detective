@@ -509,4 +509,15 @@ class PreflightTest {
         assertFalse(VersionRange.contains("[1.8,9),[11,)", "10"));
         assertTrue(VersionRange.contains("[3.9.11]", "3.9.11"));
     }
+    /** Review #56: „8“ im Enforcer heißt 1.8. */
+    @Test
+    void enforcerReadsOldJavaBoundsLikeTheEnforcer() {
+        String java8 = PreflightChecks.normalizeJava("1.8.0_392");
+        assertTrue(VersionRange.contains(PreflightChecks.javaRange("8"), java8));
+        assertTrue(VersionRange.contains(PreflightChecks.javaRange("[8,)"), java8));
+        assertTrue(VersionRange.contains(PreflightChecks.javaRange("[1.8,9)"), java8));
+        assertFalse(VersionRange.contains(PreflightChecks.javaRange("[11,)"), java8));
+        assertTrue(VersionRange.contains(PreflightChecks.javaRange("[8,)"), "17.0.9"));
+        assertEquals("[17,21)", PreflightChecks.javaRange("[17,21)"));
+    }
 }

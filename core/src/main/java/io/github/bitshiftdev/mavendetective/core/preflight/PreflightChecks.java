@@ -160,7 +160,7 @@ final class PreflightChecks {
             }
         }
         for (Requirement r : enforcerRules(ctx, "requireJavaVersion")) {
-            if (version != null && !VersionRange.contains(r.range, normalizeJava(version))) {
+            if (version != null && !VersionRange.contains(javaRange(r.range), normalizeJava(version))) {
                 items.add(Item.error(Topic.JDK, Texts.t("preflight.jdk.enforcer", shown, r.range))
                         .evidence(runnerEvidence).evidence(r.evidence()).fix(r.open()));
             }
@@ -170,6 +170,17 @@ final class PreflightChecks {
                     : Texts.t("preflight.jdk.ok.release", shown, home, release.version)));
         }
         return items;
+    }
+
+    private static final java.util.regex.Pattern OLD_JAVA_BOUND =
+            java.util.regex.Pattern.compile("(?<pre>^|[\\[(,])\\s*(?<old>[5-8])\\s*(?=$|[\\]),])");
+
+    /**
+     * Grenzen wie {@code 8} meint der Enforcer ({@code RequireJavaVersion.setVersion}) als {@code 1.8} – sonst
+     * läge Java {@code 1.8.0_392} unter „8“. Für 5 bis 7 ebenso, das schadet nie.
+     */
+    static String javaRange(String range) {
+        return range == null ? null : OLD_JAVA_BOUND.matcher(range.trim()).replaceAll("${pre}1.${old}");
     }
 
     /** "1.8.0_392" → "1.8.0-392" wie der Enforcer, sonst unverändert. */

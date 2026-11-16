@@ -226,17 +226,17 @@ public final class PomFetcher {
                 while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
                     cancel.check();
                     if (System.currentTimeMillis() > deadline) {
-                        process.destroy();
+                        destroyTree(process);
                         throw new IOException(Texts.t("fetch.timeout", timeoutSeconds));
                     }
                 }
                 reader.join(2000);
             } catch (InterruptedException e) {
-                process.destroy();
+                destroyTree(process);
                 Thread.currentThread().interrupt();
                 throw new IOException("Unterbrochen", e);
             } catch (RuntimeException e) {
-                process.destroy();   // Abbruch durch den Aufrufer
+                destroyTree(process);   // Abbruch durch den Aufrufer
                 throw e;
             }
             List<String> out;
@@ -253,5 +253,28 @@ public final class PomFetcher {
     /** Befehl für die Anzeige, wenn jemand selbst laden will. */
     public static String manualCommand(String gav) {
         return "mvn dependency:get -Dartifact=" + gav + ":pom -Dtransitive=false";
+    }
+
+    /**
+     * Beendet Maven samt Kindprozessen. Unter Windows startet {@code mvn.cmd}/{@code mvnw.cmd} die JVM als Kind von
+     * {@code cmd.exe}; {@link Process#destroy()} träfe nur {@code cmd.exe}, Maven lüde weiter. Ab Java 9 über
+     * {@code Process.descendants()} (per Reflection, der Kern bleibt Java-8-Bytecode); unter Java 8 nur der Prozess.
+     */
+    static void destroyTree(Process process) {
+        try {
+            Object stream = Process.class.getMethod("descendants").invoke(process);
+            List<Object> children = new ArrayList<Object>();
+            java.util.Iterator<?> it = ((java.util.stream.BaseStream<?, ?>) stream).iterator();
+            while (it.hasNext()) {
+                children.add(it.next());   // erst sammeln: nach dem Ende des Elternprozesses fehlt die Zuordnung
+            }
+            java.lang.reflect.Method kill = Class.forName("java.lang.ProcessHandle").getMethod("destroyForcibly");
+            for (Object child : children) {
+                kill.invoke(child);
+            }
+        } catch (Exception e) {
+            // Java 8 oder keine Rechte: wenigstens den Prozess selbst
+        }
+        process.destroy();
     }
 }

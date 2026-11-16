@@ -17,6 +17,25 @@
 - POM quick fixes find dependencies written with entities or CDATA (`<groupId>org&#46;acme</groupId>`), keep a comment next to the value (`<version>1.0<!-- LTS --></version>`) and escape what they write: a property value like `a&b` no longer produces invalid XML, and an invalid property name is rejected.
 - Loading missing POMs for the upgrade simulator ignores commented-out `<repositories>` and coordinates whose version contains XML characters.
 - IDE: the quick fix "Remove exclusion" (when an exclusion removes the class a `NoClassDefFoundError` is looking for) is now offered on the diagnosis card and runs with diff preview and undo; before, the button was missing.
+- Paths with spaces (`C:\Users\Jane Doe\…`, `OneDrive - Company`) are kept whole: the compiler error opens the right file, a corrupt JAR is offered for deletion, a missing child module is named.
+- An exception that the application logs without `[ERROR]` (e.g. from a passing test) no longer produces a diagnosis for a successful build and no longer outranks a real Maven error.
+- Dependency analysis: exclusions from the `dependencyManagement` of a dependency's own POM apply; a path back to the module itself is a cycle; transitive `system` dependencies are kept like in Maven. Duplicate classes without a resolved tree use the same resolution as the other analyses.
+- Exclusion hygiene: an exclusion in a parent POM only counts as stale when no inheriting module still needs it.
+- A property that references itself (`<x>${x}${x}</x>` or `a → b → a`) is reported as unresolved instead of filling the memory; a POM with a UTF-8 BOM works in the upgrade simulator.
+- Unused dependencies (command line): text blocks with `\"""`, Groovy `'''` strings and classes named inside `${…}` in Kotlin/Groovy strings are read correctly.
+- Preflight: proxies and mirrors are chosen like Maven across user and global `settings.xml`; `requireJavaVersion 8` accepts Java `1.8`; Homebrew Maven and a relative `-Dmaven.repo.local` are found.
+- Cancelling "Download missing POMs" also stops Maven on Windows.
+- **What changed?**: plugins that set properties during the build (jacoco `argLine`, build numbers) no longer make every run look like a changed effective POM; the same project opened via different spellings or symlinks shares one reference; credentials in mirror URLs are masked.
+- IDE: "Show cause" in a console opens the diagnosis of that run, not the newest one.
+- IDE: an analysis that was running while Maven re-imported is marked as outdated; a quick fix re-imports only the changed modules (and those inheriting from them) instead of the whole project; read-only POMs are checked before anything is written.
+- IDE: "Fix all" for undeclared dependencies declares each dependency once; Apply in the upgrade simulator is off while the result is outdated or a new simulation runs; the preflight can be stopped; Ctrl+C works in the preflight and setup views; column widths in the conflict matrix survive a search; opening a page no longer saves half-edited POMs.
+
+### Performance
+
+- Editor hints and the stale-exclusion inspection are recomputed only when a `pom.xml` is saved or Maven re-imports, not on every file change; reactor POMs are read once.
+- One shared cache for JARs and POMs in the IDE, cleared when memory is low or a project closes; older runs in the Build Doctor history no longer keep their console and full log.
+- The log navigator reads large logs in the background; logs pasted from the clipboard are capped like logs of runs.
+- "What changed?" with thousands of changes across hundreds of modules, the diagnosis card's log tail and the conflict matrix's cells are faster.
 
 ## [0.1.0] - 2026-11-14
 

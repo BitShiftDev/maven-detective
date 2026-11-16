@@ -11,7 +11,6 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.CachedValueProvider;
@@ -43,7 +42,7 @@ public final class StaleExclusionInspection extends LocalInspectionTool {
     private static final Logger LOG = Logger.getInstance(StaleExclusionInspection.class);
 
     /** Repository-POMs ändern sich praktisch nie; über alle Läufe hinweg gecacht (prüft Änderungszeit). */
-    private static final PomCache CACHE = new PomCache();
+    private static final PomCache CACHE = IdeCaches.POMS;
 
     @Override
     public ProblemDescriptor @Nullable [] checkFile(@NotNull PsiFile file, @NotNull InspectionManager manager, boolean isOnTheFly) {
@@ -55,10 +54,10 @@ public final class StaleExclusionInspection extends LocalInspectionTool {
         if (project == null || !"project".equals(project.getLocalName()) || vf == null || !vf.isInLocalFileSystem()) {
             return null;
         }
-        // Die Analyse liest nur gespeicherte Dateien: Tippen ändert ihr Ergebnis nicht, erst Speichern
-        // oder ein VFS-Refresh. Deshalb gecacht bis zur nächsten VFS-Änderung statt pro Highlighting-Lauf.
+        // Die Analyse liest nur gespeicherte Dateien: Tippen ändert ihr Ergebnis nicht, erst eine gespeicherte
+        // pom.xml oder ein Maven-Import (neue POMs im lokalen Repository) – nicht jede andere Dateiänderung.
         List<ExclusionAudit.Finding> findings = CachedValuesManager.getCachedValue(xml,
-                () -> CachedValueProvider.Result.create(audit(xml), VirtualFileManager.getInstance()));
+                () -> CachedValueProvider.Result.create(audit(xml), PomInsights.getInstance(xml.getProject()).pomTracker()));
         if (findings.isEmpty()) {
             return null;
         }

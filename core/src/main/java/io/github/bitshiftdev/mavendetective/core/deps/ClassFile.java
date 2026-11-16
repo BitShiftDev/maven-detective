@@ -139,7 +139,7 @@ public final class ClassFile {
         String entry = className.replace('.', '/') + ".class";
         if (Files.isDirectory(jarOrDirectory)) {
             Path p = jarOrDirectory.resolve(entry);
-            return Files.isRegularFile(p) ? parse(Files.readAllBytes(p)) : null;
+            return Files.isRegularFile(p) && Files.size(p) <= MAX_CLASS_BYTES ? parse(Files.readAllBytes(p)) : null;
         }
         ZipFile zip = new ZipFile(jarOrDirectory.toFile());
         try {
@@ -154,6 +154,9 @@ public final class ClassFile {
                 int r;
                 while ((r = is.read(buf)) > 0) {
                     out.write(buf, 0, r);
+                    if (out.size() > MAX_CLASS_BYTES) {
+                        return null;   // Größe fehlte im ZIP-Verzeichnis (-1)
+                    }
                 }
                 return parse(out.toByteArray());
             } finally {

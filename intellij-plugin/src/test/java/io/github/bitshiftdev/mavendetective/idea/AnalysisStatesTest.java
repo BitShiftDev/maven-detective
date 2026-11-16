@@ -85,4 +85,20 @@ class AnalysisStatesTest {
         assertEquals(State.STALE, states.get(Analysis.DUPLICATES).state());
         assertNull(states.get(Analysis.DUPLICATES).location());
     }
+
+    /** Review #23: eine Rechnung, die vor einem Import begann, liefert ein veraltetes Ergebnis. */
+    @Test
+    void resultOfARunStartedBeforeAnImportIsStale() {
+        states.running(Analysis.USAGE);
+        int started = states.imports();
+        states.imported();
+        assertEquals(started + 1, states.imports());
+        states.set(Analysis.USAGE, Summary.done(4, null));
+        assertEquals(State.STALE, states.get(Analysis.USAGE).state());
+        assertEquals(4, states.get(Analysis.USAGE).count());
+
+        states.running(Analysis.USAGE);
+        states.set(Analysis.USAGE, Summary.done(1, null));
+        assertEquals(State.DONE, states.get(Analysis.USAGE).state(), "ohne Import dazwischen frisch");
+    }
 }

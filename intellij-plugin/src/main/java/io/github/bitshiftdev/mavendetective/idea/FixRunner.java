@@ -17,6 +17,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.ReadonlyStatusHandler;
 import com.intellij.openapi.vfs.VirtualFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
@@ -25,9 +26,6 @@ import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
-import org.jetbrains.idea.maven.execution.MavenRunConfigurationType;
-import org.jetbrains.idea.maven.execution.MavenRunnerParameters;
 
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
@@ -215,7 +213,8 @@ final class FixRunner {
      */
     private static void rebuild(Project project, BuildDoctorService.Result result, String args, String fixLabel) {
         boolean hasArgs = args != null && !args.isBlank();
-        boolean wouldStart = result.environment() != null && !hasArgs || hasArgs && result.configuration() != null;
+        // ältere Einträge im Verlauf haben keinen Lauf mehr (nur die Run-Konfiguration): dann über sie neu starten
+        boolean wouldStart = !hasArgs && result.environment() != null || result.configuration() != null;
         if (wouldStart && !DetectiveSettings.getInstance().isRebuildAfterFix()) {
             NotificationGroupManager.getInstance().getNotificationGroup(BuildDoctorService.TOOL_WINDOW_ID)
                     .createNotification(plainToHtml(MavenDetectiveBundle.message("fix.rebuild.off", fixLabel)), NotificationType.INFORMATION)
@@ -227,6 +226,9 @@ final class FixRunner {
         restart(project, result, args, fixLabel);
     }
 
+    /** Goal für den kopierten Befehl, wenn der Log keine nennt. */
+    private static final String DEFAULT_GOAL = "verify";
+
     /** Neubau wie bei {@link #rebuild}, ohne die Einstellung zu fragen. */
     private static void restart(Project project, BuildDoctorService.Result result, String args, String fixLabel) {
         boolean hasArgs = args != null && !args.isBlank();
@@ -235,19 +237,20 @@ final class FixRunner {
             ExecutionUtil.restart(result.environment());
             return;
         }
-        MavenRunConfiguration cfg = result.configuration();
-        if (hasArgs && cfg != null) {
+        if (result.configuration() != null) {
             BuildDoctorService.getInstance(project).expectCheck(fixLabel, result);
-            MavenRunnerParameters params = cfg.getRunnerParameters().clone();
-            String old = params.getCmdOptions();
-            params.setCmdOptions(old == null || old.isBlank() ? args.trim() : old.trim() + " " + args.trim());
-            MavenRunConfigurationType.runConfiguration(project, params, cfg.getGeneralSettings(), cfg.getRunnerSettings(), null);
-            return;
+            if (IdeMaven.runWithExtraArgs(project, result.configuration(), hasArgs ? args : "")) {
+                return;
+            }
         }
         if (hasArgs) {
-            String cmd = "mvn " + String.join(" ", result.failure().getSession().getGoals()) + " " + args;
+            List<String> goals = result.failure().getSession().getGoals();
+            // ein Log aus der Zwischenablage nennt die Goals nicht – „mvn -U“ allein täte nichts Sinnvolles
+            String shown = goals.isEmpty() ? DEFAULT_GOAL : String.join(" ", goals);
+            String cmd = "mvn " + shown + " " + args;
             CopyPasteManager.getInstance().setContents(new StringSelection(cmd.replaceAll(" +", " ").trim()));
-            notify(project, MavenDetectiveBundle.message("fix.rebuild.copied", args), NotificationType.INFORMATION);
+            notify(project, goals.isEmpty() ? MavenDetectiveBundle.message("fix.rebuild.copied.goals", args, DEFAULT_GOAL)
+                    : MavenDetectiveBundle.message("fix.rebuild.copied", args), NotificationType.INFORMATION);
         }
     }
 
@@ -258,8 +261,7 @@ final class FixRunner {
     private static void switchJdk(Project project, BuildDoctorService.Result result, FixAction fix) {
         String required = fix.param("required");
         String hint = required == null || required.isBlank() ? MavenDetectiveBundle.message("fix.jdk.any") : MavenDetectiveBundle.message("fix.jdk.min", required);
-        MavenRunConfiguration cfg = result.configuration();
-        if (cfg != null && cfg.getRunnerSettings() != null && result.environment() != null
+        if (IdeMaven.hasOwnRunnerSettings(result.configuration()) && result.environment() != null
                 && result.environment().getRunnerAndConfigurationSettings() != null) {
             notify(project, MavenDetectiveBundle.message("fix.jdk.run.configuration", hint),
                     NotificationType.INFORMATION);
@@ -419,8 +421,22 @@ final class FixRunner {
             return 0;
         }
         List<Document> docs = new ArrayList<>();
+        List<VirtualFile> files = new ArrayList<>();
         for (PomChanges.FileChange c : now.files()) {
-            docs.add(document(c.file()));
+            VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(c.file());
+            Document doc = vf == null ? null : FileDocumentManager.getInstance().getDocument(vf);
+            if (doc == null) {
+                notify(project, MavenDetectiveBundle.message("fix.file.unavailable", c.file().toString()), NotificationType.WARNING);
+                return 0;
+            }
+            files.add(vf);
+            docs.add(doc);
+        }
+        // Erst alle Dateien schreibbar machen (Perforce/ClearCase checken aus) – sonst bliebe bei mehreren POMs
+        // eine halb angewandte Änderung zurück
+        if (ReadonlyStatusHandler.getInstance(project).ensureFilesWritable(files).hasReadonlyFiles()) {
+            notify(project, MavenDetectiveBundle.message("fix.readonly"), NotificationType.WARNING);
+            return 0;
         }
         WriteCommandAction.runWriteCommandAction(project, command, null, () -> {
             for (int i = 0; i < docs.size(); i++) {
@@ -446,7 +462,7 @@ final class FixRunner {
         }
         done.add(MavenDetectiveBundle.message("fix.reimport"));
         notify(project, String.join("\n", done), NotificationType.INFORMATION);
-        IdeMaven.reimport(project);
+        IdeMaven.reimport(project, files);
         return now.editCount();
     }
 

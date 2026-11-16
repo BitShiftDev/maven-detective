@@ -18,6 +18,7 @@ import javax.swing.event.TableColumnModelListener;
 import java.awt.Dimension;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.ui.ColoredTableCellRenderer;
@@ -83,6 +84,18 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             if (getColumnModel().getColumnCount() > 0) {
                 removeColumn(getColumnModel().getColumn(0));
             }
+        }
+
+        /** Tooltip erst beim Zeigen bauen, nicht bei jedem Zeichnen jeder Zelle. */
+        @Override
+        public String getToolTipText(@NotNull MouseEvent e) {
+            int row = rowAtPoint(e.getPoint());
+            int column = columnAtPoint(e.getPoint());
+            if (row < 0 || column < 0) {
+                return null;
+            }
+            Object value = getValueAt(row, column);
+            return value instanceof ConflictMatrix.Cell c ? cellTooltip(model.rows.get(convertRowIndexToModel(row)), c) : null;
         }
     };
     /** Erste Spalte (Artifact) als Zeilenkopf: bleibt beim waagrechten Scrollen stehen. */
@@ -221,10 +234,10 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             /** Günstig: nach jedem Import von selbst neu rechnen, statt alte Zahlen stehen zu lassen. */
             @Override
             public void mavenImported() {
-                reload();
+                reload(false);
             }
         }, this);
-        reload();
+        reload(false);
     }
 
     @Override
@@ -234,7 +247,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
 
     @Override
     public void refresh() {
-        reload();
+        reload(true);
     }
 
     @Override
@@ -247,8 +260,14 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         return matrix == null ? null : matrix.markdown(!onlyDivergent);
     }
 
-    private void reload() {
-        DependenciesPanel.saveUnsavedPoms();
+    /**
+     * @param save ungespeicherte POMs vorher speichern – nur auf Klick des Nutzers; beim automatischen Lauf (Öffnen,
+     *             nach einem Import) würde eine halb getippte {@code pom.xml} sonst ungefragt gespeichert
+     */
+    private void reload(boolean save) {
+        if (save) {
+            DependenciesPanel.saveUnsavedPoms();
+        }
         AnalysisResults results = AnalysisResults.getInstance(project);
         results.running(AnalysisResults.Analysis.CONFLICTS);
         loader.run(c -> compute(project, c), m -> {
@@ -340,12 +359,14 @@ public final class ConflictMatrixPanel extends DetectivePanel {
                 rows.add(r);
             }
         }
-        model.set(matrix.getModules(), rows);
-        if (header.getColumnCount() > 0) {
-            header.getColumnModel().getColumn(0).setPreferredWidth(JBUI.scale(HEADER_WIDTH));
-        }
-        for (int i = 0; i < table.getColumnCount(); i++) {
-            table.getColumnModel().getColumn(i).setPreferredWidth(JBUI.scale(130));
+        // Breiten nur bei neuen Spalten setzen – sonst setzte jeder Tastendruck in der Suche sie zurück
+        if (model.set(matrix.getModules(), rows)) {
+            if (header.getColumnCount() > 0) {
+                header.getColumnModel().getColumn(0).setPreferredWidth(JBUI.scale(HEADER_WIDTH));
+            }
+            for (int i = 0; i < table.getColumnCount(); i++) {
+                table.getColumnModel().getColumn(i).setPreferredWidth(JBUI.scale(130));
+            }
         }
         int divergent = matrix.divergent().size();
         if (onlyDivergent && matrix.divergent().isEmpty()) {
@@ -546,7 +567,8 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         private List<ConflictMatrix.Module> modules = List.of();
         private List<ConflictMatrix.Row> rows = List.of();
 
-        void set(List<ConflictMatrix.Module> modules, List<ConflictMatrix.Row> rows) {
+        /** {@code true}, wenn sich die Spalten geändert haben (dann sind ihre Breiten neu zu setzen). */
+        boolean set(List<ConflictMatrix.Module> modules, List<ConflictMatrix.Row> rows) {
             boolean structure = !modules.equals(this.modules);
             this.modules = modules;
             this.rows = rows;
@@ -555,6 +577,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             } else {
                 fireTableDataChanged();
             }
+            return structure;
         }
 
         @Override
@@ -577,6 +600,14 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             ConflictMatrix.Row r = rows.get(rowIndex);
             return columnIndex == 0 ? r : r.cell(modules.get(columnIndex - 1));
         }
+    }
+
+    private static String cellTooltip(ConflictMatrix.Row r, ConflictMatrix.Cell c) {
+        List<String> vs = r.versions();
+        return (r.isDivergent() ? MavenDetectiveBundle.message("matrix.cell.group", vs.indexOf(c.getVersion()) + 1, vs.size()) + " · " : "")
+                + c.sourceLabel() + (c.getScope() != null && !"compile".equals(c.getScope()) ? ", " + c.getScope() : "")
+                + (c.getFile() == null ? "" : " – " + c.getFile() + ":" + c.getLine()) + " · "
+                + MavenDetectiveBundle.message("matrix.cell.hint");
     }
 
     /** Abweichende Versionen hinterlegt, die vorgeschlagene normal; Herkunft klein dahinter. */
@@ -608,10 +639,6 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             append("  " + shortSource(c), r.isDivergent() && !selected
                     ? new SimpleTextAttributes(SimpleTextAttributes.STYLE_SMALLER, DetectiveColors.TINTED_SECONDARY)
                     : SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES);
-            setToolTipText((r.isDivergent() ? MavenDetectiveBundle.message("matrix.cell.group", group + 1, vs.size()) + " · " : "")
-                    + c.sourceLabel() + (c.getScope() != null && !"compile".equals(c.getScope()) ? ", " + c.getScope() : "")
-                    + (c.getFile() == null ? "" : " – " + c.getFile() + ":" + c.getLine()) + " · "
-                    + MavenDetectiveBundle.message("matrix.cell.hint"));
         }
 
         private static String shortSource(ConflictMatrix.Cell c) {

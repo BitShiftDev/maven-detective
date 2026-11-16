@@ -152,7 +152,7 @@ final class RepositoryChecks {
 
     static final class CorruptJar implements Check {
         /** Nur am Anfang eines Pfads ansetzen, sonst wächst {@code find()} quadratisch mit langen Zeilen. */
-        private static final Pattern PATH = Pattern.compile("(?<![^\\s;:'\"=(\\[,])((?:[A-Za-z]:)?[\\\\/][^\\s;:'\"]*\\.(?:jar|zip|war))");
+        private static final Pattern PATH = Pattern.compile("(?<![^\\s;:'\"=(\\[,])(" + Text.absolutePath("jar|zip|war") + ")");
 
         @Override
         public String id() { return "corrupt-jar"; }

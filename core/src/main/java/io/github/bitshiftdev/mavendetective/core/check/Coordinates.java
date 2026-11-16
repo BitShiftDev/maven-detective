@@ -29,9 +29,13 @@ public final class Coordinates {
         t = t.replaceAll("[,;.)]+$", "");
         String[] p = t.split(":");
         for (String part : p) {
-            if (part.isEmpty() || !part.matches("[A-Za-z0-9_.\\-${}]+")) {
+            // nur Punkte („.“, „..“) würden als Verzeichnis aus dem lokalen Repository hinausführen
+            if (part.isEmpty() || !part.matches("[A-Za-z0-9_.\\-${}]+") || part.matches("\\.+")) {
                 return null;
             }
+        }
+        if (p.length >= 3 && (p[0].startsWith(".") || p[0].endsWith(".") || p[0].contains(".."))) {
+            return null;   // leere Segmente in der groupId
         }
         switch (p.length) {
             case 3: return new Coordinates(p[0], p[1], "jar", null, p[2]);

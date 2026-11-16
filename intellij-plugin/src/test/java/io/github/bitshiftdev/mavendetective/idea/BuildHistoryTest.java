@@ -28,7 +28,7 @@ class BuildHistoryTest {
     }
 
     private static BuildDoctorService.Result result(Diagnosis... ds) {
-        return new BuildDoctorService.Result(new BuildFailure(BuildFailure.Source.LOG), List.of(ds), "[ERROR] x", null, null, null, null);
+        return new BuildDoctorService.Result(new BuildFailure(BuildFailure.Source.LOG), List.of(ds), "[ERROR] x", null, null, null, null, null);
     }
 
     private static Diagnosis corruptJar() {
@@ -82,5 +82,21 @@ class BuildHistoryTest {
                   <dependencies><dependency/></dependencies>
                 </plugin></plugins></build></project>
                 """));
+    }
+    /** Review #51: ältere Einträge halten keinen Lauf und nur das Ende des Logs. */
+    @Test
+    void aeltereEintraegeWerdenSchlank() {
+        String log = "x".repeat(BuildDoctorService.Result.SLIM_LOG_CHARS) + "\n[INFO] BUILD FAILURE\n";
+        BuildDoctorService.Result big = new BuildDoctorService.Result(new BuildFailure(BuildFailure.Source.LOG), List.of(corruptJar()),
+                "[INFO] Scanning for projects\n".repeat(100) + log, null, null, null, null, null);
+        BuildDoctorService.Run run = new BuildDoctorService.Run(false, 1, big, null, null);
+        BuildDoctorService.Run slim = run.slim();
+        assertNull(slim.result().environment());
+        assertTrue(slim.result().rawLog().endsWith("[INFO] BUILD FAILURE\n"), "Ende bleibt");
+        assertFalse(slim.result().rawLog().contains("Scanning for projects"));
+        assertTrue(slim.result().rawLog().length() < big.rawLog().length(), "kürzer");
+        assertTrue(slim.result().rawLog().chars().allMatch(c -> c < 256), () -> "nur Latin-1: " + slim.result().rawLog().substring(0, 80));
+        BuildDoctorService.Run small = new BuildDoctorService.Run(false, 1, result(corruptJar()), null, null);
+        assertTrue(small.slim() == small, "nichts zu kürzen: derselbe Eintrag");
     }
 }

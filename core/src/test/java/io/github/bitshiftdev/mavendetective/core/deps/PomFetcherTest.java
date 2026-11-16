@@ -83,4 +83,22 @@ class PomFetcherTest {
                 "org.evil:x:1</version><scope>system</scope><version>1",
                 "org.evil:y:1&amp;")));
     }
+
+    /** Review #57: Abbruch beendet auch Kindprozesse (unter Windows läuft Maven als Kind von cmd.exe). */
+    @Test
+    void destroyTreeEndsChildProcesses() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Paths.get("/bin/sh")));
+        Process p = new ProcessBuilder("/bin/sh", "-c", "sleep 60 & wait").start();
+        long deadline = System.currentTimeMillis() + 5000;
+        while (p.descendants().count() == 0 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+        java.util.List<ProcessHandle> children = p.descendants().collect(java.util.stream.Collectors.toList());
+        org.junit.jupiter.api.Assertions.assertFalse(children.isEmpty());
+        PomFetcher.destroyTree(p);
+        for (ProcessHandle c : children) {
+            c.onExit().get(5, java.util.concurrent.TimeUnit.SECONDS);
+            org.junit.jupiter.api.Assertions.assertFalse(c.isAlive());
+        }
+    }
 }

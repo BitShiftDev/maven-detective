@@ -1,8 +1,6 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
 import io.github.bitshiftdev.mavendetective.core.Texts;
-import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Declared;
-import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel.Managed;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,7 +8,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -23,9 +20,8 @@ import java.util.regex.Pattern;
  * Reihenfolge, in der Maven 3 sie übergibt – Tiefe zuerst, wie im Baum. Grundlage für Modul A3.
  *
  * <p>Mit Baum (IDE-Modell oder {@code dependency:tree -Dverbose}) sind die Einträge genau die
- * Knoten mit Status {@code INCLUDED}. Ohne Baum wird der Classpath aus den POMs im lokalen
- * Repository nachgebaut (nearest wins, bei gleicher Tiefe die zuerst deklarierte Dependency);
- * Reihenfolge und Konfliktauflösung sind dann geschätzt ({@link #isFromTree()} {@code false}).
+ * Knoten mit Status {@code INCLUDED}. Ohne Baum löst {@link DependencyResolver} ihn aus den POMs im
+ * lokalen Repository auf; das Ergebnis ist dann ein Nachbau ({@link #isFromTree()} {@code false}).
  * Geht nie ins Netz.
  */
 public final class ModuleClasspath {
@@ -210,96 +206,14 @@ public final class ModuleClasspath {
         }
     }
 
-    /** Kandidat beim Nachbauen ohne Baum. */
-    private static final class Candidate {
-        final String groupId;
-        final String artifactId;
-        final String version;
-        final String type;
-        final String classifier;
-        final String scope;
-        final List<String> path;
-        final int directIndex;
-        final int order;
-
-        Candidate(String groupId, String artifactId, String version, String type, String classifier, String scope, List<String> path,
-                  int directIndex, int order) {
-            this.groupId = groupId;
-            this.artifactId = artifactId;
-            this.version = version;
-            this.type = type;
-            this.classifier = classifier;
-            this.scope = scope;
-            this.path = path;
-            this.directIndex = directIndex;
-            this.order = order;
-        }
-    }
-
+    /**
+     * Ohne Baum: den Baum wie Maven aus den POMs auflösen ({@link DependencyResolver}) – Konflikte, Scopes,
+     * Dependencies vom Typ {@code pom} und Exclusions wie dort – und dann genauso ablaufen.
+     */
     private void fromPoms(PomLocator locator, Map<String, PomFile> reactor) {
-        Map<String, Candidate> winners = new LinkedHashMap<String, Candidate>();
-        int index = 0;
-        int order = 0;
-        for (Declared d : model.getDependencies().values()) {
-            PomFile.Dep dep = d.dep;
-            if ("pom".equals(dep.getType()) || dep.isImport()) {
-                continue;
-            }
-            String version = ExclusionAudit.dependencyVersion(model, dep);
-            Managed managed = model.managed(dep);
-            String scope = dep.getScope() != null ? dep.getScope()
-                    : managed != null && managed.dep.getScope() != null ? managed.dep.getScope() : "compile";
-            if ("import".equals(scope)) {
-                continue;
-            }
-            int directIndex = index++;
-            String directGav = dep.ga() + ":" + (version == null ? "?" : version);
-            via(dep.ga(), dep.ga());
-            offer(winners, new Candidate(dep.getGroupId(), dep.getArtifactId(), version, dep.getType(), dep.getClassifier(), scope,
-                    Collections.singletonList(directGav), directIndex, order++));
-            if (version == null) {
-                missing.add(Texts.t("excl.missing.version", dep.ga()));
-                continue;
-            }
-            List<PomFile.Exclusion> exclusions = new ArrayList<PomFile.Exclusion>(dep.getExclusionEntries());
-            if (managed != null) {
-                exclusions.addAll(managed.dep.getExclusionEntries()); // Maven mischt Exclusions aus dem Management ein
-            }
-            ExclusionAudit.Closure closure = ExclusionAudit.Closure.of(locator, model, dep.getGroupId(), dep.getArtifactId(), version,
-                    exclusions);
-            missing.addAll(closure.missing);
-            for (Map.Entry<String, List<String>> e : closure.paths.entrySet()) {
-                via(e.getKey(), dep.ga());
-                PomFile.Dep t = closure.decls.get(e.getKey());
-                String last = e.getValue().get(e.getValue().size() - 1);
-                String v = last.substring(last.lastIndexOf(':') + 1);
-                String ts = "test".equals(scope) || "provided".equals(scope) ? scope
-                        : "runtime".equals(t.getScope()) || "runtime".equals(scope) ? "runtime" : "compile";
-                offer(winners, new Candidate(t.getGroupId(), t.getArtifactId(), "?".equals(v) ? null : v, t.getType(), t.getClassifier(),
-                        ts, e.getValue(), directIndex, order++));
-            }
-        }
-        List<Candidate> sorted = new ArrayList<Candidate>(winners.values());
-        Collections.sort(sorted, new java.util.Comparator<Candidate>() {
-            @Override
-            public int compare(Candidate a, Candidate b) {
-                return a.directIndex != b.directIndex ? a.directIndex - b.directIndex : a.order - b.order;
-            }
-        });
-        for (Candidate c : sorted) {
-            if (c.version != null) {
-                add(c.groupId, c.artifactId, c.version, c.type, c.classifier, c.scope, c.path, locator.getLocalRepository(), reactor);
-            }
-        }
-    }
-
-    /** Nearest wins; bei gleicher Tiefe gewinnt die zuerst deklarierte Dependency. */
-    private static void offer(Map<String, Candidate> winners, Candidate c) {
-        String key = c.groupId + ":" + c.artifactId;
-        Candidate old = winners.get(key);
-        if (old == null || c.path.size() < old.path.size()) {
-            winners.put(key, c);
-        }
+        DependencyResolver.Tree resolved = DependencyResolver.resolve(locator, pom);
+        missing.addAll(resolved.getMissing());
+        fromTree(resolved.getRoot(), locator.getLocalRepository(), reactor);
     }
 
     private void via(String ga, String direct) {

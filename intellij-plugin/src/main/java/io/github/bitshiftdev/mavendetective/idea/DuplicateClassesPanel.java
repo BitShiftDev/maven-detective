@@ -160,9 +160,10 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         setStatus(null);
         AnalysisResults results = AnalysisResults.getInstance(project);
         results.running(AnalysisResults.Analysis.DUPLICATES);
+        int imports = results.imports();
         checker.run(c -> compute(project, c), r -> {
             result = r;
-            setStale(false);
+            setStale(results.imports() != imports);   // Maven-Import während der Rechnung
             applyFilter();
             results.set(AnalysisResults.Analysis.DUPLICATES, summary(r));
             PomInsights.getInstance(project).setDuplicates(r);
