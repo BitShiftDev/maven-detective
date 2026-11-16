@@ -19,3 +19,6 @@ Maven Detective – *.md
 # Marketplace-Bilder bleiben lokal: Screenshots (shots/) und gerenderte Folien (*.png)
 docs/marketplace/*.png
 docs/marketplace/shots/
+
+# Review-Berichte bleiben lokal
+docs/review/
