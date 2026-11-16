@@ -45,6 +45,8 @@ knows these classics, **proves** which one hit you and fixes it.
 - **Local by default.** Checks only read local files and settings. The network is used only when you explicitly ask for it.
 - **English and German** for the user interface and every diagnosis.
 
+![The Maven Detective tool window in IntelliJ IDEA: overview tiles for the last build, changes since green, IDE vs. terminal, preflight, usage and exclusions](docs/images/screenshots/overview.webp)
+
 ## Installation
 
 | You want… | Do this |
@@ -60,6 +62,8 @@ Every release ships `SHA256SUMS`. What changed per version: [CHANGELOG.md](CHANG
 Build Doctor reads the failed run (structured Maven events or the plain log), matches it against its error catalog,
 then **verifies** the suspicion against your actual files: the local repository, `settings.xml`, the JDK, the POMs.
 Only a confirmed cause is called `certain`.
+
+![Build Doctor in IntelliJ IDEA: the diagnosis card "#10 Runtime conflict in tests · certain" names the JAR the JVM loaded, the version that lost and why](docs/images/screenshots/build-doctor.webp)
 
 ### What it recognises
 
@@ -122,6 +126,8 @@ transitive effects could not be compared – it never claims "no change" in that
 - **Fix-and-check loop** – after a fix the plugin rebuilds and tells you *Fixed ✓* or shows the next diagnosis.
 - **Right in your `pom.xml`** – a banner on the file the last build failed on.
 
+![Preflight in IntelliJ IDEA: a red traffic light because a repository uses http://, with the quick fix "Switch the URL to https"](docs/images/screenshots/preflight.webp)
+
 ## Dependency X-ray
 
 ### Why This Version?
@@ -145,6 +151,8 @@ Notes
 It follows Maven's own model-builder rules – inheritance, interpolation, BOM imports, nearest wins – and tells you
 when a property you set has *no* effect.
 
+![The Why This Version? page in IntelliJ IDEA: a module's dependencies and the decision chain behind the selected version](docs/images/screenshots/why-this-version.webp)
+
 ### Conflict matrix
 
 One table for the whole reactor: artifact × module, resolved version in every cell, deviations on top. One click pins
@@ -158,11 +166,15 @@ com.google.guava:guava  – 2 versions
       ! <version>32.1.3-jre</version> in billing overrides dependencyManagement – remove it after pinning  → billing/pom.xml:31
 ```
 
+![The conflict matrix in IntelliJ IDEA: resolved versions per module with a "Pin in shop-platform" action, and managed-version inlays in the pom.xml above](docs/images/screenshots/conflicts.webp)
+
 ### Duplicate classes
 
 Classes that sit in more than one JAR – also under different coordinates (`commons-logging` next to `jcl-over-slf4j`,
 `javax.xml.bind` next to `jakarta.xml.bind-api` 2.x). Shows which copy wins, whether the contents differ, and inserts the
 exclusion that removes the redundant JAR.
+
+![Duplicate classes in IntelliJ IDEA: commons-logging next to jcl-over-slf4j, the classpath order and the "Add exclusion" fix](docs/images/screenshots/duplicate-classes.webp)
 
 ### Exclusion hygiene
 
@@ -175,6 +187,8 @@ Based on the classes your sources actually name (resolved through the IDE's code
 transitively, declared dependencies nobody uses, and `compile` dependencies only tests need – with one-click *declare*,
 *remove* and *change scope*. JDBC drivers, logging backends and JARs that register services are never flagged as
 "surely unused".
+
+![Unused and undeclared dependencies in IntelliJ IDEA, with the diff preview of "Clean up dependencies" below](docs/images/screenshots/usage.webp)
 
 ### Upgrade simulator
 
@@ -197,6 +211,8 @@ Module demo: 5 upgraded
 The simulator finds the place that sets the version today – property, BOM import, parent, direct declaration or
 `dependencyManagement` – applies the change in memory, rebuilds every module's tree and shows what goes up (`↑`), down
 (`↓`), appears (`+`) or disappears (`−`), plus new conflicts. One more click applies exactly the simulated change.
+
+![The Upgrade Simulation editor tab in IntelliJ IDEA: the POM diff and the dependency tree differences per module](docs/images/screenshots/upgrade-simulator.webp)
 
 ### Answers right in your `pom.xml`
 

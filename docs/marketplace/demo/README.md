@@ -1,63 +1,63 @@
-# Demo-Projekt für die Marketplace-Screenshots
+# Demo project for the Marketplace screenshots
 
-`shop-platform` ist ein kleiner Reactor (5 Module), der jede Ansicht von Maven Detective mit echtem Inhalt füllt.
-Alles ist absichtlich ein wenig kaputt – **nicht reparieren**, außer zum Zeigen eines Quick-Fixes (danach
+`shop-platform` is a small reactor (5 modules) that fills every view of Maven Detective with real content.
+Everything is slightly broken on purpose – **do not fix it**, except to demonstrate a quick fix (afterwards run
 `git checkout docs/marketplace/demo`).
 
-| Modul | Was es auslöst |
+| Module | What it triggers |
 | --- | --- |
-| `commons` | kompiliert gegen Jackson 2.18 (`ObjectNode.withObjectProperty`, gibt es erst ab 2.16) |
-| `gateway` | `jackson-databind` **2.15.4** direkt und `snakeyaml` 1.33 → Konflikte; Test scheitert mit `NoSuchMethodError`. Profil `green` setzt Jackson auf 2.18.2 → grüner Lauf |
-| `order-service` | Jackson ohne Version (BOM), `jjwt-jackson` bringt eine ältere Jackson mit (verdrängt), `httpclient` bringt `commons-logging` neben `jcl-over-slf4j` (doppelte Klassen), veraltete Exclusion `json-simple`, `HttpHost` nur transitiv (undeklariert), `commons-lang3` ungenutzt |
-| `billing` | `guava` 32.1.3-jre statt 33.3.1-jre; Repository `legacy-nexus` mit `http://` (Preflight rot, Build bleibt grün) |
+| `commons` | compiles against Jackson 2.18 (`ObjectNode.withObjectProperty`, only available since 2.16) |
+| `gateway` | `jackson-databind` **2.15.4** directly and `snakeyaml` 1.33 → conflicts; a test fails with `NoSuchMethodError`. Profile `green` sets Jackson to 2.18.2 → green run |
+| `order-service` | Jackson without a version (BOM), `jjwt-jackson` brings an older Jackson (displaced), `httpclient` brings `commons-logging` next to `jcl-over-slf4j` (duplicate classes), stale exclusion `json-simple`, `HttpHost` only transitive (undeclared), `commons-lang3` unused |
+| `billing` | `guava` 32.1.3-jre instead of 33.3.1-jre; repository `legacy-nexus` with `http://` (preflight red, build stays green) |
 | `notification` | Guava 33.3.1-jre, snakeyaml 2.3 |
 
-Mit Maven 3.9.11 und JDK 21 geprüft: `mvn verify -Pgreen` → BUILD SUCCESS, `mvn verify` → BUILD FAILURE in `gateway`.
-Die Kommandozeile erkennt den roten Lauf als **#10 Runtime conflict in tests · certain** („comes from jackson-databind:2.15.4,
-which lacks ObjectNode.withObjectProperty() … loses against 2.15.4 (nearest wins)“).
+Checked with Maven 3.9.11 and JDK 21: `mvn verify -Pgreen` → BUILD SUCCESS, `mvn verify` → BUILD FAILURE in `gateway`.
+The command line recognises the red run as **#10 Runtime conflict in tests · certain** ("comes from jackson-databind:2.15.4,
+which lacks ObjectNode.withObjectProperty() … loses against 2.15.4 (nearest wins)").
 
-## Vorbereitung
+## Preparation
 
-1. `./gradlew :intellij-plugin:runIde` und im Sandbox-IDE **diesen Ordner** (`docs/marketplace/demo`) als Projekt öffnen,
-   vertrauen, Maven-Import abwarten (lädt einige MB aus Maven Central). Projekt-JDK 17 oder neuer.
-2. Theme **Dark** (Standard), New UI, keine Plugins mit eigenen Toolbars. Fenster auf **1600 × 1000** stellen, damit alle Bilder
-   dasselbe Seitenverhältnis (16:10) haben; Bildschirmfotos ohne Desktop und Fensterrahmen.
-3. Run-Konfigurationen liegen in `.run/` und tauchen oben rechts auf: `shop-platform [verify -Pgreen]` und `shop-platform [verify]`.
+1. Run `./gradlew :intellij-plugin:runIde` and open **this folder** (`docs/marketplace/demo`) as a project in the sandbox IDE,
+   trust it and wait for the Maven import (downloads a few MB from Maven Central). Project JDK 17 or newer.
+2. Theme **Dark** (default), New UI, no plugins with their own toolbars. Set the window to **1600 × 1000** so that all images
+   have the same aspect ratio (16:10); take screenshots without desktop and window frame.
+3. Run configurations live in `.run/` and show up at the top right: `shop-platform [verify -Pgreen]` and `shop-platform [verify]`.
 
-## Je Bild
+## Per image
 
 **01 Build Doctor**
-1. `shop-platform [verify -Pgreen]` starten → grün, wird zur Referenz.
-2. `shop-platform [verify]` starten → rot. Tool-Window *Maven Detective* öffnet sich mit der Karte
-   *#10 Runtime conflict in tests · certain*; unter „Since the last green build“ stehen das Profil und
+1. Run `shop-platform [verify -Pgreen]` → green, becomes the reference.
+2. Run `shop-platform [verify]` → red. The *Maven Detective* tool window opens with the card
+   *#10 Runtime conflict in tests · certain*; under "Since the last green build" it lists the profile and
    `jackson-databind 2.18.2 → 2.15.4` (gateway).
-3. Tool-Window rechts andocken, links die Run-Konsole mit `BUILD FAILURE` und dem Link „← Show cause“ sichtbar lassen.
-   Abschnitte *Evidence* und *Since the last green build* aufklappen.
+3. Dock the tool window on the right, keep the run console with `BUILD FAILURE` and the link "← Show cause" visible on the left.
+   Expand the sections *Evidence* and *Since the last green build*.
 
 **02 Why This Version?**
-1. Zuerst *Dependencies → Conflicts* einmal öffnen (füllt Code Vision im Editor).
-2. `order-service/pom.xml` öffnen: Inlays hinter `jackson-databind`, `slf4j-api`, `jcl-over-slf4j`, `commons`.
-3. Cursor auf `jackson-databind`, **Alt+Enter → Why This Version?** Das Popup zeigt BOM-Import, `${jackson.version}` und die von
-   `jjwt-jackson` verdrängte Version.
+1. First open *Dependencies → Conflicts* once (fills the code vision in the editor).
+2. Open `order-service/pom.xml`: inlays after `jackson-databind`, `slf4j-api`, `jcl-over-slf4j`, `commons`.
+3. Put the caret on `jackson-databind`, **Alt+Enter → Why This Version?** The popup shows the BOM import, `${jackson.version}` and
+   the version displaced by `jjwt-jackson`.
 
-**03 Conflict matrix** – *Dependencies → Conflicts*: 3 Abweichungen (jackson-databind, guava, snakeyaml). Zeile
-`jackson-databind` auswählen, damit unten der Vorschlag „Pin 2.18.2 in shop-platform“ steht.
+**03 Conflict matrix** – *Dependencies → Conflicts*: 3 divergences (jackson-databind, guava, snakeyaml). Select the row
+`jackson-databind` so that the suggestion "Pin 2.18.2 in shop-platform" appears below.
 
-**04 Upgrade simulator** – `billing/pom.xml`, Rechtsklick auf die `guava`-Dependency → *Simulate Upgrade…* → `33.3.1-jre`
-→ *Before/After*. Alternative mit mehr Modulen: Seite *Upgrade Simulator*, `${jackson.version}` → `2.19.2`,
-erst *Download Missing POMs*, dann simulieren.
+**04 Upgrade simulator** – `billing/pom.xml`, right-click the `guava` dependency → *Simulate Upgrade…* → `33.3.1-jre`
+→ *Before/After*. Alternative with more modules: page *Upgrade Simulator*, `${jackson.version}` → `2.19.2`,
+first *Download Missing POMs*, then simulate.
 
-**05 Preflight** – Aktion *Preflight* (Build-Doctor-Toolbar oder Maven-Tool-Window). Ampel rot wegen `legacy-nexus`
-(`http://`); ein Befund auswählen, damit „Switch the URL to https“ erscheint. *Check repositories (network)* ist optional.
+**05 Preflight** – action *Preflight* (Build Doctor toolbar or Maven tool window). Traffic light red because of `legacy-nexus`
+(`http://`); select a finding so that "Switch the URL to https" appears. *Check repositories (network)* is optional.
 
-**06 Duplicate classes** – *Dependencies → Duplicate Classes* → prüfen. `order-service`: `commons-logging 1.2` ↔
-`jcl-over-slf4j 2.0.16`, auswählen → Empfehlung „remove commons-logging“, Exclusion an `httpclient`.
+**06 Duplicate classes** – *Dependencies → Duplicate Classes* → check. `order-service`: `commons-logging 1.2` ↔
+`jcl-over-slf4j 2.0.16`, select it → recommendation "remove commons-logging", exclusion on `httpclient`.
 
-Weitere Motive: *Exclusions* (`json-simple` in order-service veraltet), *Usage* (`httpcore` undeclared, `commons-lang3` unused),
-*Overview* nach *Check All*.
+More motifs: *Exclusions* (`json-simple` in order-service is stale), *Usage* (`httpcore` undeclared, `commons-lang3` unused),
+*Overview* after *Check All*.
 
-## Hinweise
+## Notes
 
-- Ein grüner Lauf aus der IDE speichert eine Referenz unter `~/.maven-detective/snapshots/demo-*`. Für einen sauberen Verlauf
-  vor den Aufnahmen löschen.
-- `legacy-nexus` hinterlässt `.lastUpdated`-Dateien im lokalen Repository (Maven merkt sich den blockierten Versuch). Harmlos.
+- A green run from the IDE stores a reference under `~/.maven-detective/snapshots/demo-*`. Delete it before taking the
+  screenshots to get a clean history.
+- `legacy-nexus` leaves `.lastUpdated` files in the local repository (Maven remembers the blocked attempt). Harmless.

@@ -1,11 +1,11 @@
-<!-- Deutsch oder Englisch. / English or German. -->
+<!-- English or German. -->
 
-## Was und warum / What and why
+## What and why
 
 
-## Geprüft / Checked
+## Checked
 
 - [ ] `./gradlew :core:test :intellij-plugin:test`
-- [ ] Neue Texte in beiden `…properties`-Dateien (Englisch und Deutsch) / new texts in both property files
-- [ ] Neue Regel: Testlog unter `core/src/test/resources/logs/` / new rule: test log added
-- [ ] `CHANGELOG.md` unter `## [Unreleased]` ergänzt / changelog updated
+- [ ] New texts added to both `…properties` files (English and German)
+- [ ] New rule: test log added under `core/src/test/resources/logs/`
+- [ ] `CHANGELOG.md` updated under `## [Unreleased]`

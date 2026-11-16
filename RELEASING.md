@@ -1,24 +1,24 @@
-# Release
+# Releasing
 
-Ein Release besteht aus drei Artefakten aus demselben Stand: IntelliJ-Plugin (`maven-detective-<v>.zip`), Kommandozeile (`maven-detective-cli-<v>.jar`) und Maven-Extension (`maven-detective-extension-<v>.jar`). Kommandozeile und Extension gehen zusätzlich nach Maven Central. GitHub-Release, JetBrains Marketplace und Maven Central laufen über zwei Workflows:
+A release consists of three artifacts built from the same commit: the IntelliJ plugin (`maven-detective-<v>.zip`), the command line tool (`maven-detective-cli-<v>.jar`) and the Maven extension (`maven-detective-extension-<v>.jar`). The command line tool and the extension are also published to Maven Central. The GitHub release, the JetBrains Marketplace and Maven Central are handled by two workflows:
 
-| Workflow | Auslöser | Ergebnis |
+| Workflow | Trigger | Result |
 | --- | --- | --- |
-| `release.yml` | Tag `v<version>` gepusht | Tests, Build, signiertes Plugin, **Entwurf** eines GitHub-Releases mit allen Artefakten, `SHA256SUMS` und dem Changelog-Abschnitt als Text; baut die Central-Artefakte probehalber (unsigniert) |
-| `publish.yml` | Entwurf auf GitHub veröffentlicht (oder von Hand mit Tag und Ziel) | Job `marketplace`: Upload auf den Marketplace; Vorabversion (`0.2.0-beta.1`) → Kanal `eap`. Job `maven-central`: signiertes Bundle ins Central Portal |
+| `release.yml` | Tag `v<version>` pushed | Tests, build, signed plugin, **draft** of a GitHub release with all artifacts, `SHA256SUMS` and the changelog section as text; builds the Central artifacts as a dry run (unsigned) |
+| `publish.yml` | Draft published on GitHub (or manually with tag and target) | Job `marketplace`: upload to the Marketplace; pre-release versions (`0.2.0-beta.1`) → channel `eap`. Job `maven-central`: signed bundle to the Central Portal |
 
-In Maven Central landen:
+Published to Maven Central:
 
-| Koordinaten | Inhalt |
+| Coordinates | Contents |
 | --- | --- |
-| `io.github.bitshiftdev.mavendetective:maven-detective-core` | Kern und Kommandozeile (`java -jar`), ohne Abhängigkeiten; mit Gradle-Modul-Metadaten |
-| `io.github.bitshiftdev.mavendetective:maven-detective-extension` | Extension mit eingebettetem Kern, POM **ohne** Abhängigkeiten – für `.mvn/extensions.xml` |
+| `io.github.bitshiftdev.mavendetective:maven-detective-core` | Core and command line tool (`java -jar`), without dependencies; with Gradle module metadata |
+| `io.github.bitshiftdev.mavendetective:maven-detective-extension` | Extension with the core embedded, POM **without** dependencies – for `.mvn/extensions.xml` |
 
-Beide mit `-sources.jar`, `-javadoc.jar` und `.asc`-Signaturen (Pflicht in Central). POM-Angaben (Lizenz, SCM, Entwickler) und Signatur stehen in `build.gradle.kts` im Wurzelverzeichnis.
+Both come with `-sources.jar`, `-javadoc.jar` and `.asc` signatures (mandatory on Central). POM metadata (license, SCM, developers) and signing are configured in the root `build.gradle.kts`.
 
-## Einmalig einrichten
+## One-time setup
 
-1. **Signierzertifikat** erzeugen ([Plugin Signing](https://plugins.jetbrains.com/docs/intellij/plugin-signing.html)):
+1. **Create a signing certificate** ([Plugin Signing](https://plugins.jetbrains.com/docs/intellij/plugin-signing.html)):
 
    ```bash
    openssl genpkey -aes-256-cbc -algorithm RSA -out private_encrypted.pem -pkeyopt rsa_keygen_bits:4096
@@ -26,89 +26,89 @@ Beide mit `-sources.jar`, `-javadoc.jar` und `.asc`-Signaturen (Pflicht in Centr
    openssl req -key private.pem -new -x509 -days 3650 -out chain.crt
    ```
 
-   Dateien nicht ins Repository legen (sicher aufbewahren, z. B. im Passwort-Manager).
-2. **Marketplace-Token:** auf plugins.jetbrains.com → Profil → *My Tokens* → neues Token.
-3. **Secrets** im Repository (*Settings → Secrets and variables → Actions*), am besten in einer Umgebung `marketplace` (*Settings → Environments*, optional mit Freigabe-Pflicht):
+   Do not put these files into the repository (keep them safe, e.g. in a password manager).
+2. **Marketplace token:** on plugins.jetbrains.com → profile → *My Tokens* → new token.
+3. **Secrets** in the repository (*Settings → Secrets and variables → Actions*), ideally in an environment `marketplace` (*Settings → Environments*, optionally with required approval):
 
-   | Secret | Inhalt |
+   | Secret | Contents |
    | --- | --- |
-   | `CERTIFICATE_CHAIN` | Inhalt von `chain.crt` |
-   | `PRIVATE_KEY` | Inhalt von `private.pem` |
-   | `PRIVATE_KEY_PASSWORD` | Passwort aus Schritt 1 |
-   | `PUBLISH_TOKEN` | Marketplace-Token |
+   | `CERTIFICATE_CHAIN` | Contents of `chain.crt` |
+   | `PRIVATE_KEY` | Contents of `private.pem` |
+   | `PRIVATE_KEY_PASSWORD` | Password from step 1 |
+   | `PUBLISH_TOKEN` | Marketplace token |
 
-   `release.yml` liest die drei Signier-Secrets aus den Repository-Secrets (ohne sie: unsigniertes ZIP und eine Warnung), `publish.yml` alle vier aus der Umgebung `marketplace` oder dem Repository.
-4. **Erste Version von Hand hochladen:** Der Marketplace nimmt ein neues Plugin nur über die Weboberfläche an (*Upload plugin*, Lizenz Apache 2.0, Kategorie *Build Tools*, Quellcode-URL auf das Repository). Dafür das signierte ZIP aus dem ersten Release-Entwurf nehmen. Danach läuft jede weitere Version über `publish.yml`; die Prüfung durch JetBrains dauert bei der ersten Version ein paar Werktage.
+   `release.yml` reads the three signing secrets from the repository secrets (without them: an unsigned ZIP and a warning), `publish.yml` reads all four from the `marketplace` environment or the repository.
+4. **Upload the first version manually:** the Marketplace accepts a new plugin only through the web interface (*Upload plugin*, license Apache 2.0, category *Build Tools*, source code URL pointing to the repository). Use the signed ZIP from the first release draft. Every later version goes through `publish.yml`; JetBrains' review of the first version takes a few working days.
 
 ### Maven Central
 
-Einmalig, bevor die erste Version nach Central geht. **Achtung:** Maven Central ist endgültig – eine veröffentlichte Version lässt sich weder löschen noch ersetzen, und die `-sources.jar` machen den Quellcode öffentlich, auch solange das Repository privat ist.
+Once, before the first version goes to Central. **Caution:** Maven Central is permanent – a published version can be neither deleted nor replaced, and the `-sources.jar` files make the source code public, even while the repository is private.
 
-1. **Konto** auf [central.sonatype.com](https://central.sonatype.com) mit *Sign in with GitHub* als BitShiftDev anlegen. Der Namespace `io.github.bitshiftdev` wird dabei automatisch verifiziert (sonst unter *Namespaces* → `io.github.bitshiftdev` hinzufügen und wie angegeben bestätigen). Er deckt `io.github.bitshiftdev.mavendetective` mit ab.
-2. **User-Token:** *Account* → *Generate User Token* → Name und Passwort notieren (nicht das Login-Passwort).
-3. **Signierschlüssel** (eigener, nur für Releases):
+1. **Account** on [central.sonatype.com](https://central.sonatype.com) via *Sign in with GitHub* as BitShiftDev. The namespace `io.github.bitshiftdev` is verified automatically (otherwise add `io.github.bitshiftdev` under *Namespaces* and verify it as instructed). It also covers `io.github.bitshiftdev.mavendetective`.
+2. **User token:** *Account* → *Generate User Token* → note the name and password (not the login password).
+3. **Signing key** (a dedicated one, for releases only):
 
    ```bash
    gpg --quick-gen-key "Maven Detective Releases <…@users.noreply.github.com>" rsa4096 sign 3y
-   gpg --list-secret-keys --keyid-format long          # Schlüssel-ID ablesen
+   gpg --list-secret-keys --keyid-format long          # read the key ID
    gpg --keyserver keyserver.ubuntu.com --send-keys <ID>
-   gpg --armor --export-secret-keys <ID> > maven-signing.asc   # nach dem Eintragen löschen
+   gpg --armor --export-secret-keys <ID> > maven-signing.asc   # delete after adding the secret
    ```
 
-   Central prüft die Signaturen gegen öffentliche Keyserver (`keyserver.ubuntu.com`, `keys.openpgp.org`); ohne hochgeladenen öffentlichen Schlüssel scheitert die Prüfung. Den privaten Schlüssel sicher aufbewahren (Passwort-Manager), nicht ins Repository.
-4. **Umgebung** `maven-central` anlegen (*Settings → Environments*, optional mit Freigabe-Pflicht) mit den Secrets:
+   Central verifies the signatures against public key servers (`keyserver.ubuntu.com`, `keys.openpgp.org`); without an uploaded public key the validation fails. Keep the private key safe (password manager), never in the repository.
+4. **Create the environment** `maven-central` (*Settings → Environments*, optionally with required approval) with these secrets:
 
-   | Secret | Inhalt |
+   | Secret | Contents |
    | --- | --- |
-   | `MAVEN_SIGNING_KEY` | Inhalt von `maven-signing.asc` (ASCII-armored, privat) |
-   | `MAVEN_SIGNING_PASSWORD` | Passwort des Schlüssels |
-   | `CENTRAL_USERNAME` | Name aus dem User-Token |
-   | `CENTRAL_PASSWORD` | Passwort aus dem User-Token |
+   | `MAVEN_SIGNING_KEY` | Contents of `maven-signing.asc` (ASCII-armored, private) |
+   | `MAVEN_SIGNING_PASSWORD` | Password of the key |
+   | `CENTRAL_USERNAME` | Name from the user token |
+   | `CENTRAL_PASSWORD` | Password from the user token |
 
-   Fehlen alle vier, überspringt `publish.yml` Maven Central mit einer Warnung; fehlen einzelne, schlägt der Job fehl.
-5. **Freigabe-Art:** Standard ist `USER_MANAGED` – das Portal prüft das Bundle, veröffentlicht wird erst per *Publish* unter [Deployments](https://central.sonatype.com/publishing/deployments) (bis dahin per *Drop* verwerfbar). Wenn die ersten Releases glatt liefen: Variable `CENTRAL_PUBLISHING_TYPE=AUTOMATIC` in der Umgebung setzen.
+   If all four are missing, `publish.yml` skips Maven Central with a warning; if only some are missing, the job fails.
+5. **Publishing type:** the default is `USER_MANAGED` – the portal validates the bundle, and it is published only when you click *Publish* under [Deployments](https://central.sonatype.com/publishing/deployments) (until then it can be discarded with *Drop*). Once the first releases went smoothly: set the variable `CENTRAL_PUBLISHING_TYPE=AUTOMATIC` in the environment.
 
-Lokal ausprobieren (z. B. vor dem ersten Release):
+To try it locally (e.g. before the first release):
 
 ```bash
 ./gradlew centralBundle -PsigningGpg=true -Psigning.gnupg.keyName=<ID>   # → build/central-bundle-<v>.zip
 CENTRAL_USERNAME=… CENTRAL_PASSWORD=… bash .github/scripts/central-upload.sh build/central-bundle-<v>.zip
 ```
 
-Ohne Signatur bricht `centralBundle` ab; `-SNAPSHOT`-Versionen nimmt es nicht. Der Upload ist mit `USER_MANAGED` noch nicht endgültig – im Portal ansehen und *Drop* drücken, wenn es nur ein Versuch war.
+Without a signature `centralBundle` fails; it does not accept `-SNAPSHOT` versions. With `USER_MANAGED` the upload is not yet final – review it in the portal and click *Drop* if it was only a test.
 
-## Ablauf je Release
+## Steps for each release
 
-1. `CHANGELOG.md`: Einträge unter `## [Unreleased]` in einen neuen Abschnitt `## [x.y.z] - JJJJ-MM-TT` verschieben (Englisch – der Abschnitt wird zu Change-Notes und Release-Text), Vergleichslinks unten anpassen.
-2. `gradle.properties`: `version=x.y.z` (ohne `-SNAPSHOT`).
-3. Lokal prüfen:
+1. `CHANGELOG.md`: move the entries under `## [Unreleased]` into a new section `## [x.y.z] - YYYY-MM-DD` (in English – the section becomes the change notes and the release text) and update the comparison links at the bottom.
+2. `gradle.properties`: `version=x.y.z` (without `-SNAPSHOT`).
+3. Check locally:
 
    ```bash
    ./gradlew :core:test :intellij-plugin:test :maven-extension:fixtureTest :intellij-plugin:buildPlugin :intellij-plugin:releaseNotes
    ```
 
-   `releaseNotes` schlägt fehl, wenn der Changelog-Abschnitt fehlt. Plugin Verifier (Gate 2) läuft in `build.yml` auf `main` – vor dem Tag grün abwarten.
-4. Commit, dann Tag setzen und pushen:
+   `releaseNotes` fails if the changelog section is missing. The Plugin Verifier (Gate 2) runs in `build.yml` on `main` – wait for it to be green before tagging.
+4. Commit, then create and push the tag:
 
    ```bash
    git tag -a vx.y.z -m "Maven Detective x.y.z"
    git push origin main vx.y.z
    ```
 
-5. `release.yml` legt den Entwurf an. Text und Anhänge prüfen, ZIP einmal per *Install Plugin from Disk…* einspielen, dann **Publish release** → `publish.yml` lädt auf den Marketplace und ins Central Portal.
-   Mit `USER_MANAGED`: im Portal unter *Deployments* den geprüften Stand ansehen und **Publish** drücken. Nach 10–30 Minuten liegt die Version in Maven Central (`https://repo1.maven.org/maven2/io/github/bitshiftdev/mavendetective/`).
-6. Danach `gradle.properties` auf die nächste `-SNAPSHOT`-Version setzen.
+5. `release.yml` creates the draft. Check the text and the attachments, install the ZIP once via *Install Plugin from Disk…*, then click **Publish release** → `publish.yml` uploads to the Marketplace and the Central Portal.
+   With `USER_MANAGED`: review the validated deployment in the portal under *Deployments* and click **Publish**. After 10–30 minutes the version is available on Maven Central (`https://repo1.maven.org/maven2/io/github/bitshiftdev/mavendetective/`).
+6. Afterwards set `gradle.properties` to the next `-SNAPSHOT` version.
 
-## Repository öffentlich stellen
+## Making the repository public
 
-Vorbereitet sind README (Englisch, mit Installation), `CONTRIBUTING.md`, `SECURITY.md`, Issue- und PR-Vorlagen. Vor dem Umschalten von Hand:
+Already prepared: the README (English, with installation), `CONTRIBUTING.md`, `SECURITY.md`, issue and PR templates. Before switching, do this manually:
 
-- [ ] **Autor-Adresse in der Git-Historie:** Alle bisherigen Commits tragen die private Mail-Adresse, die mit dem Umschalten öffentlich wird. Ausweg: künftig die GitHub-`noreply`-Adresse verwenden (`git config user.email …@users.noreply.github.com`); die alten Commits ließen sich nur durch Umschreiben der Historie ändern (Force-Push, alle Commit-IDs ändern sich).
-- [x] Planungsdokumente (`Maven Detective – Plugin-Konzept.md`, `… – UI-Plan.md`) und der interne Stand (`STATUS.local.md`, früher in der README) liegen nur noch lokal (`.gitignore`).
-- [ ] **Alte Fassungen in der Git-Historie:** Frühere Commits enthalten die Planungsdokumente und die README mit offenen Abnahmen. Sollen sie nicht öffentlich werden, Historie vor dem Umschalten bereinigen (z. B. `git filter-repo --path "Maven Detective – Plugin-Konzept.md" --path "Maven Detective – UI-Plan.md" --invert-paths`; die alte README ließe sich nur durch Umschreiben jedes Commits entfernen) – oder mit einem frischen Commit ohne Historie starten.
-- [ ] `.claude/skills/maven-detective/SKILL.md` durchsehen: Abschnitt „Offene Punkte“ und Verweise auf Plan-Dateien und README-„Nächste Schritte“ (jetzt `STATUS.local.md`) – öffentlich lassen, kürzen oder aus Git nehmen?
-- [ ] *Settings → General*: Beschreibung „Explains why a Maven build fails – IntelliJ plugin, Maven extension and CLI“, Topics (`maven`, `intellij-plugin`, `build-tools`, `dependency-analysis`), Website = Marketplace-Seite.
-- [ ] *Settings → Code security*: Private Vulnerability Reporting, Dependabot Alerts und Secret Scanning einschalten.
-- [ ] *Settings → Branches*: Schutzregel für `main` (CI muss grün sein).
-- [ ] Optional *Discussions* für Fragen.
-- [ ] Erst dann *Settings → Danger Zone → Change visibility → Public*.
+- [ ] **Author address in the Git history:** all previous commits carry the private email address, which becomes public once the repository is switched. Workaround: use the GitHub `noreply` address from now on (`git config user.email …@users.noreply.github.com`); the old commits could only be changed by rewriting the history (force push, all commit IDs change).
+- [x] Planning documents (`Maven Detective – Plugin-Konzept.md`, `… – UI-Plan.md`) and the internal status (`STATUS.local.md`, previously in the README) are kept local only (`.gitignore`).
+- [ ] **Old versions in the Git history:** earlier commits contain the planning documents and the README with open acceptance items. If they should not become public, clean the history before switching (e.g. `git filter-repo --path "Maven Detective – Plugin-Konzept.md" --path "Maven Detective – UI-Plan.md" --invert-paths`; the old README could only be removed by rewriting every commit) – or start over with a fresh commit without history.
+- [ ] Review `.claude/skills/maven-detective/SKILL.md`: the section *Open items* and the references to plan files and the README's *Next steps* (now `STATUS.local.md`) – keep public, shorten or remove from Git?
+- [ ] *Settings → General*: description "Explains why a Maven build fails – IntelliJ plugin, Maven extension and CLI", topics (`maven`, `intellij-plugin`, `build-tools`, `dependency-analysis`), website = Marketplace page.
+- [ ] *Settings → Code security*: enable private vulnerability reporting, Dependabot alerts and secret scanning.
+- [ ] *Settings → Branches*: protection rule for `main` (CI must be green).
+- [ ] Optionally *Discussions* for questions.
+- [ ] Only then *Settings → Danger Zone → Change visibility → Public*.

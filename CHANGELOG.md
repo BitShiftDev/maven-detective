@@ -1,9 +1,9 @@
 # Changelog
 
-<!-- Englisch, weil der Abschnitt der jeweiligen Version als Change-Notes auf den JetBrains Marketplace
-     und als Text in das GitHub-Release geht (build.gradle.kts → changeNotes, Aufgabe releaseNotes).
-     Format: https://keepachangelog.com/ – je Release ein Abschnitt "## [x.y.z] - JJJJ-MM-TT",
-     darunter "### …"-Gruppen und "- "-Listenpunkte. Inline erlaubt: **fett**, `Code`, [Text](URL). -->
+<!-- Each version's section becomes the change notes on the JetBrains Marketplace
+     and the text of the GitHub release (build.gradle.kts → changeNotes, task releaseNotes).
+     Format: https://keepachangelog.com/ – one section "## [x.y.z] - YYYY-MM-DD" per release,
+     with "### …" groups and "- " list items below. Allowed inline: **bold**, `code`, [text](URL). -->
 
 ## [Unreleased]
 
