@@ -171,8 +171,9 @@ class SnapshotsAndTestFailuresTest {
     void resolvesCommonExpressionsOnly() {
         File base = new File("/w/app");
         assertEquals("/w/app/target/it", TestFailures.resolve("${project.build.directory}/it", "/w/app/target", base));
-        assertEquals("/w/app/reports", TestFailures.resolve("${project.basedir}/reports", null, base));
-        assertEquals("/w/app/reports", TestFailures.resolve("${basedir}/reports", null, base));
+        // base.getPath() statt "/w/app": unter Windows "\\w\\app"
+        assertEquals(base.getPath() + "/reports", TestFailures.resolve("${project.basedir}/reports", null, base));
+        assertEquals(base.getPath() + "/reports", TestFailures.resolve("${basedir}/reports", null, base));
         assertNull(TestFailures.resolve("${reportsDirectory}/x", "/w/app/target", base), "Unbekanntes → Standard");
         assertNull(TestFailures.resolve("", "/w/app/target", base));
     }
