@@ -1,0 +1,5 @@
+# Shell-Skripte und Fixture-Dateien auch unter Windows (core.autocrlf) mit LF auschecken –
+# bash bricht sonst an \r ab (CI-Matrix mit windows-latest)
+* text=auto eol=lf
+# gradlew.bat liegt mit CRLF im Repository und bleibt unverändert
+*.bat -text
