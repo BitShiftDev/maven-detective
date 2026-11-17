@@ -3,7 +3,7 @@ package io.github.bitshiftdev.mavendetective.idea;
 import com.intellij.execution.impl.RunDialog;
 import com.intellij.execution.runners.ExecutionUtil;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.editor.Document;
@@ -438,19 +438,23 @@ final class FixRunner {
             notify(project, MavenDetectiveBundle.message("fix.readonly"), NotificationType.WARNING);
             return 0;
         }
-        WriteCommandAction.runWriteCommandAction(project, command, null, () -> {
-            for (int i = 0; i < docs.size(); i++) {
-                Document doc = docs.get(i);
-                for (PomChanges.Edit edit : now.files().get(i).edits()) {
-                    doc.replaceString(edit.offset(), edit.offset() + edit.length(), edit.text());
+        PomChanges.FileChange first = now.files().get(0);
+        // Hinspringen gehört in denselben Befehl (nach der Write-Action): Undo merkt sich den Editor-Zustand am
+        // Befehlsende – spränge der Cursor erst danach, setzte das erste Strg+Z nur ihn zurück, erst das zweite den Text
+        CommandProcessor.getInstance().executeCommand(project, () -> {
+            ApplicationManager.getApplication().runWriteAction(() -> {
+                for (int i = 0; i < docs.size(); i++) {
+                    Document doc = docs.get(i);
+                    for (PomChanges.Edit edit : now.files().get(i).edits()) {
+                        doc.replaceString(edit.offset(), edit.offset() + edit.length(), edit.text());
+                    }
                 }
-            }
-        });
+            });
+            openLocation(project, first.file() + ":" + first.firstLine());
+        }, command, null);
         for (Document d : docs) {
             FileDocumentManager.getInstance().saveDocument(d);
         }
-        PomChanges.FileChange first = now.files().get(0);
-        openLocation(project, first.file() + ":" + first.firstLine());
         List<String> done = new ArrayList<>();
         for (PomChanges.FileChange c : now.files()) {
             for (String d : c.descriptions()) {

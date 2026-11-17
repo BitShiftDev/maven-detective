@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     java
@@ -72,13 +73,21 @@ dependencies {
         // Modul A5: Java-PSI (Referenzen auflösen, Inspection auf Imports)
         bundledPlugin("com.intellij.java")
         pluginVerifier()
+        // Das Maven-Plugin braucht in der Test-IDE das Modul intellij.properties.backend – ohne lädt es nicht
+        // (und mit ihm Maven Detective nicht)
+        testBundledPlugin("com.intellij.properties")
+        // Plattform-Tests (BasePlatformTestCase, CodeInsightTestFixture) und Java-Fixtures (JavaCodeInsightFixtureTestCase)
+        testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.Plugin.Java)
     }
 
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    // Der Test-Launcher der IntelliJ-Plattform lädt JUnit-4-Klassen (TestRule), auch für JUnit-5-Tests
-    testRuntimeOnly("junit:junit:4.13.2")
+    // Die Plattform-Testklassen erben von junit.framework.TestCase (JUnit 3/4); die Vintage-Engine führt sie
+    // neben den JUnit-5-Tests aus. Der Test-Launcher der Plattform lädt JUnit-4-Klassen (TestRule) auch für JUnit 5.
+    testImplementation("junit:junit:4.13.2")
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
 }
 
 java {

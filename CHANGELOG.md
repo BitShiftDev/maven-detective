@@ -10,6 +10,7 @@
 ### Fixed
 
 - Maven 4: a missing child project (`Child subproject … does not exist`) and a malformed or non-parseable POM (`Unable to read model: …`) are recognised again – from the extension's events and from the text log – instead of showing "Unknown error".
+- IDE: undoing a POM quick fix takes a single **Undo** again; before, the first one only moved the caret back from the changed line.
 
 ## [0.1.1] - 2026-11-17
 
