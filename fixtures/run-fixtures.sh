@@ -63,8 +63,10 @@ green_ok="nein"
 sed -i.bak 's/33.0.0-jre/33.3.1-jre/' "$work/pom.xml"
 (cd "$work" && mvn "${common[@]}" nosuchprefix:goal > "$work/red.log" 2>&1)
 expected="Property guava.version 33.0.0-jre → 33.3.1-jre"
+# Ohne UTF-8-Konsole (Windows) schreibt die Extension die Karte transliteriert: grünen → gruenen, → → ->
 if [[ $green_exit -eq 0 && "$green_ok" == "ja" ]] && grep -q "Maven Detective .* Build Doctor" "$work/red0.log" \
-    && grep -q "Seit dem letzten grünen Build" "$work/red.log" && grep -qF "$expected" "$work/red.log"; then
+    && grep -qE "Seit dem letzten gr(ü|ue)nen Build" "$work/red.log" \
+    && grep -qE "Property guava\.version 33\.0\.0-jre (→|->) 33\.3\.1-jre" "$work/red.log"; then
   pass=$((pass + 1)); printf '  ✓ %-28s %s\n' "$dir" "$expected"
 else
   fail=$((fail + 1)); printf '  ✗ %-28s Karte nennt die Änderung nicht (grün: exit %s, Referenz geschrieben: %s)\n' "$dir" "$green_exit" "$green_ok"
