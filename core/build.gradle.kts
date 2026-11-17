@@ -12,7 +12,7 @@ val mavenVersion: String by project
 dependencies {
     // Bewusst keine Laufzeit-Abhängigkeiten: der Kern läuft in der IDE, in der Maven-Extension
     // (Maven-Classloader!) und als CLI. JSON und YAML-Subset sind deshalb selbst implementiert.
-    testImplementation(platform("org.junit:junit-bom:5.13.4"))
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     // nur im Test: MavenVersion wird gegen Mavens eigenes ComparableVersion geprüft
