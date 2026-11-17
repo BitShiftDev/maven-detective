@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- IDE: undoing a POM quick fix takes a single **Undo** again; before, the first one only moved the caret back from the changed line.
+
 ## [0.1.1] - 2026-11-17
 
 ### Fixed

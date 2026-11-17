@@ -13,6 +13,7 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.util.Computable;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.VirtualFile;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.env.BuildSetup;
@@ -23,6 +24,7 @@ import io.github.bitshiftdev.mavendetective.core.snapshot.RunArguments;
 import io.github.bitshiftdev.mavendetective.core.snapshot.SnapshotStore;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 import org.jetbrains.idea.maven.execution.MavenExternalParameters;
 import org.jetbrains.idea.maven.execution.MavenRunConfiguration;
 import org.jetbrains.idea.maven.execution.MavenRunner;
@@ -65,7 +67,27 @@ final class IdeMaven {
 
     private static final Logger LOG = Logger.getInstance(IdeMaven.class);
 
+    /**
+     * Nur für Plattform-Tests: Maven-Modell ohne echten Import. Ein Test-Projekt kennt kein Maven-Projekt
+     * (ein Import bräuchte Netz und einen Maven-Server); gesetzt, liefern {@link #pom}, {@link #reactorRoot}
+     * und {@link #localRepository} diese Werte, und {@link #reimport} merkt sich die Dateien, statt zu importieren.
+     *
+     * @param pom        POM jedes Moduls
+     * @param reimported hier landen die Dateien jedes angestoßenen Imports
+     */
+    record TestModel(@NotNull Path root, @NotNull Path localRepository, @NotNull Path pom, @NotNull List<VirtualFile> reimported) {
+    }
+
+    private static volatile @Nullable TestModel testModel;
+
     private IdeMaven() {
+    }
+
+    /** Ersetzt das Maven-Modell, bis {@code parent} entsorgt wird. */
+    @TestOnly
+    static void useForTests(@NotNull TestModel model, @NotNull Disposable parent) {
+        testModel = model;
+        Disposer.register(parent, () -> testModel = null);
     }
 
     /**
@@ -343,6 +365,10 @@ final class IdeMaven {
 
     /** POM eines IntelliJ-Moduls; {@code null}, wenn es kein Maven-Modul ist. Aufruf in einer Read-Action. */
     static @Nullable Path pom(@NotNull Module module) {
+        TestModel t = testModel;
+        if (t != null) {
+            return t.pom();
+        }
         MavenProject p = MavenProjectsManager.getInstance(module.getProject()).findProject(module);
         return p == null ? null : Paths.get(p.getPath());
     }
@@ -355,6 +381,10 @@ final class IdeMaven {
 
     /** Wurzel des Reactors (Verzeichnis der obersten POM), sonst das Projektverzeichnis. */
     static @Nullable Path reactorRoot(@NotNull Project project) {
+        TestModel t = testModel;
+        if (t != null) {
+            return t.root();
+        }
         try {
             List<MavenProject> roots = read(() -> MavenProjectsManager.getInstance(project).getRootProjects());
             if (!roots.isEmpty()) {
@@ -370,6 +400,10 @@ final class IdeMaven {
 
     /** Lokales Repository laut IDE-Modell; {@code null}, wenn unbekannt. */
     static @Nullable Path localRepository(@NotNull Project project) {
+        TestModel t = testModel;
+        if (t != null) {
+            return t.localRepository();
+        }
         try {
             for (MavenProject p : read(() -> MavenProjectsManager.getInstance(project).getProjects())) {
                 Path repo = p.getLocalRepositoryPath();
@@ -544,6 +578,11 @@ final class IdeMaven {
      * ließe danach jede Analyse veralten. Kennt die IDE eine Datei nicht, doch alles.
      */
     static void reimport(@NotNull Project project, @NotNull Collection<VirtualFile> changed) {
+        TestModel t = testModel;
+        if (t != null) {
+            t.reimported().addAll(changed);
+            return;
+        }
         try {
             MavenProjectsManager manager = MavenProjectsManager.getInstance(project);
             Set<MavenProject> touched = new LinkedHashSet<>();
