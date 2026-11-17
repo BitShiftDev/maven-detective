@@ -30,8 +30,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
         with:
           gradle-home-cache-strict-match: true
+      # --continue: Auch nach Fehlschlägen im Kern die Extension-Tests laufen lassen – alle Befunde je OS auf einmal
       - name: Unit-Tests (Kern, Katalog, Prüfungen, Extension)
-        run: ./gradlew :core:test :maven-extension:test
+        run: ./gradlew --continue :core:test :maven-extension:test
       - run: mvn -v
       - name: Extension bauen und Fixtures mit echtem Maven auslösen
         run: ./gradlew :maven-extension:fixtureTest

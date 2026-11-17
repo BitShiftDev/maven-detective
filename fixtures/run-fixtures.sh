@@ -105,6 +105,10 @@ XML
       <repositories>
         <repository><id>fixture</id><url>$repo_url</url><snapshots><enabled>true</enabled></snapshots></repository>
       </repositories>
+      <!-- Extensions kommen über die Plugin-Repositories; SNAPSHOTs liefert der Central-Spiegel nicht -->
+      <pluginRepositories>
+        <pluginRepository><id>fixture</id><url>$repo_url</url><snapshots><enabled>true</enabled></snapshots></pluginRepository>
+      </pluginRepositories>
     </profile>
   </profiles>
   <activeProfiles><activeProfile>fixture</activeProfile></activeProfiles>
