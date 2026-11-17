@@ -1,0 +1,19 @@
+# Wöchentliche Updates, je Ökosystem in einem Sammel-PR. Die Actions sind auf Commit-SHAs gepinnt
+# (Version als Kommentar) – Dependabot aktualisiert SHA und Kommentar gemeinsam.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      gradle:
+        patterns: ['*']

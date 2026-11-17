@@ -78,6 +78,9 @@ if [[ -n "$EXT_REPO" ]]; then
   rule=plugin-missing
   work="$WORK/extensions-xml"
   EXT_REPO="$(cd "$EXT_REPO" && pwd)"
+  repo_url="file://$EXT_REPO"
+  # Git Bash (Windows): Maven versteht file:///D:/…, nicht file:///d/…
+  if pwd -W > /dev/null 2>&1; then repo_url="file:///$(cd "$EXT_REPO" && pwd -W)"; fi
   ext_dir="$EXT_REPO/io/github/bitshiftdev/mavendetective/maven-detective-extension"
   version="$(ls "$ext_dir" 2>/dev/null | grep -v '^maven-metadata' | sort -V | tail -1)"
   mkdir -p "$work/project/.mvn" "$work/repo"
@@ -94,13 +97,13 @@ XML
   cat > "$work/settings.xml" <<XML
 <settings>
   <mirrors>
-    <mirror><id>no-central</id><mirrorOf>central</mirrorOf><url>file://$EXT_REPO</url></mirror>
+    <mirror><id>no-central</id><mirrorOf>central</mirrorOf><url>$repo_url</url></mirror>
   </mirrors>
   <profiles>
     <profile>
       <id>fixture</id>
       <repositories>
-        <repository><id>fixture</id><url>file://$EXT_REPO</url><snapshots><enabled>true</enabled></snapshots></repository>
+        <repository><id>fixture</id><url>$repo_url</url><snapshots><enabled>true</enabled></snapshots></repository>
       </repositories>
     </profile>
   </profiles>
