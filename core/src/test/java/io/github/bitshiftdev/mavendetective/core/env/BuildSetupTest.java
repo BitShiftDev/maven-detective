@@ -30,7 +30,9 @@ class BuildSetupTest {
         write(project.resolve("mvnw"), "#!/bin/sh");
         write(project.resolve(".mvn/wrapper/maven-wrapper.properties"),
                 "distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.6/apache-maven-3.9.6-bin.zip\n");
-        write(project.resolve(".mvn/maven.config"), "-s .mvn/settings.xml\n-Pci,fast -Dmaven.repo.local=/cache/m2\n");
+        // absolut auf jedem System – "/cache/m2" hat unter Windows keinen Laufwerksbuchstaben
+        String cache = tmp.resolve("cache").resolve("m2").toAbsolutePath().toString();
+        write(project.resolve(".mvn/maven.config"), "-s .mvn/settings.xml\n-Pci,fast -Dmaven.repo.local=" + cache + "\n");
         write(project.resolve(".mvn/jvm.config"), "-Xmx2g");
         write(jdk.resolve("release"), "IMPLEMENTOR=\"Eclipse Adoptium\"\nJAVA_VERSION=\"17.0.12\"\n");
         write(home.resolve(".m2/settings.xml"), "<settings/>");
@@ -44,7 +46,7 @@ class BuildSetupTest {
         assertEquals("Wrapper (./mvnw)", cli.getMavenSource());
         assertEquals("17.0.12", cli.getJavaVersion());
         assertEquals(project.resolve(".mvn/settings.xml").toString(), cli.getUserSettings(), "-s aus maven.config schlägt ~/.m2");
-        assertEquals("/cache/m2", cli.getLocalRepository());
+        assertEquals(cache, cli.getLocalRepository());
         assertEquals(Arrays.asList("ci", "fast"), cli.getProfiles());
         assertEquals("-Xmx2g", cli.getJvmConfig());
         assertEquals("-Xmx1g", cli.getMavenOpts());

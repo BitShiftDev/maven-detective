@@ -220,11 +220,11 @@ class VersionExplainerTest {
         assertEquals(Source.MANAGED, x.getSource());
         assertEquals("1.5", x.getVersion());
         Station managed = first(x, Station.Kind.MANAGED);
-        assertTrue(managed.getFile().endsWith("project/pom.xml"), managed.getFile());
+        assertTrue(managed.getFile().replace('\\', '/').endsWith("project/pom.xml"), managed.getFile());
         assertEquals(17, managed.getLine());
         Station inherited = first(x, Station.Kind.INHERITED);
         assertNotNull(inherited);
-        assertTrue(inherited.getFile().endsWith("app/pom.xml"));
+        assertTrue(inherited.getFile().replace('\\', '/').endsWith("app/pom.xml"));
     }
 
     @Test
@@ -234,7 +234,7 @@ class VersionExplainerTest {
         assertEquals("2.0", x.getVersion());
         Station imp = first(x, Station.Kind.IMPORT);
         assertTrue(imp.getText().contains("org.example:platform-bom:1.0"), imp.getText());
-        assertTrue(imp.getFile().endsWith("project/pom.xml"));
+        assertTrue(imp.getFile().replace('\\', '/').endsWith("project/pom.xml"));
         Station managed = first(x, Station.Kind.MANAGED);
         assertTrue(managed.getFile().endsWith("platform-bom-1.0.pom"), managed.getFile());
         // lib.version=9.9 im eigenen Parent wirkt nicht auf das importierte BOM
