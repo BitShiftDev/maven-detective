@@ -125,9 +125,14 @@ tasks.register<Exec>("fixtureTest") {
     val fixtureRepo = layout.buildDirectory.dir("fixture-repo")
     dependsOn(tasks.jar, "publishMavenPublicationToFixtureRepository")
     workingDir = rootProject.projectDir
+    // Windows: "bash" fände zuerst System32\bash.exe (WSL-Starter) – daher Git Bash ausdrücklich
+    val bash = providers.environmentVariable("ProgramFiles").map { "$it\\Git\\bin\\bash.exe" }
+        .filter { System.getProperty("os.name").startsWith("Windows") && File(it).isFile }
+        .getOrElse("bash")
+    // Pfade mit / – unter Git Bash zerlegen dirname/basename D:\…-Pfade nicht
     commandLine(
-        "bash", "fixtures/run-fixtures.sh",
-        tasks.jar.get().archiveFile.get().asFile.absolutePath,
-        fixtureRepo.get().asFile.absolutePath,
+        bash, "fixtures/run-fixtures.sh",
+        tasks.jar.get().archiveFile.get().asFile.invariantSeparatorsPath,
+        fixtureRepo.get().asFile.invariantSeparatorsPath,
     )
 }
