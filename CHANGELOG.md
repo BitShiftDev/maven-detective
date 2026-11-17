@@ -73,9 +73,9 @@ First public release: IntelliJ plugin, Maven core extension and command line sha
 
 ### Command line and Maven extension
 
-- CLI `java -jar maven-detective-core.jar` with `diagnose`, `changes`, `why`, `matrix`, `exclusions`, `duplicates`, `analyze`, `upgrade`, `preflight`, `outline`, `evaluate` and `validate-catalog`.
+- CLI `java -jar maven-detective-cli-<version>.jar` with `diagnose`, `changes`, `why`, `matrix`, `exclusions`, `duplicates`, `analyze`, `upgrade`, `preflight`, `outline`, `evaluate` and `validate-catalog`.
 - Maven core extension (`-Dmaven.ext.class.path=…`) prints the diagnosis card into the Maven log and can write structured events; runs on Maven 3.9 with Java 8 and later and never changes the build.
-- Core/CLI and the extension are published to Maven Central as `io.github.bitshiftdev.mavendetective:maven-detective-core` and `io.github.bitshiftdev.mavendetective:maven-detective-extension`; the extension can be added to a project via `.mvn/extensions.xml`.
+- Release workflow prepared for Maven Central (`io.github.bitshiftdev.mavendetective:maven-detective-core` and `io.github.bitshiftdev.mavendetective:maven-detective-extension`); the artifacts are not on Central yet, so `.mvn/extensions.xml` does not work until then – use the JAR from the GitHub release.
 
 [Unreleased]: https://github.com/BitShiftDev/maven-detective/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/BitShiftDev/maven-detective/compare/v0.1.0...v0.1.1

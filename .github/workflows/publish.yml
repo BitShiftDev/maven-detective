@@ -37,12 +37,14 @@ jobs:
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
       CHANNEL: ${{ github.event_name == 'release' && (github.event.release.prerelease && 'eap' || 'default') || inputs.channel }}
-      PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
-      CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
-      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
-      PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
     steps:
+      # Secrets nur in den Schritten, die sie brauchen – nicht in den fremden Actions (checkout, setup-*)
       - name: Secrets vorhanden
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
         run: |
           missing=()
           for name in PUBLISH_TOKEN CERTIFICATE_CHAIN PRIVATE_KEY PRIVATE_KEY_PASSWORD; do
@@ -63,6 +65,11 @@ jobs:
         with:
           cache-disabled: true
       - name: Auf den Marketplace hochladen (Kanal ${{ env.CHANNEL }})
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
         run: ./gradlew :intellij-plugin:publishPlugin "-PpublishChannel=$CHANNEL"
 
   maven-central:
@@ -72,14 +79,15 @@ jobs:
     environment: maven-central
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
-      ORG_GRADLE_PROJECT_signingKey: ${{ secrets.MAVEN_SIGNING_KEY }}
-      ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
-      CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
-      CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
       # USER_MANAGED: im Portal per „Publish“ freigeben; AUTOMATIC: sofort (Variable in der Umgebung setzen)
       CENTRAL_PUBLISHING_TYPE: ${{ vars.CENTRAL_PUBLISHING_TYPE || 'USER_MANAGED' }}
     steps:
       - name: Secrets vorhanden
+        env:
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.MAVEN_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
         run: |
           missing=()
           for name in ORG_GRADLE_PROJECT_signingKey ORG_GRADLE_PROJECT_signingPassword CENTRAL_USERNAME CENTRAL_PASSWORD; do
@@ -108,10 +116,16 @@ jobs:
           gradle-home-cache-strict-match: true
       - name: Signiertes Bundle bauen
         if: env.SKIP != 'true'
+        env:
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.MAVEN_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
         run: |
           version=$(sed -n 's/^version=//p' gradle.properties)
           echo "VERSION=$version" >> "$GITHUB_ENV"
           ./gradlew centralBundle
       - name: Ins Central Portal hochladen (${{ env.CENTRAL_PUBLISHING_TYPE }})
         if: env.SKIP != 'true'
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
         run: bash .github/scripts/central-upload.sh "build/central-bundle-$VERSION.zip"

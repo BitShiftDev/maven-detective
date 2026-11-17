@@ -234,7 +234,7 @@ public final class PomFetcher {
             } catch (InterruptedException e) {
                 destroyTree(process);
                 Thread.currentThread().interrupt();
-                throw new IOException("Unterbrochen", e);
+                throw new IOException(Texts.t("fetch.interrupted"), e);
             } catch (RuntimeException e) {
                 destroyTree(process);   // Abbruch durch den Aufrufer
                 throw e;
