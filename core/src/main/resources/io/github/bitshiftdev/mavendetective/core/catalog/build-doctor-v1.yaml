@@ -121,6 +121,10 @@ rules:
       - regex: 'Child module (?<module>.+) of (?<file>.+?\.xml) does not exist'
         cause: 'In {file} ist ein Modul eingetragen, dessen Verzeichnis fehlt: {moduleName,module}.'
         cause_en: '{file} lists a module whose directory is missing: {moduleName,module}.'
+      # Maven 4: relativer Name, Verzeichnis statt POM; die Prüfung child-module setzt {file} auf die POM
+      - regex: 'Child subproject (?<module>.+?) of (?<dir>.+?) does not exist'
+        cause: 'In {file,dir} ist ein Subprojekt eingetragen, dessen Verzeichnis fehlt: {moduleName,module}.'
+        cause_en: '{file,dir} lists a subproject whose directory is missing: {moduleName,module}.'
       - regex: 'contain a cyclic reference: .*cycle in the graph (?<cycle>.+?)(?: @|$)'
         cause: 'Die Module hängen im Kreis voneinander ab: {cycle}.'
         cause_en: 'The modules depend on each other in a cycle: {cycle}.'
@@ -154,11 +158,11 @@ rules:
       - regex: 'Non-resolvable parent POM'
         cause: 'Die Parent-POM ist weder über relativePath noch im Repository zu finden.'
         cause_en: 'The parent POM can be found neither via relativePath nor in the repository.'
-      - regex: 'Malformed POM (?<file>.+?\.xml): (?<detail>.+?)\s+@'
+      - regex: 'Malformed POM (?<file>.+?\.xml): (?:Unable to read model: )?(?<detail>.+?)\.?(?:\s+@|$)'
         cause: 'Die POM ist kein gültiges Maven-XML: {detail}.'
         cause_en: 'The POM is not valid Maven XML: {detail}.'
         confidence: certain
-      - regex: 'Non-parseable POM (?<file>.+?\.xml): (?<detail>.+?)\s+@'
+      - regex: 'Non-parseable POM (?<file>.+?\.xml): (?:Unable to read model: )?(?<detail>.+?)\.?(?:\s+@|$)'
         cause: 'Die POM ist kein wohlgeformtes XML: {detail}.'
         cause_en: 'The POM is not well-formed XML: {detail}.'
         confidence: certain

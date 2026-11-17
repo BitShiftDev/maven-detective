@@ -1,0 +1,13 @@
+[WARNING] Unable to find the root directory. Create a .mvn directory in the root directory or add the root="true" attribute on the root project's model to identify it.
+[INFO] Scanning for projects...
+[ERROR] Encountered 1 problem(s) while processing the POMs
+[ERROR] The build could not read 1 project -> [Help 1]
+[ERROR]   
+[ERROR]   The project fixture:reactor:pom:1.0 (/home/dev/project/pom.xml) has 1 error
+[ERROR]     Child subproject does-not-exist of /home/dev/project does not exist @ fixture:reactor:1.0, /home/dev/project/pom.xml
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the '-e' switch
+[ERROR] Re-run Maven using the '-X' switch to enable verbose output
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/ProjectBuildingException

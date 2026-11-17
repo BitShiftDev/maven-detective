@@ -160,6 +160,12 @@ final class PomChecks {
         public CheckResult run(CheckContext ctx) {
             String module = ctx.var("module");
             String parentFile = ctx.var("file");
+            // Maven 4 nennt das Verzeichnis der POM und den Namen relativ dazu
+            String dir = ctx.var("dir");
+            if (parentFile == null && dir != null) {
+                Path d = Text.localPath(dir);
+                parentFile = d == null ? null : d.resolve("pom.xml").toString();
+            }
             if (module == null || parentFile == null) {
                 return CheckResult.notApplicable();
             }
@@ -168,17 +174,23 @@ final class PomChecks {
             if (moduleDir == null || parentPath == null) {
                 return CheckResult.notApplicable();
             }
-            if (Files.isDirectory(moduleDir) && Files.isRegularFile(moduleDir.resolve("pom.xml"))) {
-                return CheckResult.info().evidence(Evidence.file(Texts.t("check.module.exists.now"), module, -1));
-            }
             Path parentDir = parentPath.getParent();
+            if (!moduleDir.isAbsolute() && parentDir != null) {
+                moduleDir = parentDir.resolve(moduleDir).normalize();
+            }
+            if (Files.isDirectory(moduleDir) && Files.isRegularFile(moduleDir.resolve("pom.xml"))) {
+                return CheckResult.info().evidence(Evidence.file(Texts.t("check.module.exists.now"), moduleDir.toString(), -1));
+            }
             String name = parentDir == null ? module : parentDir.relativize(moduleDir).toString().replace(File.separatorChar, '/');
             ProjectPoms.Pom parent = ctx.projectPoms().read(parentPath);
             int line = parent == null ? -1 : parent.lineOf("<module>" + name + "</module>");
             if (line < 0 && parent != null) {
+                line = parent.lineOf("<subproject>" + name + "</subproject>");
+            }
+            if (line < 0 && parent != null) {
                 line = parent.lineOf(name);
             }
-            CheckResult r = CheckResult.confirmed().var("moduleName", name)
+            CheckResult r = CheckResult.confirmed().var("moduleName", name).var("file", parentFile)
                     .evidence(Evidence.file(Files.isDirectory(moduleDir) ? Texts.t("check.module.no.pom", name) : Texts.t("check.module.missing", name), parentFile, line));
             if (parentDir != null) {
                 for (String sibling : directories(parentDir)) {

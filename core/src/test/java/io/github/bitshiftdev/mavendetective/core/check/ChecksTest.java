@@ -6,10 +6,12 @@ import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
+import io.github.bitshiftdev.mavendetective.core.io.EventLog;
 import io.github.bitshiftdev.mavendetective.core.io.MavenLogParser;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -311,6 +313,54 @@ class ChecksTest {
         assertEquals("reactor-problem", d.getRuleId());
         assertTrue(d.getEvidence().stream().anyMatch(e -> e.getText().contains("'service'")), d.getEvidence().toString());
         assertEquals("3", d.getPrimaryFix().param("line"));
+    }
+
+    /** Maven 4 meldet „Child subproject <name> of <verzeichnis>“ – in den Events ohne POM und Zeile. */
+    @Test
+    void missingChildSubprojectFromMaven4() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        Path pom = project.resolve("pom.xml");
+        write(pom, "<project>\n  <subprojects>\n    <subproject>servcie</subproject>\n  </subprojects>\n</project>\n");
+        Files.createDirectories(project.resolve("service"));
+        String message = "Child subproject servcie of " + project + " does not exist";
+        Diagnosis fromEvents = doctor.diagnose(EventLog.read(new StringReader(buildError(pom, message))), env).get(0);
+        Diagnosis fromLog = diagnose(env, "[ERROR] Encountered 1 problem(s) while processing the POMs\n"
+                + "[ERROR]     " + message + " @ fixture:reactor:1.0, " + pom);
+        for (Diagnosis d : new Diagnosis[] {fromEvents, fromLog}) {
+            assertEquals("reactor-problem", d.getRuleId());
+            assertTrue(d.getCause().contains(pom.toString()) && d.getCause().contains("servcie"), d.getCause());
+            assertTrue(d.getEvidence().stream().anyMatch(e -> e.getText().contains("'service'")), d.getEvidence().toString());
+            assertEquals(pom.toString(), d.getPrimaryFix().param("file"));
+            assertEquals("3", d.getPrimaryFix().param("line"));
+        }
+    }
+
+    /** Maven 4 schreibt „Unable to read model:“ vor die Meldung, in den Events ohne „@ Ort“. */
+    @Test
+    void malformedAndNonParseablePomFromMaven4Events() throws Exception {
+        Environment env = env(new HashMap<>(), null);
+        Path pom = project.resolve("pom.xml");
+        Diagnosis d = doctor.diagnose(EventLog.read(new StringReader(buildError(pom, "Malformed POM " + pom
+                + ": Unable to read model: Unrecognised tag: '{http://maven.apache.org/POM/4.0.0}versoin'"))), env).get(0);
+        assertEquals("invalid-pom", d.getRuleId());
+        assertEquals(Confidence.CERTAIN, d.getConfidence());
+        assertTrue(d.getCause().contains("Unrecognised tag: '{http://maven.apache.org/POM/4.0.0}versoin'."), d.getCause());
+        d = doctor.diagnose(EventLog.read(new StringReader(buildError(pom, "Non-parseable POM " + pom
+                + ": Unable to read model: Unexpected close tag </dependencies>; expected </dependency>.\n at [row,col,system-id]: [3,40]"))), env).get(0);
+        assertEquals("invalid-pom", d.getRuleId());
+        assertTrue(d.getCause().contains("expected </dependency>."), d.getCause());
+        assertTrue(!d.getCause().contains(".."), d.getCause());
+    }
+
+    /** buildError-Event wie von Maven 4: POM-Problem ohne Zeile und Spalte. */
+    private static String buildError(Path pom, String message) {
+        return "{\"type\":\"buildError\",\"chain\":[{\"class\":\"org.apache.maven.project.ProjectBuildingException\","
+                + "\"message\":\"Encountered 1 problem(s) while processing the POMs\"}],\"problems\":[{\"source\":"
+                + json(pom.toString()) + ",\"line\":-1,\"column\":-1,\"severity\":\"ERROR\",\"message\":" + json(message) + "}]}\n";
+    }
+
+    private static String json(String s) {
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
     }
 
     @Test
