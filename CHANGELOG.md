@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-17
+
 ### Fixed
 
 - **What changed?** in the IDE no longer reports "No change" when the green and the red run differ only in their profiles or `-D` arguments (e.g. `verify -Pgreen` vs. `verify`). Profiles and properties are now read from the run configuration's goals and command-line options too, the card lists the switched profile and the versions the POMs declare directly under it (e.g. `jackson-databind 2.18.2 → 2.15.4 (gateway)`), and it says when transitive effects could not be compared because the IDE reads dependencies from its Maven import.
@@ -75,5 +77,6 @@ First public release: IntelliJ plugin, Maven core extension and command line sha
 - Maven core extension (`-Dmaven.ext.class.path=…`) prints the diagnosis card into the Maven log and can write structured events; runs on Maven 3.9 with Java 8 and later and never changes the build.
 - Core/CLI and the extension are published to Maven Central as `io.github.bitshiftdev.mavendetective:maven-detective-core` and `io.github.bitshiftdev.mavendetective:maven-detective-extension`; the extension can be added to a project via `.mvn/extensions.xml`.
 
-[Unreleased]: https://github.com/BitShiftDev/maven-detective/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/BitShiftDev/maven-detective/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/BitShiftDev/maven-detective/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/BitShiftDev/maven-detective/releases/tag/v0.1.0
