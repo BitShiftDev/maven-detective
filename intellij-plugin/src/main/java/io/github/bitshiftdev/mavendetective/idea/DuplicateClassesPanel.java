@@ -85,7 +85,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         tree.addSelectionListener(() -> show(selected()));
         tree.addCheckListener(this::updateApplyChecked);
         // Nicht automatisch prüfen: das öffnet alle JARs aller Module – erst auf Klick
-        intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+        intro(tree.component(), MavenDetectiveBundle.message("empty.not.checked"),
                 MavenDetectiveBundle.message("empty.check.now"), this::reload);
 
         details = new HtmlView(project);
@@ -193,7 +193,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
     protected void cancelled() {
         super.cancelled();
         if (result == null) {
-            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.not.checked"),
+            intro(tree.component(), MavenDetectiveBundle.message("empty.not.checked"),
                     MavenDetectiveBundle.message("empty.check.now"), this::reload);
         }
     }
@@ -275,7 +275,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         List<DuplicateClasses.Clash> rows = new ArrayList<>();
         if (result == null) {
             tree.set(Map.of(), l -> null, c -> false);
-            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            intro(tree.component(), MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             show(null);
             return;
@@ -300,7 +300,7 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         }
         int n = result.clashes().size();
         if (n == 0) {
-            intro(tree.component().getEmptyText(), MavenDetectiveBundle.message("duplicates.empty.none"), null, null);
+            intro(tree.component(), MavenDetectiveBundle.message("duplicates.empty.none"), null, null);
         } else {
             emptyText(tree.component().getEmptyText(), MavenDetectiveBundle.message("empty.all.filtered"), null, null);
         }

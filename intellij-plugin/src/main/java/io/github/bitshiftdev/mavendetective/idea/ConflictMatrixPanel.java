@@ -373,7 +373,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         if (matrix == null) {
             model.set(List.of(), rows);
             setStatus(null);
-            intro(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            intro(table, MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
             showRow(null);
             return;
@@ -390,7 +390,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         }
         int divergent = matrix.divergent().size();
         if (onlyDivergent && matrix.divergent().isEmpty()) {
-            intro(table.getEmptyText(), MavenDetectiveBundle.message("matrix.empty.no.divergence"),
+            intro(table, MavenDetectiveBundle.message("matrix.empty.no.divergence"),
                     MavenDetectiveBundle.message("matrix.empty.show.all"), () -> {
                         onlyDivergent = false;
                         applyFilter();

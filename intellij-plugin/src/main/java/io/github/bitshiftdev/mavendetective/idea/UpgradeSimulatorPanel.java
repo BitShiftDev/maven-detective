@@ -169,7 +169,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             }
         });
         TableSpeedSearch.installOn(table, (value, cell) -> cell.column == 2 && value != null ? value.toString() : null);
-        intro(table.getEmptyText(), MavenDetectiveBundle.message("upgrade.empty.start"),
+        intro(table, MavenDetectiveBundle.message("upgrade.empty.start"),
                 MavenDetectiveBundle.message("action.simulate"), this::simulate);
 
         details = new HtmlView(project);
@@ -606,7 +606,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         fetch.setEnabled(res != null && !PomFetcher.coordinates(res.getMissing()).isEmpty());
         if (res == null) {
             setStatus(null);
-            intro(table.getEmptyText(), MavenDetectiveBundle.message("empty.no.maven.project"),
+            intro(table, MavenDetectiveBundle.message("empty.no.maven.project"),
                     MavenDetectiveBundle.message("empty.reload.maven"), () -> IdeMaven.reimport(project));
         } else {
             emptyText(table.getEmptyText(), MavenDetectiveBundle.message("upgrade.empty.unchanged"), null, null);

@@ -37,6 +37,7 @@ import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBLoadingPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.panels.VerticalLayout;
+import com.intellij.util.ui.ComponentWithEmptyText;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.NamedColorUtil;
 import com.intellij.util.ui.StatusText;
@@ -323,20 +324,11 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
     /**
      * Leerer Zustand mit Erklärung der Seite ({@link #about()}) zwischen Zustand und Link – für „noch
      * nicht geprüft“, „nichts gefunden“ und „kein Maven-Projekt“. Gefilterte oder durchsuchte Listen
-     * nehmen {@link #emptyText}: dort lenkt die Erklärung nur ab.
+     * nehmen {@link #emptyText}: dort lenkt die Erklärung nur ab. Bricht auf die sichtbare Breite um.
      */
-    protected final void intro(@NotNull StatusText target, @Nls @NotNull String text, @Nls @Nullable String link,
-                               @Nullable Runnable action) {
-        target.setText(text);
-        String about = about();
-        if (about != null) {
-            for (String line : about.split("\n")) {
-                target.appendLine(line, SimpleTextAttributes.GRAYED_ATTRIBUTES, null);
-            }
-        }
-        if (link != null && action != null) {
-            target.appendLine(link, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES, e -> action.run());
-        }
+    protected final <C extends JComponent & ComponentWithEmptyText> void intro(@NotNull C owner, @Nls @NotNull String text,
+                                                                             @Nls @Nullable String link, @Nullable Runnable action) {
+        IntroText.show(owner, text, about(), link, action);
     }
 
     protected final void setStatus(@Nls @Nullable String text) {
