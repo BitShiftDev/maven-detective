@@ -25,4 +25,16 @@ class OverviewPanelTest {
         assertEquals("gestern", OverviewPanel.formatCreatedAt("gestern"));
         assertEquals("", OverviewPanel.formatCreatedAt(null));
     }
+
+    @Test
+    void kachelFuelltEineEinzelneSpalte() {
+        // Raster: zwei Kacheln à 250 brauchen 2·250 + 3·12 = 536
+        assertEquals(250, OverviewPanel.tileWidth(536, 250, 12));
+        assertEquals(250, OverviewPanel.tileWidth(1400, 250, 12));
+        // Seitlich angeheftet: eine Spalte, volle Breite abzüglich Rand links und rechts
+        assertEquals(511, OverviewPanel.tileWidth(535, 250, 12));
+        assertEquals(326, OverviewPanel.tileWidth(350, 250, 12));
+        // Noch nicht ausgelegt: Rasterbreite
+        assertEquals(250, OverviewPanel.tileWidth(0, 250, 12));
+    }
 }

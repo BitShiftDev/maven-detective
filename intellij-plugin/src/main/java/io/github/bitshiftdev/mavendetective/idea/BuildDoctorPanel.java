@@ -27,6 +27,7 @@ import io.github.bitshiftdev.mavendetective.core.report.Reports;
 import io.github.bitshiftdev.mavendetective.idea.BuildDoctorService.FixCheck;
 import io.github.bitshiftdev.mavendetective.idea.BuildDoctorService.Run;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.Responsive;
 import io.github.bitshiftdev.mavendetective.idea.ui.TrackingPanel;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
@@ -46,7 +47,7 @@ import java.util.Objects;
 
 /**
  * Tab „Build Doctor“: links der Verlauf der letzten Läufe (rot/grün, Zeit, Kategorie), rechts die
- * Diagnose-Karte des gewählten Laufs ({@link DiagnosisCard}), der Vergleich IDE gegen
+ * Diagnose-Karte des gewählten Laufs (im schmalen Tool-Window der Verlauf oben, die Karte darunter) ({@link DiagnosisCard}), der Vergleich IDE gegen
  * Kommandozeile ({@link SetupComparisonView}), der Preflight vor dem Build ({@link PreflightView}) oder
  * das Log des Laufs im Log-Navigator ({@link LogNavigatorView}). Über der Karte: „Maven-Lauf läuft …“ bzw. nach einem
  * Quick-Fix „Neu bauen läuft …“ und danach „Behoben“ oder was sich geändert hat.
@@ -58,6 +59,9 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
     private static final String VIEW_SETUP = "setup";
     private static final String VIEW_PREFLIGHT = "preflight";
     private static final String VIEW_LOG = "log";
+    private static final String SPLIT_KEY = "MavenDetective.BuildDoctor.split";
+    private static final float SPLIT_WIDE = 0.22f;
+    private static final float SPLIT_NARROW = 0.25f;
 
     private final BuildDoctorService service;
     private final DefaultListModel<Run> historyModel = new DefaultListModel<>();
@@ -82,6 +86,8 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
      */
     private final Background preflightCheck = background(null);
     private final LogNavigatorView logView;
+    /** Breit: Verlauf links, Karte rechts; schmal: Verlauf oben, Karte darunter ({@link #layoutFor}). */
+    private final JBSplitter split = new JBSplitter(false, SPLIT_KEY, SPLIT_WIDE);
     private @Nullable Run shown;
     private int diagnosisIndex;
     /** Welche Ansicht rechts steht (VIEW_*). */
@@ -145,7 +151,6 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
         right.add(preflightView, VIEW_PREFLIGHT);
         right.add(logView, VIEW_LOG);
 
-        JBSplitter split = new JBSplitter(false, "MavenDetective.BuildDoctor.split", 0.22f);
         split.setFirstComponent(rows(history, () -> null, () -> {
             Run run = history.getSelectedValue();
             return run == null ? null : historyText(run);
@@ -162,6 +167,11 @@ public final class BuildDoctorPanel extends DetectivePanel implements BuildDocto
                 });
         reloadHistory(true);
         updateRunning();
+    }
+
+    @Override
+    protected void layoutFor(@NotNull Responsive.Mode mode) {
+        Responsive.splitter(split, SPLIT_KEY, SPLIT_WIDE, SPLIT_NARROW, mode);
     }
 
     // ---- Ereignisse ---------------------------------------------------------------------------

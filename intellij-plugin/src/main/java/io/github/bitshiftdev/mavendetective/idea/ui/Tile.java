@@ -28,13 +28,19 @@ import java.awt.event.MouseEvent;
  */
 public final class Tile extends JPanel {
 
-    private static final int WIDTH = 250;
+    /** Breite im Raster (unskaliert); in einer einzelnen Spalte füllt die Kachel die Breite ({@link #setTileWidth}). */
+    public static final int WIDTH = 250;
+    /** Untergrenze für {@link #setTileWidth} (unskaliert). */
+    public static final int MIN_WIDTH = 200;
 
     private final ActionLink title;
     private final JBLabel value = new JBLabel();
     private final JBLabel detail = new JBLabel();
     private final ActionLink action = new ActionLink("");
     private @Nullable Runnable onAction;
+    /** Aktuelle Breite (skaliert). */
+    private int width = JBUIScale.scale(WIDTH);
+    private @Nls @Nullable String detailText;
 
     public Tile(@Nls @NotNull String titleText, @NotNull Runnable open) {
         super(new VerticalLayout(JBUI.scale(4)));
@@ -75,6 +81,7 @@ public final class Tile extends JPanel {
                        @Nls @Nullable String actionText, @Nullable Runnable actionRun) {
         value.setIcon(icon);
         value.setText(valueText);
+        this.detailText = detailText;
         detail.setText(detailText == null ? "" : wrap(detailText));
         detail.setToolTipText(detailText);
         onAction = actionRun;
@@ -85,14 +92,28 @@ public final class Tile extends JPanel {
         repaint();
     }
 
-    /** Feste Breite, damit die Kacheln im Raster gleich groß sind und Text umbricht. */
-    private static String wrap(String text) {
-        return "<html><body style='width:" + JBUIScale.scale(WIDTH - 30) + "px'>" + Html.esc(text) + "</body></html>";
+    /**
+     * Breite in Pixeln (skaliert, mindestens {@link #MIN_WIDTH}): im Raster {@link #WIDTH}, im schmalen
+     * Tool-Window die ganze Spalte. Bricht die Erklärung für die neue Breite neu um.
+     */
+    public void setTileWidth(int scaledWidth) {
+        int w = Math.max(JBUIScale.scale(MIN_WIDTH), scaledWidth);
+        if (w == width) {
+            return;
+        }
+        width = w;
+        detail.setText(detailText == null ? "" : wrap(detailText));
+        revalidate();
+    }
+
+    /** Feste Breite je Kachel, damit Text umbricht und die Kacheln einer Zeile gleich groß sind. */
+    private String wrap(String text) {
+        return "<html><body style='width:" + (width - JBUIScale.scale(30)) + "px'>" + Html.esc(text) + "</body></html>";
     }
 
     @Override
     public Dimension getPreferredSize() {
         Dimension d = super.getPreferredSize();
-        return new Dimension(JBUI.scale(WIDTH), Math.max(d.height, JBUI.scale(110)));
+        return new Dimension(width, Math.max(d.height, JBUI.scale(110)));
     }
 }

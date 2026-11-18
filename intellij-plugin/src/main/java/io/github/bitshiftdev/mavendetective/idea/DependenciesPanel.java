@@ -23,6 +23,7 @@ import io.github.bitshiftdev.mavendetective.core.deps.VersionExplainer;
 import io.github.bitshiftdev.mavendetective.core.deps.VersionExplanation;
 import io.github.bitshiftdev.mavendetective.core.env.Environment;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.Responsive;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -53,11 +54,15 @@ public final class DependenciesPanel extends DetectivePanel {
     private record Loaded(@Nullable DepNode tree, List<Entry> entries) {
     }
 
+    private static final String SPLIT_KEY = "MavenDetective.Dependencies.split";
+
     private final ComboBox<IdeMaven.ModuleRef> modules = new ComboBox<>();
     private final SearchTextField search;
     private final DefaultListModel<Entry> listModel = new DefaultListModel<>();
     private final JBList<Entry> list = new JBList<>(listModel);
     private final VersionTimeline details;
+    /** Breit: Liste links, Erklärung rechts; schmal übereinander. */
+    private final JBSplitter splitter = new JBSplitter(false, SPLIT_KEY, 0.35f);
     private final Background trees = background(MavenDetectiveBundle.message("loading.tree"));
     private final Background explanations = background(null);
     private List<Entry> all = new ArrayList<>();
@@ -113,7 +118,6 @@ public final class DependenciesPanel extends DetectivePanel {
         JBScrollPane detailScroll = new JBScrollPane(details);
         detailScroll.setBorder(JBUI.Borders.empty());
 
-        JBSplitter splitter = new JBSplitter(false, "MavenDetective.Dependencies.split", 0.35f);
         splitter.setFirstComponent(rows(list, () -> null, () -> list.getSelectedValue() == null ? null : list.getSelectedValue().node().gav()));
         splitter.setSecondComponent(detailScroll);
         setBody(splitter);
@@ -136,6 +140,11 @@ public final class DependenciesPanel extends DetectivePanel {
             }
         }, this);
         reloadModules(null);
+    }
+
+    @Override
+    protected void layoutFor(@NotNull Responsive.Mode mode) {
+        Responsive.splitter(splitter, SPLIT_KEY, 0.35f, 0.35f, mode);
     }
 
     @Override

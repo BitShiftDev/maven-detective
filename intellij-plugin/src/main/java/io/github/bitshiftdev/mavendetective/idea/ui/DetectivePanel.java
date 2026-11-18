@@ -36,6 +36,7 @@ import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBLoadingPanel;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.components.panels.VerticalLayout;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.NamedColorUtil;
 import com.intellij.util.ui.StatusText;
@@ -78,6 +79,12 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
     private final JBLabel status = new JBLabel();
     private final EditorNotificationPanel staleBanner = new EditorNotificationPanel(EditorNotificationPanel.Status.Warning);
     private final List<Background> backgrounds = new ArrayList<>();
+    private final Responsive responsive;
+    /** Toolbar-Bereich; Inhalt je nach Breite in einer oder mehreren Zeilen ({@link #arrangeToolbar()}). */
+    private final JPanel toolbarHolder = new JPanel(new BorderLayout());
+    private @Nullable JComponent toolbarActions;
+    private @Nullable JComponent toolbarLeading;
+    private @Nullable JComponent toolbarTrailing;
     /** Laufende Aufgaben mit Ladeanzeige (nur EDT). */
     private int overlays;
     private volatile boolean disposed;
@@ -101,6 +108,26 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
         content.add(loading, BorderLayout.CENTER);
         content.add(status, BorderLayout.SOUTH);
         setContent(content);
+        toolbarHolder.setBorder(JBUI.Borders.compound(JBUI.Borders.customLineBottom(JBColor.border()), JBUI.Borders.empty(1, 4)));
+        responsive = Responsive.install(this, this, mode -> {
+            arrangeToolbar();
+            layoutFor(mode);
+        });
+    }
+
+    // ---- Breite ----------------------------------------------------------------------------
+
+    /**
+     * Wechsel zwischen breitem und schmalem Layout (Tool-Window seitlich angeheftet, schwebend oder schmal
+     * gezogen). Läuft beim ersten Layout und bei jedem Wechsel, auf dem EDT; die Toolbar ist dann schon
+     * umgestellt. Seiten mit Splittern nebeneinander stellen sie hier um ({@link Responsive#splitter}).
+     */
+    protected void layoutFor(@NotNull Responsive.Mode mode) {
+    }
+
+    /** Schmales Layout aktiv; vor dem ersten Layout {@code false}. */
+    public final boolean isNarrow() {
+        return responsive.isNarrow();
     }
 
     // ---- Aufbau ----------------------------------------------------------------------------
@@ -111,26 +138,54 @@ public abstract class DetectivePanel extends SimpleToolWindowPanel implements Di
     }
 
     /**
-     * Toolbar-Zeile: links optional Auswahlfelder (Modul, Artifact), dann die Aktionen (klappen bei
-     * Platzmangel in »), rechts optional das Suchfeld.
+     * Toolbar: breit eine Zeile – links optional Auswahlfelder (Modul, Artifact), dann die Aktionen
+     * (klappen bei Platzmangel in »), rechts optional das Suchfeld. Schmal bekommen die Aktionen eine
+     * Zeile für sich, Auswahlfelder und Suchfeld je eine eigene darunter in voller Breite.
      */
     protected final void installToolbar(@Nullable JComponent leading, @NotNull ActionGroup actions, @Nullable JComponent trailing) {
         ActionToolbar toolbar = ActionManager.getInstance().createActionToolbar(TOOLBAR_PLACE, actions, true);
         toolbar.setTargetComponent(this);
         toolbar.setLayoutStrategy(ToolbarLayoutStrategy.AUTOLAYOUT_STRATEGY);
-        JPanel row = new JPanel(new BorderLayout(JBUI.scale(4), 0));
-        if (leading != null) {
-            if (leading instanceof JPanel) {
-                leading.setOpaque(false);   // Formular-Panel: Hintergrund der Toolbar durchscheinen lassen
+        if (leading instanceof JPanel) {
+            leading.setOpaque(false);   // Formular-Panel: Hintergrund der Toolbar durchscheinen lassen
+        }
+        toolbarActions = toolbar.getComponent();
+        toolbarLeading = leading;
+        toolbarTrailing = trailing;
+        arrangeToolbar();
+        setToolbar(toolbarHolder);
+    }
+
+    /** Ordnet die Teile der Toolbar für den aktuellen Modus an; dieselben Komponenten, nur umgehängt. */
+    private void arrangeToolbar() {
+        if (toolbarActions == null) {
+            return;
+        }
+        toolbarHolder.removeAll();
+        if (isNarrow()) {
+            toolbarHolder.setLayout(new VerticalLayout(JBUI.scale(2)));
+            toolbarHolder.add(toolbarActions);
+            for (JComponent part : new JComponent[]{toolbarLeading, toolbarTrailing}) {
+                if (part != null) {
+                    JPanel line = new JPanel(new BorderLayout());
+                    line.setOpaque(false);
+                    line.setBorder(JBUI.Borders.emptyBottom(2));
+                    line.add(part, BorderLayout.CENTER);
+                    toolbarHolder.add(line);
+                }
             }
-            row.add(leading, BorderLayout.WEST);
+        } else {
+            toolbarHolder.setLayout(new BorderLayout(JBUI.scale(4), 0));
+            if (toolbarLeading != null) {
+                toolbarHolder.add(toolbarLeading, BorderLayout.WEST);
+            }
+            toolbarHolder.add(toolbarActions, BorderLayout.CENTER);
+            if (toolbarTrailing != null) {
+                toolbarHolder.add(toolbarTrailing, BorderLayout.EAST);
+            }
         }
-        row.add(toolbar.getComponent(), BorderLayout.CENTER);
-        if (trailing != null) {
-            row.add(trailing, BorderLayout.EAST);
-        }
-        row.setBorder(JBUI.Borders.compound(JBUI.Borders.customLineBottom(JBColor.border()), JBUI.Borders.empty(1, 4)));
-        setToolbar(row);
+        toolbarHolder.revalidate();
+        toolbarHolder.repaint();
     }
 
     /** Eine registrierte Aktion (plugin.xml) für die Toolbar. */

@@ -4,7 +4,9 @@ import com.intellij.icons.AllIcons;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.ColoredListCellRenderer;
 import com.intellij.ui.OnePixelSplitter;
 import com.intellij.ui.SimpleTextAttributes;
@@ -14,6 +16,8 @@ import com.intellij.util.ui.JBUI;
 import io.github.bitshiftdev.mavendetective.idea.AnalysisResults.Analysis;
 import io.github.bitshiftdev.mavendetective.idea.AnalysisResults.Summary;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.Responsive;
+import io.github.bitshiftdev.mavendetective.idea.ui.Responsive.Mode;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -24,11 +28,14 @@ import javax.swing.JPanel;
 import javax.swing.ListSelectionModel;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Dimension;
+import java.awt.event.ItemEvent;
 import java.util.List;
 
 /**
  * Tab „Dependencies“: links die Analysen von Modul A mit Zähler und Zustand („3“, „nicht geprüft“,
- * „veraltet“), rechts die gewählte Seite. Ersetzt fünf gleichrangige Tabs.
+ * „veraltet“), rechts die gewählte Seite. Ersetzt fünf gleichrangige Tabs. Im schmalen Tool-Window
+ * (seitlich angeheftet) steht statt der Navigation eine Auswahlliste über der Seite.
  */
 final class DependencyAnalysisView extends JPanel implements Disposable {
 
@@ -41,6 +48,10 @@ final class DependencyAnalysisView extends JPanel implements Disposable {
 
     private final List<Page> pages;
     private final JBList<Page> nav;
+    private final ComboBox<Page> combo;
+    private final JBScrollPane navScroll;
+    private final OnePixelSplitter splitter;
+    private final JPanel comboRow;
     private final CardLayout cards = new CardLayout();
     private final JPanel content = new JPanel(cards);
 
@@ -66,35 +77,45 @@ final class DependencyAnalysisView extends JPanel implements Disposable {
         AnalysisResults results = AnalysisResults.getInstance(project);
         nav = new JBList<>(pages);
         nav.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        nav.setCellRenderer(new ColoredListCellRenderer<>() {
-            @Override
-            protected void customizeCellRenderer(@NotNull JList<? extends Page> list, Page page, int index, boolean selected, boolean focus) {
-                setIcon(page.icon());
-                append(page.name());
-                String badge = page.analysis() == null ? null : badge(results.get(page.analysis()));
-                if (badge != null) {
-                    append("  " + badge, SimpleTextAttributes.GRAYED_ATTRIBUTES);
-                }
-                Summary s = page.analysis() == null ? null : results.get(page.analysis());
-                setToolTipText(s == null ? null : s.text());
-                setBorder(JBUI.Borders.empty(3, 6));
-            }
-        });
+        nav.setCellRenderer(renderer(results));
+        // Schmal ersetzt die Auswahlliste die Navigation; beide zeigen dieselbe Auswahl
+        combo = new ComboBox<>(pages.toArray(new Page[0]));
+        combo.setRenderer(renderer(results));
         nav.addListSelectionListener(e -> {
             Page p = nav.getSelectedValue();
             if (!e.getValueIsAdjusting() && p != null) {
                 cards.show(content, p.id());
                 PropertiesComponent.getInstance(project).setValue(SELECTED_KEY, p.id());
+                combo.setSelectedItem(p);
             }
         });
-        results.addListener((analysis, summary) -> nav.repaint(), this);
+        combo.addItemListener(e -> {
+            if (e.getStateChange() == ItemEvent.SELECTED && e.getItem() instanceof Page p) {
+                nav.setSelectedValue(p, true);
+            }
+        });
+        results.addListener((analysis, summary) -> {
+            nav.repaint();
+            combo.repaint();
+        }, this);
 
-        JBScrollPane navScroll = new JBScrollPane(nav);
+        navScroll = new JBScrollPane(nav) {
+            @Override
+            public Dimension getMinimumSize() {
+                // Namen und Zähler lesbar halten, auch wenn der Anteil am Splitter klein wird
+                return new Dimension(nav.getPreferredSize().width + JBUI.scale(4), 0);
+            }
+        };
         navScroll.setBorder(JBUI.Borders.empty());
-        OnePixelSplitter splitter = new OnePixelSplitter(false, "MavenDetective.Dependencies.nav", 0.16f);
+        content.setMinimumSize(JBUI.size(200, 0));
+        splitter = new OnePixelSplitter(false, "MavenDetective.Dependencies.nav", 0.16f);
+        splitter.setHonorComponentsMinimumSize(true);
         splitter.setFirstComponent(navScroll);
-        splitter.setSecondComponent(content);
-        add(splitter, BorderLayout.CENTER);
+        comboRow = new JPanel(new BorderLayout());
+        comboRow.setBorder(JBUI.Borders.compound(JBUI.Borders.customLineBottom(JBColor.border()), JBUI.Borders.empty(4)));
+        comboRow.add(combo, BorderLayout.CENTER);
+        layoutFor(Mode.WIDE);
+        Responsive.install(this, this, this::layoutFor);
 
         String last = PropertiesComponent.getInstance(project).getValue(SELECTED_KEY, "why");
         int idx = 0;
@@ -104,6 +125,45 @@ final class DependencyAnalysisView extends JPanel implements Disposable {
             }
         }
         nav.setSelectedIndex(idx);
+    }
+
+    /** Breit: Navigation links im Splitter; schmal: Auswahlliste über der Seite. Die Seiten bleiben dieselben. */
+    private void layoutFor(@NotNull Mode mode) {
+        removeAll();
+        if (mode == Mode.NARROW) {
+            // Splitter gibt die Seite frei, sonst hängt er sie beim Zurückschalten nicht wieder ein
+            splitter.setSecondComponent(null);
+            add(comboRow, BorderLayout.NORTH);
+            add(content, BorderLayout.CENTER);
+        } else {
+            splitter.setSecondComponent(content);
+            add(splitter, BorderLayout.CENTER);
+        }
+        revalidate();
+        repaint();
+    }
+
+    /** Icon, Name und Zähler/Zustand einer Seite; für Liste und Auswahlliste je eine eigene Instanz. */
+    private static @NotNull ColoredListCellRenderer<Page> renderer(@NotNull AnalysisResults results) {
+        return new ColoredListCellRenderer<>() {
+            @Override
+            protected void customizeCellRenderer(@NotNull JList<? extends Page> list, Page page, int index, boolean selected, boolean focus) {
+                if (page == null) {
+                    return;
+                }
+                setIcon(page.icon());
+                append(page.name());
+                Summary s = page.analysis() == null ? null : results.get(page.analysis());
+                String badge = s == null ? null : badge(s);
+                if (badge != null) {
+                    append("  " + badge, SimpleTextAttributes.GRAYED_ATTRIBUTES);
+                }
+                setToolTipText(s == null ? null : s.text());
+                if (index >= 0) {
+                    setBorder(JBUI.Borders.empty(3, 6));   // nicht im geschlossenen Feld der Auswahlliste
+                }
+            }
+        };
     }
 
     /** Zähler oder Zustand hinter dem Namen; {@code null} = nichts anzeigen. */

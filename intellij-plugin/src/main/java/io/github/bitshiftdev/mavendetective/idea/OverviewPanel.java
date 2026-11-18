@@ -26,6 +26,8 @@ import javax.swing.Icon;
 import javax.swing.JPanel;
 import javax.swing.ScrollPaneConstants;
 import java.awt.FlowLayout;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -39,6 +41,9 @@ import java.util.List;
  * die Kachel sagt dann „nicht geprüft“; „Alles prüfen“ startet sie gemeinsam.
  */
 public final class OverviewPanel extends DetectivePanel implements BuildDoctorService.Listener, AnalysisResults.Listener {
+
+    /** Abstand zwischen den Kacheln und zum Rand (unskaliert). */
+    private static final int GAP = 12;
 
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
 
@@ -77,13 +82,25 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         usage = new Tile(MavenDetectiveBundle.message("nav.usage"), () -> Navigator.open(project, DependencyUsagePanel.class, null));
         exclusions = new Tile(MavenDetectiveBundle.message("tile.exclusions"), this::openExclusions);
 
-        JPanel grid = new JPanel(new WrapLayout(FlowLayout.LEFT, JBUI.scale(12), JBUI.scale(12)));
-        for (Tile t : List.of(build, changes, setup, preflight, conflicts, duplicates, usage, exclusions)) {
+        JPanel grid = new JPanel(new WrapLayout(FlowLayout.LEFT, JBUI.scale(GAP), JBUI.scale(GAP)));
+        List<Tile> tiles = List.of(build, changes, setup, preflight, conflicts, duplicates, usage, exclusions);
+        for (Tile t : tiles) {
             grid.add(t);
         }
         JBScrollPane scroll = new JBScrollPane(grid, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
                 ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setBorder(JBUI.Borders.empty());
+        // Passt nur eine Spalte (seitlich angeheftet), füllen die Kacheln die Breite statt Rand zu lassen
+        scroll.getViewport().addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                int w = tileWidth(scroll.getViewport().getWidth(), JBUI.scale(Tile.WIDTH), JBUI.scale(GAP));
+                for (Tile t : tiles) {
+                    t.setTileWidth(w);
+                }
+                grid.revalidate();
+            }
+        });
         setBody(scroll);
 
         service.addListener(this, this);
@@ -99,6 +116,18 @@ public final class OverviewPanel extends DetectivePanel implements BuildDoctorSe
         }
         loadReference();
         loadSetup();
+    }
+
+    /**
+     * Breite einer Kachel für einen Ausschnitt von {@code available} Pixeln: im Raster {@code tile}; passt
+     * keine zweite Spalte daneben, die ganze Breite abzüglich der Ränder (FlowLayout setzt den Abstand
+     * links und rechts). Alles skaliert; {@link Tile#setTileWidth} achtet auf die Untergrenze.
+     */
+    static int tileWidth(int available, int tile, int gap) {
+        if (available <= 0 || available >= 2 * tile + 3 * gap) {
+            return tile;
+        }
+        return available - 2 * gap;
     }
 
     // ---- Alles prüfen ------------------------------------------------------------------------

@@ -24,14 +24,15 @@ import com.intellij.ui.components.ActionLink;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
-import com.intellij.ui.components.panels.HorizontalLayout;
 import com.intellij.ui.components.panels.VerticalLayout;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.ui.JBFont;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.WrapLayout;
 import com.intellij.util.ui.tree.TreeUtil;
 import io.github.bitshiftdev.mavendetective.core.io.LogOutline;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
+import io.github.bitshiftdev.mavendetective.idea.ui.Responsive;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -39,11 +40,13 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.Icon;
 import javax.swing.JPanel;
 import javax.swing.JTree;
+import javax.swing.border.EmptyBorder;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,12 +54,13 @@ import java.util.regex.Pattern;
 
 /**
  * Log-Navigator im Build Doctor: links die Gliederung des Laufs (erster Fehler, gescheitertes Modul,
- * Module mit Plugin-Schritten), rechts das Log in einem schreibgeschützten Editor – Download-Rauschen
+ * Module mit Plugin-Schritten; im schmalen Tool-Window oben), rechts das Log in einem schreibgeschützten Editor – Download-Rauschen
  * eingeklappt, Fehlerzeilen markiert (auch im Scrollbalken). Ein Klick in der Gliederung springt zur
  * Zeile. Grundlage ist {@link LogOutline} aus dem Kern (dieselbe Logik wie {@code outline} in der CLI).
  */
 final class LogNavigatorView extends JPanel implements Disposable {
 
+    private static final String SPLIT_KEY = "MavenDetective.LogNavigator.split";
     private static final Pattern ANSI = Pattern.compile("\u001B\\[[0-9;]*[A-Za-z]");
 
     private final Project project;
@@ -68,6 +72,8 @@ final class LogNavigatorView extends JPanel implements Disposable {
     private final ActionLink nextError;
     private final Tree tree = new Tree(new DefaultTreeModel(new DefaultMutableTreeNode()));
     private final JPanel editorSlot = new JPanel(new BorderLayout());
+    /** Breit: Gliederung links, Log rechts; schmal übereinander. */
+    private final JBSplitter split = new JBSplitter(false, SPLIT_KEY, 0.28f);
     private @Nullable Editor editor;
     private @Nullable LogOutline outline;
     private @Nullable String shownLog;
@@ -94,7 +100,9 @@ final class LogNavigatorView extends JPanel implements Disposable {
         nextError.setIcon(AllIcons.Actions.NextOccurence);
         foldDownloads.addItemListener(e -> applyFolding());
 
-        JPanel links = new JPanel(new HorizontalLayout(JBUI.scale(16)));
+        // Bricht im schmalen Tool-Window um; der negative Rand hebt den hgap vor dem ersten Link auf
+        JPanel links = new JPanel(new WrapLayout(FlowLayout.LEFT, JBUI.scale(16), JBUI.scale(2)));
+        links.setBorder(new EmptyBorder(-JBUI.scale(2), -JBUI.scale(16), -JBUI.scale(2), 0));
         links.setOpaque(false);
         links.add(firstError);
         links.add(failedModule);
@@ -122,7 +130,6 @@ final class LogNavigatorView extends JPanel implements Disposable {
         });
         tree.getAccessibleContext().setAccessibleName(MavenDetectiveBundle.message("log.outline"));
 
-        JBSplitter split = new JBSplitter(false, "MavenDetective.LogNavigator.split", 0.28f);
         JBScrollPane treeScroll = new JBScrollPane(tree);
         treeScroll.setBorder(JBUI.Borders.empty());
         split.setFirstComponent(treeScroll);
@@ -130,6 +137,7 @@ final class LogNavigatorView extends JPanel implements Disposable {
         split.setBorder(JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0));
         add(head, BorderLayout.NORTH);
         add(split, BorderLayout.CENTER);
+        Responsive.install(this, this, mode -> Responsive.splitter(split, SPLIT_KEY, 0.28f, 0.3f, mode));
     }
 
     /**

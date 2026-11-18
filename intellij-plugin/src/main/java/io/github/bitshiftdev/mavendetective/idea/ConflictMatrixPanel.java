@@ -37,6 +37,7 @@ import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
+import io.github.bitshiftdev.mavendetective.idea.ui.Responsive;
 import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
@@ -72,6 +73,10 @@ import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 public final class ConflictMatrixPanel extends DetectivePanel {
 
     private static final int HEADER_WIDTH = 320;
+    /** Schmales Tool-Window: kürzere Artifact-Spalte, damit Modul-Spalten sichtbar bleiben. */
+    private static final int HEADER_WIDTH_NARROW = 180;
+    private static final int CELL_WIDTH = 130;
+    private static final int CELL_WIDTH_NARROW = 100;
 
     private boolean onlyDivergent = true;
     private final SearchTextField search;
@@ -241,6 +246,26 @@ public final class ConflictMatrixPanel extends DetectivePanel {
     }
 
     @Override
+    protected void layoutFor(@NotNull Responsive.Mode mode) {
+        applyColumnWidths();
+    }
+
+    /**
+     * Breiten der Artifact- und der Modul-Spalten für den aktuellen Modus; der fixierte Bereich zieht über
+     * den ColumnModel-Listener nach. Überschreibt von Hand gezogene Breiten – nur bei neuen Spalten und
+     * beim Wechsel breit/schmal aufrufen.
+     */
+    private void applyColumnWidths() {
+        boolean narrow = isNarrow();
+        if (header.getColumnCount() > 0) {
+            header.getColumnModel().getColumn(0).setPreferredWidth(JBUI.scale(narrow ? HEADER_WIDTH_NARROW : HEADER_WIDTH));
+        }
+        for (int i = 0; i < table.getColumnCount(); i++) {
+            table.getColumnModel().getColumn(i).setPreferredWidth(JBUI.scale(narrow ? CELL_WIDTH_NARROW : CELL_WIDTH));
+        }
+    }
+
+    @Override
     public boolean supportsRefresh() {
         return true;
     }
@@ -361,12 +386,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         }
         // Breiten nur bei neuen Spalten setzen – sonst setzte jeder Tastendruck in der Suche sie zurück
         if (model.set(matrix.getModules(), rows)) {
-            if (header.getColumnCount() > 0) {
-                header.getColumnModel().getColumn(0).setPreferredWidth(JBUI.scale(HEADER_WIDTH));
-            }
-            for (int i = 0; i < table.getColumnCount(); i++) {
-                table.getColumnModel().getColumn(i).setPreferredWidth(JBUI.scale(130));
-            }
+            applyColumnWidths();
         }
         int divergent = matrix.divergent().size();
         if (onlyDivergent && matrix.divergent().isEmpty()) {

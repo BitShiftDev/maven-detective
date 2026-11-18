@@ -40,6 +40,7 @@ import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.Html;
 import io.github.bitshiftdev.mavendetective.idea.ui.HtmlView;
 import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
+import io.github.bitshiftdev.mavendetective.idea.ui.Responsive;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -51,6 +52,8 @@ import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
 import javax.swing.table.AbstractTableModel;
 import java.awt.BorderLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -75,6 +78,10 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
     private final TextFieldWithAutoCompletion<String> artifact;
     private final ComboBox<String> version = new ComboBox<>();
     private final JBCheckBox manage = new JBCheckBox(MavenDetectiveBundle.message("upgrade.manage"));
+    /** Eingabe in der Toolbar; breit eine Zeile, schmal zwei ({@link #arrangeForm}). */
+    private final JPanel form = new JPanel();
+    private final JBLabel artifactLabel = new JBLabel(MavenDetectiveBundle.message("upgrade.artifact"));
+    private final JBLabel versionLabel = new JBLabel(MavenDetectiveBundle.message("upgrade.version"));
     private final JButton fetch = new JButton(MavenDetectiveBundle.message("upgrade.fetch"), AllIcons.Actions.Download);
     private final JButton apply = FixBar.primary(new JButton(MavenDetectiveBundle.message("upgrade.apply")));
     private final JButton openEditor = new JButton(MavenDetectiveBundle.message("upgrade.open.editor"), AllIcons.Actions.Diff);
@@ -147,13 +154,8 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
         openEditor.addActionListener(e -> openEditor(true));
         fetch.setToolTipText(MavenDetectiveBundle.message("upgrade.fetch.tooltip"));
 
-        JPanel form = new JPanel(new HorizontalLayout(JBUI.scale(6)));
         form.setBorder(JBUI.Borders.emptyLeft(4));
-        form.add(new JBLabel(MavenDetectiveBundle.message("upgrade.artifact")));
-        form.add(artifact);
-        form.add(new JBLabel(MavenDetectiveBundle.message("upgrade.version")));
-        form.add(version);
-        form.add(manage);
+        arrangeForm(false);
         DefaultActionGroup actions = new DefaultActionGroup();
         actions.add(registered("MavenDetective.Refresh"));
         actions.add(registered("MavenDetective.CopyMarkdown"));
@@ -196,6 +198,54 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             }
         }, this);
         loadSuggestions();
+    }
+
+    @Override
+    protected void layoutFor(@NotNull Responsive.Mode mode) {
+        arrangeForm(mode == Responsive.Mode.NARROW);
+    }
+
+    /**
+     * Breit: Artifact, Version und „Verwalten“ in einer Zeile neben der Toolbar. Schmal: Artifact in voller
+     * Breite, darunter Version und „Verwalten“. Dieselben Felder, nur neu angeordnet.
+     */
+    private void arrangeForm(boolean narrow) {
+        form.removeAll();
+        artifact.setPreferredWidth(JBUI.scale(narrow ? 120 : 320));
+        if (narrow) {
+            form.setLayout(new GridBagLayout());
+            GridBagConstraints c = new GridBagConstraints();
+            c.anchor = GridBagConstraints.LINE_START;
+            c.insets = JBUI.insets(1, 0, 1, 6);
+            c.gridy = 0;
+            form.add(artifactLabel, c);
+            c.gridx = 1;
+            c.weightx = 1;
+            c.fill = GridBagConstraints.HORIZONTAL;
+            c.insets = JBUI.insets(1, 0, 1, 4);
+            form.add(artifact, c);
+            c.gridy = 1;
+            c.gridx = 0;
+            c.weightx = 0;
+            c.fill = GridBagConstraints.NONE;
+            c.insets = JBUI.insets(1, 0, 1, 6);
+            form.add(versionLabel, c);
+            JPanel row = new JPanel(new HorizontalLayout(JBUI.scale(6)));
+            row.setOpaque(false);
+            row.add(version);
+            row.add(manage);
+            c.gridx = 1;
+            form.add(row, c);
+        } else {
+            form.setLayout(new HorizontalLayout(JBUI.scale(6)));
+            form.add(artifactLabel);
+            form.add(artifact);
+            form.add(versionLabel);
+            form.add(version);
+            form.add(manage);
+        }
+        form.revalidate();
+        form.repaint();
     }
 
     @Override

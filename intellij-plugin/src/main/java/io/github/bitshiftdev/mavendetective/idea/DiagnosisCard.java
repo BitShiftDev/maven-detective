@@ -14,11 +14,11 @@ import com.intellij.ui.RoundedLineBorder;
 import com.intellij.ui.components.ActionLink;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBTextArea;
-import com.intellij.ui.components.panels.HorizontalLayout;
 import com.intellij.ui.components.panels.VerticalLayout;
 import com.intellij.util.ui.JBFont;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.NamedColorUtil;
+import com.intellij.util.ui.WrapLayout;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Confidence;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Diagnosis;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.Evidence;
@@ -39,7 +39,9 @@ import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
+import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -175,23 +177,41 @@ final class DiagnosisCard {
         return card;
     }
 
+    /**
+     * Kopf: Icon und Titel (bricht um, wird nie abgeschnitten), darunter Sicherheit und Zeitpunkt –
+     * auch im schmalen Tool-Window vollständig lesbar.
+     */
     private static JComponent header(Icon icon, @Nls String title, @Nullable JComponent badge, @Nls String time) {
-        JBLabel label = new JBLabel(title, icon, JBLabel.LEADING);
-        label.setFont(JBFont.h3().asBold());
-        label.setIconTextGap(JBUI.scale(8));
-        JPanel right = new JPanel(new HorizontalLayout(JBUI.scale(8)));
-        right.setOpaque(false);
-        if (badge != null) {
-            right.add(badge);
-        }
+        Font font = JBFont.h3().asBold();
+        JBTextArea text = text(title, font);
+        JBLabel iconLabel = new JBLabel(icon);
+        // Icon mittig zur ersten Textzeile
+        int lineHeight = text.getFontMetrics(font).getHeight();
+        iconLabel.setBorder(JBUI.Borders.emptyTop(Math.max(0, (lineHeight - icon.getIconHeight()) / 2)));
+        JPanel iconBox = new JPanel(new BorderLayout());
+        iconBox.setOpaque(false);
+        iconBox.add(iconLabel, BorderLayout.NORTH);
+        JPanel titleRow = new JPanel(new BorderLayout(JBUI.scale(8), 0));
+        titleRow.setOpaque(false);
+        titleRow.add(iconBox, BorderLayout.WEST);
+        titleRow.add(text, BorderLayout.CENTER);
+
         JBLabel at = new JBLabel(time);
         at.setForeground(NamedColorUtil.getInactiveTextColor());
-        right.add(at);
-        JPanel row = new JPanel(new BorderLayout(JBUI.scale(8), 0));
-        row.setOpaque(false);
-        row.add(label, BorderLayout.CENTER);
-        row.add(right, BorderLayout.EAST);
-        return row;
+        // FlowLayout setzt hgap auch vor das erste Element: zusammen bündig mit dem Titeltext
+        JPanel meta = new JPanel(new WrapLayout(FlowLayout.LEFT, JBUI.scale(8), 0));
+        meta.setOpaque(false);
+        meta.setBorder(new EmptyBorder(0, icon.getIconWidth(), 0, 0));
+        if (badge != null) {
+            meta.add(badge);
+        }
+        meta.add(at);
+
+        JPanel header = new JPanel(new VerticalLayout(JBUI.scale(4)));
+        header.setOpaque(false);
+        header.add(titleRow);
+        header.add(meta);
+        return header;
     }
 
     static @Nls @NotNull String headline(@NotNull Diagnosis d) {
@@ -239,7 +259,10 @@ final class DiagnosisCard {
         if (supported.isEmpty()) {
             return null;
         }
-        JPanel row = new JPanel(new HorizontalLayout(JBUI.scale(12)));
+        // Bricht im schmalen Tool-Window um; negative Ränder heben den Abstand auf, den FlowLayout
+        // links und oben/unten selbst einfügt, damit der Knopf bündig mit dem Text darüber steht
+        JPanel row = new JPanel(new WrapLayout(FlowLayout.LEFT, JBUI.scale(12), JBUI.scale(4)));
+        row.setBorder(new EmptyBorder(-JBUI.scale(4), -JBUI.scale(12), -JBUI.scale(4), 0));
         row.setOpaque(false);
         FixAction first = supported.get(0);
         JButton primary = FixBar.primary(new JButton(first.getLabel()));
@@ -468,7 +491,9 @@ final class DiagnosisCard {
     }
 
     private JComponent footer(BuildDoctorService.Result result, boolean report) {
-        JPanel row = new JPanel(new HorizontalLayout(JBUI.scale(6)));
+        // Links brechen im schmalen Tool-Window um; der negative Rand hebt den hgap vor dem ersten auf
+        JPanel row = new JPanel(new WrapLayout(FlowLayout.LEFT, JBUI.scale(6), 0));
+        row.setBorder(new EmptyBorder(0, -JBUI.scale(6), 0, 0));
         row.setOpaque(false);
         if (report) {
             row.add(new ActionLink(MavenDetectiveBundle.message("doctor.copy.report"), (ActionListener) e -> host.copyReport()));
