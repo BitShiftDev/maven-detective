@@ -1,0 +1,16 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.app</groupId>
+  <artifactId>app</artifactId>
+  <version>1</version>
+  <properties/>
+  <dependencyManagement/>
+  <dependencies>
+    <dependency>
+      <groupId>org.lib</groupId>
+      <artifactId>lib</artifactId>
+      <version>1.0</version>
+      <exclusions/>
+    </dependency>
+  </dependencies>
+</project>

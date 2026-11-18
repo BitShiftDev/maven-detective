@@ -1,0 +1,33 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.app</groupId>
+  <artifactId>app</artifactId>
+  <version>1</version>
+  <dependencies>
+    <dependency>
+      <groupId>org.lib</groupId>
+      <artifactId>lib</artifactId>
+      <version>1.0</version>
+      <classifier>tests</classifier>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.lib</groupId>
+      <artifactId>lib</artifactId>
+      <version>1.0</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.lib</groupId>
+      <artifactId>lib</artifactId>
+      <version>1.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.ex</groupId>
+          <artifactId>ex</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+  </dependencies>
+</project>

@@ -11,6 +11,9 @@
 
 - Maven 4: a missing child project (`Child subproject … does not exist`) and a malformed or non-parseable POM (`Unable to read model: …`) are recognised again – from the extension's events and from the text log – instead of showing "Unknown error".
 - IDE: undoing a POM quick fix takes a single **Undo** again; before, the first one only moved the caret back from the changed line.
+- A text log with a very long error line full of spaces no longer stalls the diagnosis; removing the trailing `-> [Help 1]` took minutes on such lines.
+- POM quick fixes no longer fail on a POM that contains an empty `<exclusion/>`.
+- Custom catalogs (`--catalog`): a folded block (`>`) turns a blank line into one line break, as YAML does, instead of two.
 
 ## [0.1.1] - 2026-11-17
 

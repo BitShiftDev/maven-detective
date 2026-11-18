@@ -3,3 +3,5 @@
 * text=auto eol=lf
 # gradlew.bat liegt mit CRLF im Repository und bleibt unverändert
 *.bat -text
+# Test-POMs mit Windows-Zeilenenden: PomEditorInvariantTest prüft, dass CRLF erhalten bleibt
+core/src/test/resources/poms/*crlf*.xml -text

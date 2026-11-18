@@ -1,0 +1,23 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org&#46;app</groupId>
+  <artifactId>app</artifactId>
+  <version>1</version>
+  <properties>
+    <lib.version><![CDATA[1.0]]></lib.version>
+    <note>a &amp; b &lt; c</note>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org&#x2E;lib</groupId>
+      <artifactId><![CDATA[lib]]></artifactId>
+      <version>1.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org&#46;ex</groupId>
+          <artifactId>ex</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+  </dependencies>
+</project>

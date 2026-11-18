@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Kopf <dependencies> im Kommentar -->
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.app</groupId><!-- nach groupId -->
+  <artifactId>app</artifactId>
+  <version>1</version>
+  <properties>
+    <!-- <lib.version>0.9</lib.version> -->
+    <lib.version><!-- LTS -->1.0<!-- bis 2027 --></lib.version>
+  </properties>
+  <dependencyManagement>
+    <!-- leer bis auf diesen Kommentar -->
+    <dependencies>
+      <!--
+      <dependency>
+        <groupId>org.lib</groupId>
+        <artifactId>lib</artifactId>
+        <version>0.1</version>
+      </dependency>
+      -->
+    </dependencies>
+  </dependencyManagement>
+  <dependencies>
+    <!-- die Bibliothek -->
+    <dependency>
+      <groupId>org.lib</groupId> <!-- Gruppe -->
+      <artifactId>lib</artifactId>
+      <version>1.0</version><!-- fest -->
+      <exclusions>
+        <exclusion><groupId>org.ex</groupId><artifactId>ex</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <!-- Ende -->
+  </dependencies>
+</project>

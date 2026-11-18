@@ -41,6 +41,9 @@ public final class MavenLogParser {
         "-> [Help 1]",
     };
     private static final Pattern HELP_LINK = Pattern.compile("^\\[Help \\d+\\] https?://\\S+$");
+    /** Verweis am Zeilenende: {@code " -> [Help 2]"}. */
+    private static final String HELP_OPEN = "[Help ";
+    private static final String ARROW = "->";
 
     private MavenLogParser() {
     }
@@ -141,8 +144,7 @@ public final class MavenLogParser {
         while (t.startsWith("[ERROR] ") || t.startsWith("[FATAL] ")) {
             t = t.substring(8).trim();
         }
-        // " -> [Help 2]" am Zeilenende abschneiden
-        t = t.replaceAll("\\s*->\\s*\\[Help \\d+\\]$", "");
+        t = withoutHelpLink(t);
         if (t.isEmpty()) {
             return null;
         }
@@ -156,6 +158,47 @@ public final class MavenLogParser {
         }
         failure.getErrors().add(r);
         return r;
+    }
+
+    /**
+     * Schneidet {@code " -> [Help 2]"} am Zeilenende ab. Bewusst ohne Regex: {@code \s*->} am Ende lief
+     * bei Zeilen mit vielen Leerzeichen quadratisch (200 000 Leerzeichen = Minuten).
+     */
+    private static String withoutHelpLink(String t) {
+        if (!t.endsWith("]")) {
+            return t;
+        }
+        int open = t.lastIndexOf(HELP_OPEN);
+        if (open < 0 || !isDigits(t, open + HELP_OPEN.length(), t.length() - 1)) {
+            return t;
+        }
+        int arrowEnd = skipWhitespaceBackwards(t, open);
+        if (arrowEnd < ARROW.length() || !t.startsWith(ARROW, arrowEnd - ARROW.length())) {
+            return t;
+        }
+        return t.substring(0, skipWhitespaceBackwards(t, arrowEnd - ARROW.length()));
+    }
+
+    /** Nur ASCII-Ziffern in {@code [from, to)}, mindestens eine. */
+    private static boolean isDigits(String s, int from, int to) {
+        if (from >= to) {
+            return false;
+        }
+        for (int i = from; i < to; i++) {
+            char c = s.charAt(i);
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int skipWhitespaceBackwards(String s, int end) {
+        int i = end;
+        while (i > 0 && Character.isWhitespace(s.charAt(i - 1))) {
+            i--;
+        }
+        return i;
     }
 
     private static boolean isNoise(String t) {

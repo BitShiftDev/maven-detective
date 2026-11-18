@@ -242,16 +242,37 @@ public final class MiniYaml {
         while (index < lines.size() && lines.get(index).number <= rawIndex) {
             index++;
         }
+        String joined = folded ? fold(collected) : join(collected);
+        return strip || joined.isEmpty() ? joined : joined + "\n";
+    }
+
+    private static String join(List<String> lines) {
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < collected.size(); i++) {
-            String c = collected.get(i);
+        for (int i = 0; i < lines.size(); i++) {
             if (i > 0) {
-                sb.append(folded && !c.isEmpty() && !collected.get(i - 1).isEmpty() ? " " : "\n");
+                sb.append('\n');
             }
-            sb.append(c);
+            sb.append(lines.get(i));
         }
-        if (!strip && sb.length() > 0) {
-            sb.append('\n');
+        return sb.toString();
+    }
+
+    /**
+     * Gefaltet ({@code >}): aufeinanderfolgende Zeilen mit Leerzeichen verbinden; jede Leerzeile steht
+     * für genau einen Zeilenumbruch ({@code a, b, "", c} → {@code "a b\nc"}).
+     */
+    private static String fold(List<String> lines) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            if (line.isEmpty()) {
+                sb.append('\n');
+            } else {
+                if (i > 0 && !lines.get(i - 1).isEmpty()) {
+                    sb.append(' ');
+                }
+                sb.append(line);
+            }
         }
         return sb.toString();
     }

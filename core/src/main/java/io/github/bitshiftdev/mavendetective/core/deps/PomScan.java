@@ -168,6 +168,12 @@ final class PomScan {
                         r.selfClosing = true;
                         s.onClose(path, name, r, xml, entry, exclusion);
                     }
+                    // leer geschriebenes <dependency/> bzw. <exclusion/> hat keine Felder und wird nicht geführt
+                    if (DEPENDENCY.equals(path) || MANAGED_DEPENDENCY.equals(path)) {
+                        entry = null;
+                    } else if (isExclusion(path)) {
+                        exclusion = null;
+                    }
                     stack.remove(stack.size() - 1);
                 } else {
                     starts.add(lt);

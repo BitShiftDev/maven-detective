@@ -232,7 +232,8 @@ public final class Json {
     }
 
     private static void write(StringBuilder sb, Object value) {
-        if (value == null) {
+        if (value == null || isNonFinite(value)) {
+            // NaN und Unendlich gibt es in JSON nicht – als Zahl geschrieben wäre die ganze Zeile unlesbar
             sb.append("null");
         } else if (value instanceof String) {
             writeString(sb, (String) value);
@@ -268,6 +269,18 @@ public final class Json {
         } else {
             writeString(sb, value.toString());
         }
+    }
+
+    private static boolean isNonFinite(Object value) {
+        if (value instanceof Double) {
+            Double d = (Double) value;
+            return d.isNaN() || d.isInfinite();
+        }
+        if (value instanceof Float) {
+            Float f = (Float) value;
+            return f.isNaN() || f.isInfinite();
+        }
+        return false;
     }
 
     private static void writeString(StringBuilder sb, String s) {

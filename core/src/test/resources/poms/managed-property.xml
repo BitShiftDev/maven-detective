@@ -1,0 +1,36 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.app</groupId>
+  <artifactId>app</artifactId>
+  <version>1</version>
+  <properties>
+    <lib.version>1.0</lib.version>
+  </properties>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.lib</groupId>
+        <artifactId>lib</artifactId>
+        <version>${lib.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>org.ex</groupId>
+            <artifactId>ex</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>org.lib</groupId>
+      <artifactId>lib</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>org.ex</groupId>
+          <artifactId>ex</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+  </dependencies>
+</project>
