@@ -53,7 +53,9 @@ File: `core/src/main/resources/io/github/bitshiftdev/mavendetective/core/catalog
 
 1. Add the rule. Regexes **always in 'single quotes'** (apostrophe as `''`). MiniYaml supports no anchors, tags, flow mappings or multiple documents.
 2. Placeholders in `cause`: `{var}`, `{var|fallback text}`, `{a,b|fallback}`. **Directly below every `category`/`cause`/`label` (also in pattern mappings and `fix`) add `…_en:`** – the base text is German, `TextsTest.katalogHatJedenTextAufEnglisch` checks it (`_de` would work too, `Rule.getX()` picks via `Texts.pick`).
-3. **Mandatory:** test log `core/src/test/resources/logs/<rule-id>__<description>.log`. `LogCatalogTest` checks that every file is recognised as the rule in its name and that every rule has ≥1 log.
+3. **Mandatory:** ≥3 test logs `core/src/test/resources/logs/<rule-id>__<description>.log` (variants: Maven 3.9 / Maven 4 or a second message form / CI prefix or Windows). `LogCatalogTest` checks that every file is recognised as the rule in its name and that every rule has `MIN_LOGS_PER_RULE` = 3 logs. Windows logs with CRLF: put `crlf` in the file name (`.gitattributes` exempts it from LF normalisation).
+   - Near misses: `logs-negative/<rule-id>__<description>.log` – the rule must appear in **no** diagnosis (warnings instead of errors, 403/ZipException/ClassNotFoundException from tests).
+   - Two errors: `logs-multi/<higher-rule>+<lower-rule>__<description>.log` – the higher `priority` comes first, the other follows (file name must be ordered by priority).
 4. If reproducible: fixture under `fixtures/NN-name/` + a line in `fixtures/fixtures.txt` (`<dir> | <rule-id> | <mvn-args>`; optional `setup.sh`, which gets the local repository as `$1`). `run-fixtures.sh` checks the events path **and** the log fallback **and** that the card appears in the log.
 5. Update the README table/sections if categories or checks are added.
 
@@ -62,7 +64,10 @@ File: `core/src/main/resources/io/github/bitshiftdev/mavendetective/core/catalog
 - Interface `core/check/Check` (`id()`, `run(CheckContext)`); result `CheckResult.notApplicable()` / `info()` / `confirmed()`, chainable with `.cause(template)`, `.evidence(Evidence…)`, `.fix(FixAction)`, `.var(name, value)`.
 - `CheckContext`: `failure()`, `env()`, `var()`, `lines()`, `projectPoms()`, `find(Pattern)`, `anyLineContains()`.
 - Put it by topic into `ResolutionChecks`, `RepositoryChecks`, `PomChecks` or `RuntimeChecks` as a `static final class` and register it in their `all()` or in `Checks.defaults()` (duplicate IDs throw).
-- Test in `core/src/test/.../check/ChecksTest.java`. Extend the README list "Available checks".
+- Test in the class of its topic (`PomChecksTest`, `ResolutionChecksTest`, `RepositoryChecksTest`, `RuntimeChecksTest`), calling `run` directly via `testkit/CheckBench` (home, local repository and project in a `@TempDir`; `.line(…)`, `.var(…)`, `.failedRequest(…)`, `.pomProblem(…)`, `.mojoError(…)`, `.offline()`, `.runner(…)`) and `testkit/Diagnoses` (`assertConfirmed/Info/NotApplicable`, `assertFirstFix(list, type, key, value…)`, `assertEvidence(list, file, line)`). One test each for confirmed / info / not applicable, as far as the check can produce that status; compare variables, fix type + parameters and file + line, not texts. End-to-end through the catalog: `ChecksTest`. Extend the README list "Available checks".
+- `ChecksContractTest` runs **every** registered check automatically: no file in project/home/repository changes, no network (`ProxySelector` that throws), garbage variables (`:`, `a:`, `99999999999`, UNC, `\0` …) throw nothing. A check that reads a new variable ⇒ add its name to `VARS` there.
+- Numbers from log text: bound the regex (`\d{1,9}` for `int`) or use `Text.number(s)` / `Text.javaForClassVersion(String)` (−1 if not a number or too large) – never a bare `Integer.parseInt` on a log group. Splitting `g:a` ⇒ `split(":", -1)` + check length and empty parts.
+- `BuildDoctor` checks `Cancellation` per rule and passes it to `ProjectPoms`; a check that loops over many files/JARs calls `ctx.cancellation().check()` outside any `catch`.
 
 ## Quick-fix types
 
