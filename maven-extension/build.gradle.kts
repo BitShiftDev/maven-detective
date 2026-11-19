@@ -17,16 +17,16 @@ dependencies {
     compileOnly("org.apache.maven:maven-core:$mavenVersion")
     compileOnly("org.apache.maven.resolver:maven-resolver-api:$mavenResolverVersion")
     compileOnly("javax.inject:javax.inject:1")
-    compileOnly("org.slf4j:slf4j-api:1.7.36")
+    compileOnly("org.slf4j:slf4j-api:2.0.20")
 
     // Unit-Tests: Maven-Objekte direkt erzeugen, ohne Maven-Lauf (der läuft in fixtureTest)
-    testImplementation(platform("org.junit:junit-bom:5.13.4"))
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.apache.maven:maven-core:$mavenVersion")
     testImplementation("org.apache.maven.resolver:maven-resolver-api:$mavenResolverVersion")
     testImplementation("javax.inject:javax.inject:1")
-    testImplementation("org.slf4j:slf4j-api:1.7.36")
+    testImplementation("org.slf4j:slf4j-api:2.0.20")
 }
 
 tasks.compileJava {
