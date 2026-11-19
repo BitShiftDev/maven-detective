@@ -27,8 +27,6 @@ import com.intellij.util.ui.JBUI;
 import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.check.ProjectPoms;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
-import io.github.bitshiftdev.mavendetective.core.deps.EffectiveModel;
-import io.github.bitshiftdev.mavendetective.core.deps.MavenVersion;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFetcher;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
@@ -58,7 +56,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 import java.util.TreeSet;
 
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
@@ -372,41 +369,20 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
 
     private void loadSuggestions() {
         suggestions.run(c -> {
-            Map<String, String> found = new TreeMap<>();
             Path root = IdeMaven.reactorRoot(project);
             PomLocator locator = DependenciesPanel.locator(project, root);
-            for (DepNode tree : IdeMaven.dependencyTrees(project).values()) {
-                collect(tree, found);
-            }
-            for (PomFile p : poms(project, locator, root)) {
-                if (p.hasParent()) {
-                    found.putIfAbsent(p.getParentGroupId() + ":" + p.getParentArtifactId(), p.getParentVersion());
-                }
-                for (EffectiveModel.ImportStep s : locator.model(p).getImports()) {
-                    found.putIfAbsent(s.declaration.ga(), s.version.value);
-                }
-            }
-            return found;
+            return UpgradeInput.suggestions(IdeMaven.dependencyTrees(project).values(), poms(project, locator, root), locator);
         }, found -> {
             current = found;
             artifact.setVariants(found.keySet());
         });
     }
 
-    private static void collect(DepNode n, Map<String, String> out) {
-        for (DepNode c : n.getChildren()) {
-            if (c.getState() == DepNode.State.INCLUDED) {
-                out.putIfAbsent(c.ga(), c.getVersion());
-                collect(c, out);
-            }
-        }
-    }
-
     /** Lokal vorhandene Versionen ins Feld; mit {@code autoSimulateFor} wird bei einer neueren gleich simuliert. */
     private void loadVersions(@Nullable String autoSimulateFor) {
         String ga = text(artifact);
-        String[] p = ga.split(":");
-        if (p.length != 2 || p[0].isEmpty() || p[1].isEmpty()) {
+        String[] p = UpgradeInput.ga(ga);
+        if (p == null) {
             return;
         }
         String now = current.get(ga);
@@ -421,7 +397,7 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             for (String v : versions) {
                 version.addItem(v);
             }
-            String newer = versions.isEmpty() || now == null || MavenVersion.compare(versions.get(0), now) <= 0 ? null : versions.get(0);
+            String newer = UpgradeInput.newer(versions, now);
             version.setSelectedItem(newer);
             setStatus(now == null ? null : MavenDetectiveBundle.message(newer == null ? "upgrade.status.current.only" : "upgrade.status.current", now));
             if (autoSimulateFor != null && newer != null) {
@@ -433,21 +409,12 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
     }
 
     private @Nullable UpgradeSimulator.Request request() {
-        String what = text(artifact);
-        String v = text(version);
-        if (what.isEmpty() || v.isEmpty()) {
-            setStatus(MavenDetectiveBundle.message("upgrade.missing.input"));
-            return null;
-        }
-        UpgradeSimulator.Request r;
         try {
-            r = what.startsWith("${") || !what.contains(":") ? UpgradeSimulator.Request.parse(what + "=" + v)
-                    : UpgradeSimulator.Request.parse(what + ":" + v);
+            return UpgradeInput.request(text(artifact), text(version), manage.isSelected());
         } catch (IllegalArgumentException e) {
             setStatus(e.getMessage());
             return null;
         }
-        return manage.isSelected() && !r.isProperty() ? r.pinned() : r;
     }
 
     private void simulate() {
@@ -662,10 +629,10 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
                 UpgradeSimulator.Delta d = row.delta;
                 sb.append("<p>").append(MavenDetectiveBundle.message("upgrade.detail.delta", esc(d.label()), esc(row.module.getName()))).append("</p><ul>");
                 if (d.getBefore() != null) {
-                    sb.append("<li>").append(MavenDetectiveBundle.message("upgrade.detail.before", esc(path(d.getBefore())))).append("</li>");
+                    sb.append("<li>").append(MavenDetectiveBundle.message("upgrade.detail.before", esc(UpgradeInput.path(d.getBefore())))).append("</li>");
                 }
                 if (d.getAfter() != null) {
-                    sb.append("<li>").append(MavenDetectiveBundle.message("upgrade.detail.after", esc(path(d.getAfter())))).append("</li>");
+                    sb.append("<li>").append(MavenDetectiveBundle.message("upgrade.detail.after", esc(UpgradeInput.path(d.getAfter())))).append("</li>");
                 }
                 sb.append("</ul>");
             } else {
@@ -693,12 +660,6 @@ public final class UpgradeSimulatorPanel extends DetectivePanel {
             sb.append("<p>").append(MavenDetectiveBundle.message("upgrade.empty.unchanged")).append("</p>");
         }
         showText(sb.toString());
-    }
-
-    private static String path(DepNode n) {
-        return n.depth() <= 1 ? n.gav() + " (" + MavenDetectiveBundle.message("upgrade.editor.direct")
-                + (n.getScope() == null || "compile".equals(n.getScope()) ? "" : ", " + n.getScope()) + ")"
-                : n.pathText() + (n.getScope() == null || "compile".equals(n.getScope()) ? "" : " (" + n.getScope() + ")");
     }
 
     private @Nullable Row selected() {

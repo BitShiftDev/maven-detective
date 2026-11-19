@@ -79,7 +79,7 @@ public class DetectiveEventSpy extends AbstractEventSpy {
     private static final int MAX_REPOSITORY_EVENTS = 500;
     private static final int MAX_CHAIN = 12;
 
-    private final Logger log = LoggerFactory.getLogger("maven-detective");
+    private final Logger log;
     private final List<Map<String, Object>> events = Collections.synchronizedList(new ArrayList<Map<String, Object>>());
     /** Events kommen unter {@code -T} und aus Resolver-Threads parallel; Zugriff nur unter {@link #writerLock}. */
     private final Object writerLock = new Object();
@@ -106,6 +106,15 @@ public class DetectiveEventSpy extends AbstractEventSpy {
      * die Plugins zur Laufzeit setzen (jacoco {@code argLine}, buildnumber-Zeitstempel) – jeder Lauf sähe „geändert“ aus.
      */
     private final Map<String, String> pomHashes = new java.util.concurrent.ConcurrentHashMap<String, String>();
+
+    public DetectiveEventSpy() {
+        this(LoggerFactory.getLogger("maven-detective"));
+    }
+
+    /** Für Tests: fängt die Karte ab (im Test gibt es keine slf4j-Bindung). */
+    DetectiveEventSpy(Logger log) {
+        this.log = log;
+    }
 
     @Override
     public void init(Context context) {
@@ -162,20 +171,38 @@ public class DetectiveEventSpy extends AbstractEventSpy {
                     }
                 }
             } else if (event instanceof MavenExecutionResult) {
-                MavenExecutionResult result = (MavenExecutionResult) event;
-                for (Map<String, Object> e : result(result)) {
-                    record(e);
-                }
-                SnapshotDiff changes = snapshots && store != null
-                        ? Snapshots.record(store, request, result, mavenVersion, projectDirectory, resolvedScopes, resolvedArtifacts,
-                                pomHashes, log) : null;
-                if (report && result.hasExceptions()) {
-                    printDiagnosis(changes);
-                }
+                finish((MavenExecutionResult) event);
             }
         } catch (Throwable t) {
             // Nie den Build stören – auch nicht bei unbekannten Maven-Versionen (LinkageError)
             log.debug("Maven Detective: Event übersprungen", t);
+        }
+    }
+
+    /** Ende des Builds: Events, Schnappschuss und Karte je für sich – ein kaputtes Teil kostet nicht die anderen. */
+    private void finish(MavenExecutionResult result) {
+        try {
+            for (Map<String, Object> e : result(result)) {
+                record(e);
+            }
+        } catch (Throwable t) {
+            log.debug("Maven Detective: Build-Fehler übersprungen", t);
+        }
+        SnapshotDiff changes = null;
+        try {
+            if (snapshots && store != null) {
+                changes = Snapshots.record(store, request, result, mavenVersion, projectDirectory, resolvedScopes,
+                        resolvedArtifacts, pomHashes, log);
+            }
+        } catch (Throwable t) {
+            log.debug("Maven Detective: Schnappschuss übersprungen", t);
+        }
+        try {
+            if (report && result.hasExceptions()) {
+                printDiagnosis(changes);
+            }
+        } catch (Throwable t) {
+            log.debug("Maven Detective: Karte übersprungen", t);
         }
     }
 
@@ -237,7 +264,9 @@ public class DetectiveEventSpy extends AbstractEventSpy {
         } else if (repo != null) {
             e.put("repositoryId", repo.getId());
         }
-        e.put("failure", String.valueOf(exceptions.get(0).getMessage()));
+        Exception first = exceptions.get(0);
+        String message = message(first);
+        e.put("failure", message != null ? message : first == null ? "null" : first.getClass().getName());
         return e;
     }
 
@@ -293,39 +322,48 @@ public class DetectiveEventSpy extends AbstractEventSpy {
         return e;
     }
 
-    private static List<Map<String, Object>> result(MavenExecutionResult result) {
+    private List<Map<String, Object>> result(MavenExecutionResult result) {
         List<Map<String, Object>> out = new ArrayList<Map<String, Object>>();
         for (Throwable t : result.getExceptions()) {
-            Map<String, Object> e = event(EventLog.TYPE_BUILD_ERROR);
-            e.put("chain", chain(t));
-            List<Map<String, Object>> problems = new ArrayList<Map<String, Object>>();
-            if (t instanceof ProjectBuildingException) {
-                List<ProjectBuildingResult> results = ((ProjectBuildingException) t).getResults();
-                if (results != null) {
-                    for (ProjectBuildingResult pbr : results) {
-                        String pom = path(pbr.getPomFile());
-                        for (ModelProblem mp : pbr.getProblems()) {
-                            if (mp.getSeverity() == ModelProblem.Severity.WARNING) {
-                                continue;
-                            }
-                            Map<String, Object> pm = new LinkedHashMap<String, Object>();
-                            String source = mp.getSource();
-                            pm.put("source", source != null && source.endsWith(".xml") ? source : pom);
-                            pm.put("line", (long) mp.getLineNumber());
-                            pm.put("column", (long) mp.getColumnNumber());
-                            pm.put("severity", mp.getSeverity().name());
-                            pm.put("message", mp.getMessage());
-                            problems.add(pm);
+            try {
+                out.add(buildError(t));
+            } catch (Throwable broken) {
+                log.debug("Maven Detective: Build-Fehler übersprungen", broken);
+            }
+        }
+        return out;
+    }
+
+    private static Map<String, Object> buildError(Throwable t) {
+        Map<String, Object> e = event(EventLog.TYPE_BUILD_ERROR);
+        e.put("chain", chain(t));
+        List<Map<String, Object>> problems = new ArrayList<Map<String, Object>>();
+        if (t instanceof ProjectBuildingException) {
+            List<ProjectBuildingResult> results = ((ProjectBuildingException) t).getResults();
+            if (results != null) {
+                for (ProjectBuildingResult pbr : results) {
+                    String pom = path(pbr.getPomFile());
+                    for (ModelProblem mp : pbr.getProblems()) {
+                        ModelProblem.Severity severity = mp.getSeverity();
+                        if (severity == ModelProblem.Severity.WARNING) {
+                            continue;
                         }
+                        Map<String, Object> pm = new LinkedHashMap<String, Object>();
+                        String source = mp.getSource();
+                        pm.put("source", source != null && source.endsWith(".xml") ? source : pom);
+                        pm.put("line", (long) mp.getLineNumber());
+                        pm.put("column", (long) mp.getColumnNumber());
+                        pm.put("severity", severity == null ? null : severity.name());
+                        pm.put("message", mp.getMessage());
+                        problems.add(pm);
                     }
                 }
             }
-            if (!problems.isEmpty()) {
-                e.put("problems", problems);
-            }
-            out.add(e);
         }
-        return out;
+        if (!problems.isEmpty()) {
+            e.put("problems", problems);
+        }
+        return e;
     }
 
     private static List<Map<String, Object>> chain(Throwable t) {
@@ -335,11 +373,24 @@ public class DetectiveEventSpy extends AbstractEventSpy {
             seen.put(t, Boolean.TRUE);
             Map<String, Object> c = new LinkedHashMap<String, Object>();
             c.put("class", t.getClass().getName());
-            c.put("message", t.getMessage());
+            c.put("message", message(t));
             out.add(c);
-            t = t.getCause();
+            try {
+                t = t.getCause();
+            } catch (Throwable broken) {
+                t = null;
+            }
         }
         return out;
+    }
+
+    /** Meldung einer fremden Ausnahme; {@code null}, wenn {@code getMessage()} selbst scheitert. */
+    private static String message(Throwable t) {
+        try {
+            return t == null ? null : t.getMessage();
+        } catch (Throwable broken) {
+            return null;
+        }
     }
 
     // ---------------------------------------------------------------- Ausgabe

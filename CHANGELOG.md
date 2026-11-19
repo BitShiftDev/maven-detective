@@ -38,6 +38,11 @@
 - The console card no longer fails on a quick fix without file parameters, and the plain-ASCII card (consoles without UTF-8) writes accented letters without their accent (`é` → `e`) and an emoji as a single `?`.
 - Counts in reports use singular and plural correctly ("1 module", "1 rule", "1 line").
 - `upgrade --manage` no longer refers to a `--pin` option and says that a pinned version does not override a direct `<version>`.
+- Extension: an exception from a plugin whose message cannot be read no longer costs the card, the other build errors and the snapshot; a repository event without a readable failure and a POM problem without a severity are kept as well.
+- Extension: a read-only or full snapshot folder (e.g. a restored CI cache) no longer hides "Since the last green build" on the card.
+- IDE: the quick fix **Rebuild without offline mode** now rebuilds without `-o`/`--offline` and without the IDE's *Work offline* setting; before, it restarted the same offline run (or, for a log from the clipboard, did nothing).
+- IDE, Duplicate Classes: the button counts the exclusions it inserts; the same exclusion recommended by two findings counted twice.
+- IDE, Upgrade Simulator: a version with spaces, `=` or `:` is rejected with a message instead of being simulated and written into the POM.
 
 ## [0.1.1] - 2026-11-17
 

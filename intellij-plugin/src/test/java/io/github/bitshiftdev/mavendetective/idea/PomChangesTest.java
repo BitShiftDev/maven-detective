@@ -72,4 +72,45 @@ class PomChangesTest {
         assertTrue(plan.isEmpty());
         assertTrue(plan.problems().isEmpty());
     }
+
+    @Test
+    void fehlendeDateiIstEinProblemNichtJederFix() {
+        Path missing = Paths.get("/projekt/fehlt/pom.xml");
+        FixAction a = FixAction.of(FixAction.ADD_EXCLUSION, "a", "file", missing.toString(), "artifact", "com.acme:lib", "exclusion", "a:b");
+        FixAction b = FixAction.of(FixAction.ADD_EXCLUSION, "b", "file", missing.toString(), "artifact", "com.acme:lib", "exclusion", "c:d");
+        PomChanges.Plan plan = PomChanges.plan(List.of(a, b, exclusion("e:f")), Map.of(POM, XML)::get);
+        assertEquals(1, plan.problems().size(), plan.problems().toString());
+        assertEquals(missing, plan.failed());
+        assertEquals(List.of(POM), plan.files().stream().map(PomChanges.FileChange::file).toList());
+    }
+
+    @Test
+    void dateienInDerReihenfolgeIhresErstenFixes() {
+        Path parent = Paths.get("/projekt/pom.xml");
+        String parentXml = XML.replace("<artifactId>app</artifactId>", "<artifactId>parent</artifactId>");
+        FixAction pin = FixAction.of(FixAction.PIN_VERSION, "pin", "file", parent.toString(), "artifact", "com.acme:lib", "version", "2.0");
+        PomChanges.Plan plan = PomChanges.plan(List.of(pin, exclusion("a:b"), exclusion("c:d")),
+                Map.of(POM, XML, parent, parentXml)::get);
+        assertEquals(List.of(parent, POM), plan.files().stream().map(PomChanges.FileChange::file).toList());
+        assertEquals(3, plan.editCount());
+    }
+
+    @Test
+    void repositoryAdresseInDerSettingsXml() {
+        Path settings = Paths.get("/home/u/.m2/settings.xml");
+        String xml = "<settings><mirrors><mirror><id>m</id><url>http://repo.example.com/m2/</url>"
+                + "<mirrorOf>*</mirrorOf></mirror></mirrors></settings>";
+        FixAction https = FixAction.of(FixAction.REPLACE_URL, "https", "file", settings.toString(),
+                "search", "http://repo.example.com/m2", "replace", "https://repo.example.com/m2");
+        PomChanges.Plan plan = PomChanges.plan(List.of(https), Map.of(settings, xml)::get);
+        assertTrue(plan.files().get(0).after().contains("<url>https://repo.example.com/m2/</url>"), "Schrägstrich am Ende bleibt");
+    }
+
+    @Test
+    void fixOhneKoordinatenWirdProblem() {
+        FixAction broken = FixAction.of(FixAction.SET_SCOPE, "scope", "file", POM.toString(), "scope", "test");
+        PomChanges.Plan plan = PomChanges.plan(List.of(broken, exclusion("a:b")), Map.of(POM, XML)::get);
+        assertEquals(1, plan.problems().size());
+        assertEquals(1, plan.editCount(), "der andere Fix bleibt");
+    }
 }

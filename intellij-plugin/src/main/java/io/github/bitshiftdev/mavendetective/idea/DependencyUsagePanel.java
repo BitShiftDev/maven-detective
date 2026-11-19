@@ -12,7 +12,6 @@ import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import io.github.bitshiftdev.mavendetective.core.deps.ClassUsages;
 import io.github.bitshiftdev.mavendetective.core.deps.DepNode;
 import io.github.bitshiftdev.mavendetective.core.deps.DependencyUsage;
-import io.github.bitshiftdev.mavendetective.core.deps.PomEditor;
 import io.github.bitshiftdev.mavendetective.core.deps.PomFile;
 import io.github.bitshiftdev.mavendetective.core.deps.PomLocator;
 import io.github.bitshiftdev.mavendetective.core.diagnosis.FixAction;
@@ -32,7 +31,6 @@ import java.awt.BorderLayout;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
@@ -83,7 +81,7 @@ public final class DependencyUsagePanel extends DetectivePanel {
         apply.setEnabled(false);
         apply.addActionListener(e -> applySelected());
 
-        tree = new FindingTree<>(DependencyUsage.Finding.class, DependencyUsagePanel::render, DependencyUsagePanel::hasPomFix,
+        tree = new FindingTree<>(DependencyUsage.Finding.class, DependencyUsagePanel::render, DependencyUsageModel::hasPomFix,
                 f -> f.getModule().getName() + " " + f.getEntry().label())
                 .keyedBy(f -> List.of(f.getModule().getPom().getFile().toString(), f.getKind(), f.getEntry().ga(),
                         String.valueOf(f.getEntry().getType()), String.valueOf(f.getEntry().getClassifier())));
@@ -188,21 +186,8 @@ public final class DependencyUsagePanel extends DetectivePanel {
         if (r == null) {
             return AnalysisResults.Summary.NOT_CHECKED;
         }
-        int undeclared = 0;
-        int unused = 0;
-        int testOnly = 0;
-        for (DependencyUsage.Finding f : r.findings()) {
-            if (f.isViaBundle()) {
-                continue;
-            }
-            switch (f.getKind()) {
-                case UNDECLARED -> undeclared++;
-                case UNUSED -> unused++;
-                default -> testOnly++;
-            }
-        }
-        return AnalysisResults.Summary.done(undeclared + unused + testOnly,
-                MavenDetectiveBundle.message("summary.usage", undeclared, unused, testOnly));
+        int[] n = DependencyUsageModel.counts(r.findings(), false);
+        return AnalysisResults.Summary.done(n[0] + n[1] + n[2], MavenDetectiveBundle.message("summary.usage", n[0], n[1], n[2]));
     }
 
     /** F4: Deklaration in der POM, sonst die erste Fundstelle im Code. */
@@ -253,19 +238,10 @@ public final class DependencyUsagePanel extends DetectivePanel {
             show(null, 0);
             return;
         }
-        String q = search.getText().trim().toLowerCase(Locale.ROOT);
-        int hidden = 0;
-        for (DependencyUsage.Finding f : result.findings()) {
-            boolean visible = (withBundles() || !f.isViaBundle()) && (withUncertain || f.isCertain());
-            if (visible && !q.isEmpty() && !matches(f, q)) {
-                visible = false;
-            }
-            if (visible) {
-                rows.add(f);
-            } else {
-                hidden++;
-            }
-        }
+        PanelFilter.Filtered<DependencyUsage.Finding> shown = DependencyUsageModel.visible(result, withBundles(), withUncertain,
+                search.getText());
+        rows.addAll(shown.rows());
+        int hidden = shown.hidden();
         tree.set(FindingTree.groupBy(rows, f -> f.getModule().getName()), DependencyUsagePanel::groupDetail, f -> false);
         int unchecked = 0;
         int files = 0;
@@ -289,54 +265,18 @@ public final class DependencyUsagePanel extends DetectivePanel {
         updateApply();
     }
 
-    private static boolean matches(DependencyUsage.Finding f, String q) {
-        if (f.getModule().getName().toLowerCase(Locale.ROOT).contains(q) || f.ga().toLowerCase(Locale.ROOT).contains(q)) {
-            return true;
-        }
-        for (ClassUsages.Use u : f.getMainUses()) {
-            if (u.getClassName().toLowerCase(Locale.ROOT).contains(q)) {
-                return true;
-            }
-        }
-        for (ClassUsages.Use u : f.getTestUses()) {
-            if (u.getClassName().toLowerCase(Locale.ROOT).contains(q)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private List<DependencyUsage.Finding> selected() {
         return tree.selected();
     }
 
     /** Worauf „Beheben“ wirkt: die angekreuzten Befunde, sonst die ausgewählten. */
     private List<DependencyUsage.Finding> targets() {
-        List<DependencyUsage.Finding> checked = tree.checked();
-        return checked.isEmpty() ? selected() : checked;
-    }
-
-    private static boolean hasPomFix(DependencyUsage.Finding f) {
-        for (FixAction fix : f.fixes()) {
-            if (PomEditor.isPomFix(fix.getType())) {
-                return true;
-            }
-        }
-        return false;
+        return DependencyUsageModel.targets(tree.checked(), selected());
     }
 
     private static String groupDetail(List<DependencyUsage.Finding> items) {
-        int undeclared = 0;
-        int unused = 0;
-        int testOnly = 0;
-        for (DependencyUsage.Finding f : items) {
-            switch (f.getKind()) {
-                case UNDECLARED -> undeclared++;
-                case UNUSED -> unused++;
-                default -> testOnly++;
-            }
-        }
-        return MavenDetectiveBundle.message("summary.usage", undeclared, unused, testOnly);
+        int[] n = DependencyUsageModel.counts(items, true);
+        return MavenDetectiveBundle.message("summary.usage", n[0], n[1], n[2]);
     }
 
     /** Art als Icon + Wort (undeklariert / ungenutzt / nur in Tests, „?“ = unsicher), dann Dependency, Beleg, Vorschlag. */
@@ -427,34 +367,19 @@ public final class DependencyUsagePanel extends DetectivePanel {
 
     private void updateApply() {
         List<DependencyUsage.Finding> sel = targets();
-        int pom = 0;
-        for (DependencyUsage.Finding f : sel) {
-            for (FixAction fix : f.fixes()) {
-                if (PomEditor.isPomFix(fix.getType())) {
-                    pom++;
-                }
-            }
-        }
-        boolean jump = pom == 0 && sel.size() == 1 && !sel.get(0).fixes().isEmpty();
-        apply.setEnabled(pom > 0 || jump);
+        DependencyUsageModel.Apply plan = DependencyUsageModel.apply(sel);
+        int pom = plan.pomFixes().size();
+        boolean jump = plan.isJump();
+        apply.setEnabled(plan.isEnabled());
         apply.setText(jump ? MavenDetectiveBundle.message("fix.goto.declaration")
                 : pom > 1 ? MavenDetectiveBundle.message("usage.apply.many", pom) : MavenDetectiveBundle.message("usage.apply"));
         apply.setToolTipText(sel.size() == 1 && !sel.get(0).fixes().isEmpty() ? sel.get(0).fixes().get(0).getLabel() : null);
     }
 
     private void applySelected() {
-        List<DependencyUsage.Finding> sel = targets();
-        List<FixAction> pomFixes = new ArrayList<>();
-        FixAction open = null;
-        for (DependencyUsage.Finding f : sel) {
-            for (FixAction fix : f.fixes()) {
-                if (PomEditor.isPomFix(fix.getType())) {
-                    pomFixes.add(fix);
-                } else if (open == null && FixAction.OPEN_FILE.equals(fix.getType())) {
-                    open = fix;
-                }
-            }
-        }
+        DependencyUsageModel.Apply plan = DependencyUsageModel.apply(targets());
+        List<FixAction> pomFixes = plan.pomFixes();
+        FixAction open = plan.open();
         if (pomFixes.isEmpty()) {
             if (open != null) {
                 FixRunner.openLocation(project, open.param("file") + ":" + open.param("line"));

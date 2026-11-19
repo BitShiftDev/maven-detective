@@ -28,9 +28,7 @@ import javax.swing.JButton;
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
@@ -172,16 +170,14 @@ public final class ExclusionsPanel extends DetectivePanel {
         if (result == null) {
             return;
         }
-        for (ExclusionAudit.Finding f : result.getFindings()) {
-            if (f.getFile().equals(file) && f.getLine() == line) {
-                withAll |= !f.isRemovable();
-                if (!search.getText().isEmpty()) {
-                    search.setText("");
-                }
-                applyFilter();
-                tree.select(f);
-                return;
+        ExclusionAudit.Finding f = ExclusionsModel.at(result, file, line);
+        if (f != null) {
+            withAll |= !f.isRemovable();
+            if (!search.getText().isEmpty()) {
+                search.setText("");
             }
+            applyFilter();
+            tree.select(f);
         }
     }
 
@@ -194,13 +190,7 @@ public final class ExclusionsPanel extends DetectivePanel {
             showSelection();
             return;
         }
-        String q = search.getText().trim().toLowerCase(Locale.ROOT);
-        List<ExclusionAudit.Finding> visible = new ArrayList<>();
-        for (ExclusionAudit.Finding f : result.getFindings()) {
-            if ((withAll || f.isRemovable()) && (q.isEmpty() || matches(f, q))) {
-                visible.add(f);
-            }
-        }
+        List<ExclusionAudit.Finding> visible = ExclusionsModel.visible(result, withAll, search.getText()).rows();
         tree.set(FindingTree.groupBy(visible, f -> PomDiffView.label(f.getPom().getFile())), ExclusionsPanel::groupDetail, f -> true);
         boolean none = result.removable().isEmpty();
         if (none && !withAll) {
@@ -220,19 +210,8 @@ public final class ExclusionsPanel extends DetectivePanel {
         updateRemove();
     }
 
-    private static boolean matches(ExclusionAudit.Finding f, String q) {
-        return f.getDependency().ga().toLowerCase(Locale.ROOT).contains(q) || f.getExclusion().ga().toLowerCase(Locale.ROOT).contains(q)
-                || f.getPom().getArtifactId().toLowerCase(Locale.ROOT).contains(q);
-    }
-
     private static @Nls String groupDetail(List<ExclusionAudit.Finding> items) {
-        int removable = 0;
-        for (ExclusionAudit.Finding f : items) {
-            if (f.isRemovable()) {
-                removable++;
-            }
-        }
-        return MavenDetectiveBundle.message("exclusions.group", removable, items.size());
+        return MavenDetectiveBundle.message("exclusions.group", ExclusionsModel.removable(items), items.size());
     }
 
     /** Art als Icon + Wort, dann Exclusion und Dependency. */
@@ -304,13 +283,7 @@ public final class ExclusionsPanel extends DetectivePanel {
     }
 
     private void removeChecked() {
-        List<FixAction> fixes = new ArrayList<>();
-        for (ExclusionAudit.Finding f : tree.checked()) {
-            FixAction fix = f.fix();
-            if (fix != null) {
-                fixes.add(fix);
-            }
-        }
+        List<FixAction> fixes = ExclusionsModel.fixes(tree.checked());
         if (fixes.isEmpty()) {
             return;
         }

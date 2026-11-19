@@ -57,7 +57,6 @@ import java.awt.event.MouseEvent;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
@@ -361,11 +360,10 @@ public final class ConflictMatrixPanel extends DetectivePanel {
     private void applyFilter() {
         ConflictMatrix.Row before = selectedRow();
         if (pendingSelect != null && matrix != null) {
-            for (ConflictMatrix.Row r : matrix.getRows()) {
-                if (r.ga().equals(pendingSelect)) {
-                    before = r;
-                    onlyDivergent &= r.isDivergent();
-                }
+            ConflictMatrixModel.Preselect p = ConflictMatrixModel.preselect(matrix, pendingSelect, onlyDivergent);
+            if (p.row() != null) {
+                before = p.row();
+                onlyDivergent = p.onlyDivergent();
             }
             pendingSelect = null;
         }
@@ -378,12 +376,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
             showRow(null);
             return;
         }
-        String q = search.getText().trim().toLowerCase(Locale.ROOT);
-        for (ConflictMatrix.Row r : matrix.getRows()) {
-            if ((!onlyDivergent || r.isDivergent()) && (q.isEmpty() || r.ga().toLowerCase(Locale.ROOT).contains(q))) {
-                rows.add(r);
-            }
-        }
+        rows.addAll(ConflictMatrixModel.visible(matrix, onlyDivergent, search.getText()).rows());
         // Breiten nur bei neuen Spalten setzen – sonst setzte jeder Tastendruck in der Suche sie zurück
         if (model.set(matrix.getModules(), rows)) {
             applyColumnWidths();
@@ -400,14 +393,7 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         }
         setStatus(MavenDetectiveBundle.message("matrix.status", matrix.getModules().size(), divergent)
                 + (matrix.isPartial() ? " – " + MavenDetectiveBundle.message("matrix.status.partial") : ""));
-        int idx = before == null ? -1 : rows.indexOf(before);
-        if (idx < 0) {
-            for (int i = 0; i < rows.size(); i++) {
-                if (before != null && rows.get(i).ga().equals(before.ga())) {
-                    idx = i;
-                }
-            }
-        }
+        int idx = ConflictMatrixModel.indexOf(rows, before);
         if (idx >= 0) {
             table.getSelectionModel().setSelectionInterval(idx, idx);
             table.scrollRectToVisible(table.getCellRect(idx, 0, true));
@@ -469,9 +455,8 @@ public final class ConflictMatrixPanel extends DetectivePanel {
                 }
                 sb.append("</ul>");
             }
-            List<String> vs = row.versions();
-            for (int i = vs.size() - 1; i >= 0; i--) {
-                versions.addItem(vs.get(i));
+            for (String v : ConflictMatrixModel.pinChoices(row)) {
+                versions.addItem(v);
             }
             versions.setSelectedItem(p.getVersion());
             pin.setText(MavenDetectiveBundle.message("matrix.pin.in", p.getTarget().getArtifactId()));
@@ -511,17 +496,11 @@ public final class ConflictMatrixPanel extends DetectivePanel {
         ConflictMatrix.Module m = selectedModule();
         ConflictMatrix.Cell c = m == null ? null : row.cell(m);
         ConflictMatrix.Pin p = row.getPin();
-        if (p != null) {
-            String target = p.getTarget().getArtifactId();
-            if (c != null) {
-                String v = c.getVersion();
-                out.add(DumbAwareAction.create(MavenDetectiveBundle.message("matrix.pin.version", v, target), AllIcons.General.Pin_tab,
-                        e -> pin(row, v)));
-            }
-            if (c == null || !c.getVersion().equals(p.getVersion())) {
-                out.add(DumbAwareAction.create(MavenDetectiveBundle.message("matrix.pin.suggested", p.getVersion(), target),
-                        AllIcons.General.Pin_tab, e -> pin(row, p.getVersion())));
-            }
+        String cellVersion = c == null ? null : c.getVersion();
+        for (String v : ConflictMatrixModel.pinOffers(row, cellVersion)) {
+            String key = v.equals(cellVersion) ? "matrix.pin.version" : "matrix.pin.suggested";
+            out.add(DumbAwareAction.create(MavenDetectiveBundle.message(key, v, p.getTarget().getArtifactId()), AllIcons.General.Pin_tab,
+                    e -> pin(row, v)));
         }
         if (c != null) {
             out.add(DumbAwareAction.create(MavenDetectiveBundle.message("matrix.why.module", m.getName()), AllIcons.Actions.Help,

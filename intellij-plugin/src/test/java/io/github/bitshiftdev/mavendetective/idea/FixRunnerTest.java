@@ -99,6 +99,31 @@ class FixRunnerTest {
         assertTrue(PomEditor.isPomFix(FixAction.REMOVE_EXCLUSION));
     }
 
+    /** „Ohne Offline-Modus neu bauen“: {@code removeArgs} nimmt ganze Optionen heraus, nie Teile anderer. */
+    @org.junit.jupiter.params.ParameterizedTest(name = "\"{0}\" ohne \"{1}\" → \"{2}\"")
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', emptyValue = "", value = {
+            "clean install -o|-o --offline|clean install",
+            "-o clean --offline install -U|-o --offline|clean install -U",
+            "clean install|-o --offline|clean install",
+            "clean -offline -Dskip=-o install|-o --offline|clean -offline -Dskip=-o install",
+            "'  clean   -o   install  '|-o|clean install",
+            "|-o|",
+            "clean -o|  |clean -o",
+    })
+    void optionenWerdenAlsGanzeWoerterEntfernt(String line, String remove, String expected) {
+        assertEquals(expected, FixRunner.withoutArgs(line, remove));
+    }
+
+    @Test
+    void entfernenTrifftGoalsEinzeln() {
+        assertEquals(List.of("clean", "install"), FixRunner.withoutArgs(List.of("clean", "-o", "install", "--offline"), "-o --offline"));
+        assertEquals(List.of("clean", "install -U"), FixRunner.withoutArgs(List.of("clean", "install -o -U"), "-o"));
+        assertTrue(FixRunner.removesOffline("-o --offline"));
+        assertTrue(FixRunner.removesOffline("--offline"));
+        assertFalse(FixRunner.removesOffline("-U"));
+        assertFalse(FixRunner.removesOffline(null));
+    }
+
     @Test
     void meldungenEscapenKlartext() {
         assertEquals("&lt;server&gt; fehlt<br>Zeile 2", FixRunner.plainToHtml("<server> fehlt\nZeile 2"));

@@ -9,6 +9,7 @@ import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
@@ -129,19 +130,31 @@ final class IdeMaven {
 
     /**
      * Startet eine temporäre Kopie der Maven-Run-Konfiguration mit zusätzlichen Kommandozeilen-Optionen (z. B.
-     * {@code -U}); die gespeicherte Konfiguration bleibt unverändert. {@code false}, wenn es kein Maven-Lauf ist.
+     * {@code -U}) und ohne die aus {@code remove} (z. B. {@code -o --offline}, dann auch ohne „Work offline“ der
+     * Maven-Einstellungen); die gespeicherte Konfiguration bleibt unverändert. {@code false}, wenn es kein Maven-Lauf ist.
      */
-    static boolean runWithExtraArgs(@NotNull Project project, @Nullable RunConfiguration run, @NotNull String args) {
+    static boolean runWithChangedArgs(@NotNull Project project, @Nullable RunConfiguration run, @NotNull String args,
+                                      @NotNull String remove) {
         MavenRunConfiguration cfg = maven(run);
         if (cfg == null) {
             return false;
         }
         MavenRunnerParameters params = cfg.getRunnerParameters().clone();
+        if (!remove.isBlank()) {
+            params.setGoals(FixRunner.withoutArgs(params.getGoals(), remove));
+            params.setCmdOptions(FixRunner.withoutArgs(params.getCmdOptions(), remove));
+        }
         String old = params.getCmdOptions();
         if (!args.isBlank()) {
             params.setCmdOptions(old == null || old.isBlank() ? args.trim() : old.trim() + " " + args.trim());
         }
-        org.jetbrains.idea.maven.execution.MavenRunConfigurationType.runConfiguration(project, params, cfg.getGeneralSettings(),
+        MavenGeneralSettings general = cfg.getGeneralSettings();
+        if (FixRunner.removesOffline(remove)) {
+            MavenGeneralSettings base = general != null ? general : MavenProjectsManager.getInstance(project).getGeneralSettings();
+            general = base.clone();
+            general.setWorkOffline(false);
+        }
+        org.jetbrains.idea.maven.execution.MavenRunConfigurationType.runConfiguration(project, params, general,
                 cfg.getRunnerSettings(), null);
         return true;
     }
@@ -345,6 +358,11 @@ final class IdeMaven {
 
     /** IntelliJ-Modul zu einer Maven-POM; {@code null}, wenn nicht importiert. */
     static @Nullable Module module(@NotNull Project project, @NotNull Path pom) {
+        TestModel t = testModel;
+        if (t != null) {
+            Module[] modules = ModuleManager.getInstance(project).getModules();
+            return t.pom().equals(pom) && modules.length > 0 ? modules[0] : null;
+        }
         try {
             return read(() -> {
                 MavenProjectsManager manager = MavenProjectsManager.getInstance(project);

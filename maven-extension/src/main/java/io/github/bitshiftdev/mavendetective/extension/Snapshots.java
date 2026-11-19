@@ -15,6 +15,7 @@ import org.apache.maven.project.MavenProject;
 import org.apache.maven.settings.Mirror;
 import org.slf4j.Logger;
 
+import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -43,9 +44,16 @@ final class Snapshots {
             Path project = Paths.get(projectDirectory);
             BuildSnapshot current = build(request, result, mavenVersion, projectDirectory, resolvedScopes, resolvedArtifacts, pomHashes)
                     .setSuccessful(!result.hasExceptions());
-            store.saveLatest(project, current);
+            try {
+                store.saveLatest(project, current);
+                if (!result.hasExceptions()) {
+                    store.saveGreen(project, current);
+                }
+            } catch (IOException | RuntimeException e) {
+                // Ablage schreibgeschützt (CI-Cache) oder voll: der Vergleich mit dem grünen Lauf geht trotzdem
+                log.debug("Maven Detective: Schnappschuss nicht gespeichert", e);
+            }
             if (!result.hasExceptions()) {
-                store.saveGreen(project, current);
                 return null;
             }
             BuildSnapshot green = store.loadGreen(project, BuildSnapshot.ORIGIN_EXTENSION);

@@ -145,6 +145,11 @@ public final class ClassUsages {
         return new ArrayList<Wildcard>(inTest ? testWildcards : mainWildcards);
     }
 
+    /** Erste Fundstelle der Klasse, sonst {@code null}. */
+    public synchronized Use find(String className, boolean inTest) {
+        return (inTest ? test : main).get(className);
+    }
+
     /** Für Tests und Ausgabe: alle genannten Namen. */
     public synchronized Set<String> names(boolean inTest) {
         return Collections.unmodifiableSet(new LinkedHashSet<String>((inTest ? test : main).keySet()));

@@ -63,7 +63,7 @@ final class FixRunner {
                 case FixAction.OPEN_FILE -> openLocation(project, fix.param("file") + ":" + fix.param("line"));
                 case FixAction.DELETE_FILES, FixAction.REPLACE_IN_FILE, FixAction.SET_JVM_OPTION -> runFileFix(project, fix, result);
                 // „Neu bauen“ ist selbst der Fix – startet immer, auch wenn Neubau nach Fixes abgeschaltet ist
-                case FixAction.REBUILD -> restart(project, result, fix.param("args"), fix.getLabel());
+                case FixAction.REBUILD -> restart(project, result, fix.param("args"), fix.param("removeArgs"), fix.getLabel());
                 case FixAction.SWITCH_JDK -> switchJdk(project, result, fix);
                 case FixAction.INSERT_PLUGIN_VERSION -> insertPluginVersion(project, result, fix);
                 case FixAction.PIN_VERSION -> {
@@ -219,39 +219,83 @@ final class FixRunner {
             NotificationGroupManager.getInstance().getNotificationGroup(BuildDoctorService.TOOL_WINDOW_ID)
                     .createNotification(plainToHtml(MavenDetectiveBundle.message("fix.rebuild.off", fixLabel)), NotificationType.INFORMATION)
                     .addAction(NotificationAction.createSimpleExpiring(MavenDetectiveBundle.message("fix.rebuild.now"),
-                            () -> restart(project, result, args, fixLabel)))
+                            () -> restart(project, result, args, null, fixLabel)))
                     .notify(project);
             return;
         }
-        restart(project, result, args, fixLabel);
+        restart(project, result, args, null, fixLabel);
     }
 
     /** Goal für den kopierten Befehl, wenn der Log keine nennt. */
     private static final String DEFAULT_GOAL = "verify";
 
-    /** Neubau wie bei {@link #rebuild}, ohne die Einstellung zu fragen. */
-    private static void restart(Project project, BuildDoctorService.Result result, String args, String fixLabel) {
+    /**
+     * Neubau wie bei {@link #rebuild}, ohne die Einstellung zu fragen. {@code remove}: Optionen, die der Neubau
+     * nicht mehr haben darf ({@code -o --offline}) – dann nie derselbe Lauf unverändert, sondern eine Kopie ohne sie.
+     */
+    private static void restart(Project project, BuildDoctorService.Result result, String args, @Nullable String remove,
+                                String fixLabel) {
         boolean hasArgs = args != null && !args.isBlank();
-        if (!hasArgs && result.environment() != null) {
+        boolean removes = remove != null && !remove.isBlank();
+        if (!hasArgs && !removes && result.environment() != null) {
             BuildDoctorService.getInstance(project).expectCheck(fixLabel, result);
             ExecutionUtil.restart(result.environment());
             return;
         }
         if (result.configuration() != null) {
             BuildDoctorService.getInstance(project).expectCheck(fixLabel, result);
-            if (IdeMaven.runWithExtraArgs(project, result.configuration(), hasArgs ? args : "")) {
+            if (IdeMaven.runWithChangedArgs(project, result.configuration(), hasArgs ? args : "", removes ? remove : "")) {
                 return;
             }
         }
-        if (hasArgs) {
-            List<String> goals = result.failure().getSession().getGoals();
+        if (hasArgs || removes) {
+            List<String> goals = withoutArgs(result.failure().getSession().getGoals(), remove);
             // ein Log aus der Zwischenablage nennt die Goals nicht – „mvn -U“ allein täte nichts Sinnvolles
             String shown = goals.isEmpty() ? DEFAULT_GOAL : String.join(" ", goals);
-            String cmd = "mvn " + shown + " " + args;
+            String cmd = "mvn " + shown + (hasArgs ? " " + args : "");
             CopyPasteManager.getInstance().setContents(new StringSelection(cmd.replaceAll(" +", " ").trim()));
-            notify(project, goals.isEmpty() ? MavenDetectiveBundle.message("fix.rebuild.copied.goals", args, DEFAULT_GOAL)
-                    : MavenDetectiveBundle.message("fix.rebuild.copied", args), NotificationType.INFORMATION);
+            String with = hasArgs ? MavenDetectiveBundle.message("fix.rebuild.with", args.trim()) : null;
+            String without = removes ? MavenDetectiveBundle.message("fix.rebuild.without", remove.trim()) : null;
+            String change = with != null && without != null ? with + ", " + without : with != null ? with : without;
+            notify(project, goals.isEmpty() ? MavenDetectiveBundle.message("fix.rebuild.copied.goals", change, DEFAULT_GOAL)
+                    : MavenDetectiveBundle.message("fix.rebuild.copied", change), NotificationType.INFORMATION);
         }
+    }
+
+    /** {@code line} ohne die Optionen aus {@code remove} – nur ganze, durch Leerraum getrennte Wörter. */
+    static String withoutArgs(@Nullable String line, @Nullable String remove) {
+        if (line == null || remove == null || remove.isBlank()) {
+            return line;
+        }
+        List<String> drop = List.of(remove.trim().split("\\s+"));
+        StringBuilder out = new StringBuilder();
+        for (String token : line.trim().split("\\s+")) {
+            if (!token.isEmpty() && !drop.contains(token)) {
+                out.append(out.length() == 0 ? "" : " ").append(token);
+            }
+        }
+        return out.toString();
+    }
+
+    /** Goals einer Run-Konfiguration (je Eintrag ein Wort, manchmal mehrere) ohne die Optionen aus {@code remove}. */
+    static List<String> withoutArgs(List<String> goals, @Nullable String remove) {
+        List<String> out = new ArrayList<>();
+        for (String g : goals) {
+            String left = withoutArgs(g, remove);
+            if (left != null && !left.isBlank()) {
+                out.add(left);
+            }
+        }
+        return out;
+    }
+
+    /** Nimmt der Neubau den Offline-Modus weg? Dann gilt auch die IDE-Einstellung „Work offline“ nicht. */
+    static boolean removesOffline(@Nullable String remove) {
+        if (remove == null) {
+            return false;
+        }
+        List<String> drop = List.of(remove.trim().split("\\s+"));
+        return drop.contains("-o") || drop.contains("--offline");
     }
 
     /**

@@ -34,9 +34,7 @@ import java.awt.BorderLayout;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 
 import static io.github.bitshiftdev.mavendetective.idea.ui.Html.esc;
 
@@ -280,24 +278,12 @@ public final class DuplicateClassesPanel extends DetectivePanel {
             show(null);
             return;
         }
-        String q = search.getText().trim().toLowerCase(Locale.ROOT);
-        int hidden = 0;
-        for (DuplicateClasses.Clash c : result.clashes()) {
-            boolean visible = (withTests || c.isMain()) && (withIdentical || !c.isIdentical());
-            if (visible && !q.isEmpty() && !matches(c, q)) {
-                visible = false;
-            }
-            if (visible) {
-                rows.add(c);
-            } else {
-                hidden++;
-            }
-        }
+        PanelFilter.Filtered<DuplicateClasses.Clash> shown = DuplicateClassesModel.visible(result, withTests, withIdentical,
+                search.getText());
+        rows.addAll(shown.rows());
+        int hidden = shown.hidden();
         tree.set(FindingTree.groupBy(rows, c -> c.getModule().getName()), DuplicateClassesPanel::groupDetail, c -> false);
-        int unreadable = 0;
-        for (DuplicateClasses.ModuleResult m : result.getModules()) {
-            unreadable += m.getUnreadable().size();
-        }
+        int unreadable = DuplicateClassesModel.unreadable(result);
         int n = result.clashes().size();
         if (n == 0) {
             intro(tree.component(), MavenDetectiveBundle.message("duplicates.empty.none"), null, null);
@@ -313,53 +299,17 @@ public final class DuplicateClassesPanel extends DetectivePanel {
         updateApplyChecked();
     }
 
-    private static boolean matches(DuplicateClasses.Clash c, String q) {
-        if (c.getModule().getName().toLowerCase(Locale.ROOT).contains(q)) {
-            return true;
-        }
-        for (ModuleClasspath.Entry e : c.getJars()) {
-            if (e.ga().toLowerCase(Locale.ROOT).contains(q)) {
-                return true;
-            }
-        }
-        for (String cls : c.getClasses()) {
-            if (cls.toLowerCase(Locale.ROOT).contains(q)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private @Nullable DuplicateClasses.Clash selected() {
         return tree.single();
     }
 
     /** Ankreuzbar = es gibt eine Empfehlung, die sich per Exclusion umsetzen lässt. */
     private static boolean canExclude(DuplicateClasses.Clash c) {
-        return !exclusionsFor(c).isEmpty();
-    }
-
-    /** Exclusions, die die Empfehlung umsetzen ({@code drop} raus); leer, wenn es keine gibt. */
-    private static List<FixAction> exclusionsFor(DuplicateClasses.Clash c) {
-        List<FixAction> out = new ArrayList<>();
-        if (c.getDrop() != null) {
-            for (FixAction f : c.fixesFor(c.getDrop())) {
-                if (FixAction.ADD_EXCLUSION.equals(f.getType())) {
-                    out.add(f);
-                }
-            }
-        }
-        return out;
+        return !DuplicateClassesModel.exclusionsFor(c).isEmpty();
     }
 
     private static String groupDetail(List<DuplicateClasses.Clash> items) {
-        int differing = 0;
-        for (DuplicateClasses.Clash c : items) {
-            if (c.isMain() && !c.isIdentical()) {
-                differing++;
-            }
-        }
-        return MavenDetectiveBundle.message("duplicates.group", items.size(), differing);
+        return MavenDetectiveBundle.message("duplicates.group", items.size(), DuplicateClassesModel.differing(items));
     }
 
     /** Art als Icon + Wort (verschieden / inhaltsgleich / nur Tests), dann JARs, Klassen und Empfehlung. */
@@ -380,24 +330,15 @@ public final class DuplicateClassesPanel extends DetectivePanel {
     }
 
     private void updateApplyChecked() {
-        int n = 0;
-        for (DuplicateClasses.Clash c : tree.checked()) {
-            n += exclusionsFor(c).size();
-        }
+        // dieselbe Zahl, die „applyChecked“ einfügt (doppelte Exclusions zählen einmal)
+        int n = DuplicateClassesModel.exclusionsFor(tree.checked()).size();
         applyChecked.setEnabled(n > 0);
         applyChecked.setText(MavenDetectiveBundle.message("duplicates.exclude.checked", n));
     }
 
     /** Für alle angekreuzten Funde die Empfehlung umsetzen – ein Undo-Schritt, mit Vorschau. */
     private void applyChecked() {
-        List<FixAction> fixes = new ArrayList<>();
-        for (DuplicateClasses.Clash c : tree.checked()) {
-            for (FixAction f : exclusionsFor(c)) {
-                if (!containsSame(fixes, f)) {
-                    fixes.add(f);
-                }
-            }
-        }
+        List<FixAction> fixes = DuplicateClassesModel.exclusionsFor(tree.checked());
         if (fixes.isEmpty()) {
             return;
         }
@@ -406,17 +347,6 @@ public final class DuplicateClassesPanel extends DetectivePanel {
             showText("<p>" + MavenDetectiveBundle.message("duplicates.applied", n) + "</p>");
             applyChecked.setEnabled(false);
         }
-    }
-
-    /** Dieselbe Exclusion bei derselben Dependency derselben POM nur einmal einfügen (PomEditor lehnt Duplikate ab). */
-    private static boolean containsSame(List<FixAction> fixes, FixAction f) {
-        for (FixAction g : fixes) {
-            if (Objects.equals(g.param("file"), f.param("file")) && Objects.equals(g.param("artifact"), f.param("artifact"))
-                    && Objects.equals(g.param("exclusion"), f.param("exclusion"))) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private void show(@Nullable DuplicateClasses.Clash c) {
