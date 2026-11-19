@@ -132,8 +132,23 @@ final class RemoteRepositories {
         return null;
     }
 
+    /** Gleiche URL bis auf Slashes am Ende und Groß/Klein in Schema und Host – der Pfad unterscheidet Groß/Klein. */
     static boolean sameUrl(String a, String b) {
-        return trim(a).equalsIgnoreCase(trim(b));
+        String x = trim(a);
+        String y = trim(b);
+        int hx = authorityEnd(x);
+        int hy = authorityEnd(y);
+        return x.substring(0, hx).equalsIgnoreCase(y.substring(0, hy)) && x.substring(hx).equals(y.substring(hy));
+    }
+
+    /** Index hinter Schema und Host ({@code https://Nexus:8443}); 0 ohne {@code ://}. */
+    private static int authorityEnd(String url) {
+        int scheme = url.indexOf("://");
+        if (scheme < 0) {
+            return 0;
+        }
+        int slash = url.indexOf('/', scheme + 3);
+        return slash < 0 ? url.length() : slash;
     }
 
     private static String trim(String url) {
@@ -275,8 +290,8 @@ final class RemoteRepositories {
         }
         Item item = Item.error(Topic.REPOSITORY, Texts.t("preflight.remote.http", r.label(),
                 Text.maskUserInfo(r.viaNexus ? r.effectiveUrl() : r.url)));
-        if (!r.viaNexus && r.pom != null && PreflightChecks.isRemoteHttp(r.url)) {
-            String https = "https://" + r.url.substring("http://".length());
+        String https = PreflightChecks.https(r.url);
+        if (!r.viaNexus && r.pom != null && PreflightChecks.isRemoteHttp(r.url) && https != null) {
             item.evidence(Evidence.file(Texts.t("check.http.pom.evidence"), r.pom.file.toString(), r.line))
                     .fix(FixAction.of(FixAction.REPLACE_URL, Texts.t("preflight.switch.https"),
                             "file", r.pom.file.toString(), "search", r.url, "replace", https))

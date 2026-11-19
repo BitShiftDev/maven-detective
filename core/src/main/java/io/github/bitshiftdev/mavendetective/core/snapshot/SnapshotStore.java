@@ -224,7 +224,7 @@ public final class SnapshotStore {
         if (a == null || b == null) {
             return a != null ? a : b;
         }
-        return String.valueOf(a.getCreatedAt()).compareTo(String.valueOf(b.getCreatedAt())) >= 0 ? a : b;
+        return newerOrSame(a.getCreatedAt(), b.getCreatedAt()) ? a : b;
     }
 
     /**
@@ -238,6 +238,34 @@ public final class SnapshotStore {
         }
         BuildSnapshot green = loadGreen(projectDirectory, latest.getOrigin());
         return green == null ? null : SnapshotDiff.compare(green, latest);
+    }
+
+    /**
+     * Ist der Zeitpunkt {@code a} mindestens so jung wie {@code b}? Mit Versatz geschriebene Zeitpunkte ({@link #now()})
+     * werden als Zeitpunkt verglichen – als Text läge 02:30+02:00 nach 02:10+01:00 (Rückstellung auf Winterzeit), und
+     * ein Lauf in UTC (CI, {@code -Duser.timezone}) stünde neben einem lokalen falsch. Unlesbares als Text; fehlt ein
+     * Zeitpunkt, ist er der ältere.
+     */
+    static boolean newerOrSame(String a, String b) {
+        if (a == null || b == null) {
+            return b == null;
+        }
+        Date da = parse(a);
+        Date db = parse(b);
+        return da != null && db != null ? da.getTime() >= db.getTime() : a.compareTo(b) >= 0;
+    }
+
+    private static Date parse(String timestamp) {
+        for (String pattern : new String[] {"yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "yyyy-MM-dd'T'HH:mm:ssXXX"}) {
+            SimpleDateFormat f = new SimpleDateFormat(pattern, Locale.ROOT);
+            f.setLenient(false);
+            java.text.ParsePosition pos = new java.text.ParsePosition(0);
+            Date d = f.parse(timestamp, pos);
+            if (d != null && pos.getIndex() == timestamp.length()) {
+                return d;
+            }
+        }
+        return null;
     }
 
     private static String origin(BuildSnapshot s) {
@@ -278,7 +306,7 @@ public final class SnapshotStore {
                 continue;
             }
             BuildSnapshot s = read(greenFile(projectDirectory, origin));
-            if (s != null && (best == null || String.valueOf(s.getCreatedAt()).compareTo(String.valueOf(best.getCreatedAt())) > 0)) {
+            if (s != null && (best == null || !newerOrSame(best.getCreatedAt(), s.getCreatedAt()))) {
                 best = s;
             }
         }

@@ -88,6 +88,8 @@ public final class BuildSetup {
 
     private static final Pattern WRAPPER_VERSION = Pattern.compile("apache-maven-([0-9][^/]*?)-bin\\.(?:zip|tar\\.gz)");
     private static final Pattern MAVEN_CORE_JAR = Pattern.compile("maven-core-([0-9][^/]*)\\.jar");
+    /** Höchstens 9 Ziffern je Teil, damit {@code parseInt} nie überläuft; mehr gilt als unbekannt. */
+    private static final Pattern JAVA_MAJOR = Pattern.compile("^(\\d{1,9})(?:\\.(\\d{1,9}))?(?!\\d)");
     private static final Pattern JAVA_VERSION = Pattern.compile("^JAVA_VERSION=\"?([^\"]+)\"?\\s*$", Pattern.MULTILINE);
 
     /**
@@ -106,10 +108,11 @@ public final class BuildSetup {
                 && (Files.isRegularFile(projectDir.resolve("mvnw")) || Files.isRegularFile(projectDir.resolve("mvnw.cmd")));
         if (wrapperProps != null && Files.isRegularFile(wrapperProps)) {
             Properties p = load(wrapperProps);
-            Matcher m = WRAPPER_VERSION.matcher(p.getProperty("distributionUrl", ""));
+            String distributionUrl = p.getProperty("distributionUrl", "").trim();
+            Matcher m = WRAPPER_VERSION.matcher(distributionUrl);
             s.mavenVersion = m.find() ? m.group(1) : null;
             s.mavenSource = hasWrapperScript ? Texts.t("setup.wrapper.script") : Texts.t("setup.wrapper.no.script");
-            Path dist = wrapperDistribution(s.mavenVersion, userHome, env);
+            Path dist = wrapperDistribution(s.mavenVersion, distributionUrl, userHome, env);
             s.mavenHome = dist == null ? null : dist.toString();
         } else {
             Path home = mavenHomeFromEnv(env);
@@ -181,8 +184,13 @@ public final class BuildSetup {
      * {@code ~/.m2/wrapper/dists/apache-maven-X-bin/<hash>/apache-maven-X}, das Skript von 3.3.x
      * ({@code only-script}, Standard von {@code mvn wrapper:wrapper}) nach
      * {@code ~/.m2/wrapper/dists/apache-maven-X/<hash>}. {@code null}, solange der Wrapper es noch nicht geladen hat.
+     *
+     * <p>Mehrere {@code <hash>}-Ordner gibt es, wenn sich die {@code distributionUrl} geändert hat (anderer Mirror,
+     * Firmen-Distribution mit eigener {@code conf/settings.xml}). Gewählt wird der Ordner zur aktuellen URL – der Hash,
+     * den {@code mvnw} (Java-{@code hashCode} als Hex), {@code mvnw.cmd} (SHA-256, früher MD5, als Hex) oder der Wrapper bis 3.2 (MD5 zur
+     * Basis 36) daraus bildet; sonst der erste in fester Reihenfolge.
      */
-    static Path wrapperDistribution(String version, Path userHome, Map<String, String> env) {
+    static Path wrapperDistribution(String version, String distributionUrl, Path userHome, Map<String, String> env) {
         if (version == null) {
             return null;
         }
@@ -193,7 +201,17 @@ public final class BuildSetup {
             return null;
         }
         Path root = base.resolve("wrapper").resolve("dists");
-        for (String name : new String[] {"apache-maven-" + version + "-bin", "apache-maven-" + version}) {
+        String[] names = {"apache-maven-" + version + "-bin", "apache-maven-" + version};
+        List<String> hashes = wrapperHashes(distributionUrl);
+        for (String name : names) {
+            for (String hash : hashes) {
+                Path found = home(root.resolve(name).resolve(hash), version);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        for (String name : names) {
             Path found = unpacked(root.resolve(name), version);
             if (found != null) {
                 return found;
@@ -202,24 +220,71 @@ public final class BuildSetup {
         return null;
     }
 
+    /** Ordnernamen, unter denen die Wrapper eine Distribution zu dieser URL ablegen. */
+    static List<String> wrapperHashes(String distributionUrl) {
+        List<String> out = new ArrayList<String>();
+        if (distributionUrl == null || distributionUrl.isEmpty()) {
+            return out;
+        }
+        out.add(Integer.toHexString(distributionUrl.hashCode()));
+        byte[] url = distributionUrl.getBytes(StandardCharsets.UTF_8);
+        byte[] sha256 = digest("SHA-256", url);
+        byte[] md5 = digest("MD5", url);
+        if (sha256 != null) {
+            out.add(hex(sha256));
+        }
+        if (md5 != null) {
+            out.add(hex(md5));
+            out.add(new java.math.BigInteger(1, md5).toString(36));
+        }
+        return out;
+    }
+
+    private static byte[] digest(String algorithm, byte[] data) {
+        try {
+            return java.security.MessageDigest.getInstance(algorithm).digest(data);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return null;   // MD5 fehlt z. B. in einer JVM im FIPS-Modus
+        }
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(Character.forDigit((b >> 4) & 0xf, 16)).append(Character.forDigit(b & 0xf, 16));
+        }
+        return sb.toString();
+    }
+
     private static Path unpacked(Path dists, String version) {
         if (!Files.isDirectory(dists)) {
             return null;
         }
+        List<Path> hashes = new ArrayList<Path>();
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(dists)) {
             for (Path hash : ds) {
-                Path home = hash.resolve("apache-maven-" + version);
-                if (Files.isDirectory(home.resolve("conf"))) {
-                    return home;
-                }
-                if (Files.isDirectory(hash.resolve("conf"))) {
-                    return hash;
-                }
+                hashes.add(hash);
             }
         } catch (IOException ignored) {
             // nicht lesbar
         }
+        Collections.sort(hashes);
+        for (Path hash : hashes) {
+            Path found = home(hash, version);
+            if (found != null) {
+                return found;
+            }
+        }
         return null;
+    }
+
+    /** Entpacktes Maven in einem Hash-Ordner: Wrapper bis 3.2 mit Unterordner, {@code only-script} direkt. */
+    private static Path home(Path hash, String version) {
+        Path home = hash.resolve("apache-maven-" + version);
+        if (Files.isDirectory(home.resolve("conf"))) {
+            return home;
+        }
+        return Files.isDirectory(hash.resolve("conf")) ? hash : null;
     }
 
     /** Versionsnummer aus {@code <javaHome>/release}, z. B. "21.0.4". */
@@ -256,7 +321,7 @@ public final class BuildSetup {
         if (version == null) {
             return -1;
         }
-        Matcher m = Pattern.compile("^(\\d+)(?:\\.(\\d+))?").matcher(version.trim());
+        Matcher m = JAVA_MAJOR.matcher(version.trim());
         if (!m.find()) {
             return -1;
         }

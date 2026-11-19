@@ -28,6 +28,9 @@ import java.util.regex.Pattern;
 public final class MavenSettings {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}$]+)}");
+    /** {@code RemoteRepository.URL_PATTERN} aus Maven Resolver: Protokoll (auch {@code dav:http}) und Host. */
+    private static final Pattern REPOSITORY_URL =
+            Pattern.compile("([^:/]+(:[^:/]{2,}+(?=://))?):(//([^@/]*@)?([^/:]+))?.*");
 
     public static final class Mirror {
         public final String id;
@@ -45,32 +48,55 @@ public final class MavenSettings {
             return new Mirror(id, url, mirrorOf);
         }
 
-        /** Mavens mirrorOf-Logik: {@code *}, {@code external:*}, {@code external:http:*}, Listen, {@code !id}. */
+        /**
+         * Mavens mirrorOf-Logik ({@code DefaultMirrorSelector.matchPattern}): {@code *}, {@code external:*},
+         * {@code external:http:*}, Listen, {@code !id}. Wie Maven ohne {@code trim} je Listeneintrag – bei
+         * {@code "a, b"} greift der Mirror für {@code b} nicht – und ein exakter Treffer beendet die Liste.
+         */
         public boolean matches(String repositoryId, String repositoryUrl) {
             if (mirrorOf == null || repositoryId == null) {
                 return false;
             }
+            if ("*".equals(mirrorOf) || mirrorOf.equals(repositoryId)) {
+                return true;
+            }
             boolean matched = false;
-            for (String raw : mirrorOf.split(",")) {
-                String p = raw.trim();
-                if (p.startsWith("!")) {
+            for (String p : mirrorOf.split(",")) {
+                if (p.length() > 1 && p.startsWith("!")) {
                     if (p.substring(1).equals(repositoryId)) {
                         return false;
                     }
-                } else if (p.equals(repositoryId) || p.equals("*")) {
-                    matched = true;
+                } else if (p.equals(repositoryId)) {
+                    return true;
                 } else if (p.equals("external:*")) {
-                    matched |= !isLocal(repositoryUrl);
+                    matched |= isExternal(repositoryUrl);
                 } else if (p.equals("external:http:*")) {
-                    matched |= repositoryUrl != null && repositoryUrl.startsWith("http://") && !isLocal(repositoryUrl);
+                    matched |= isExternalHttp(repositoryUrl);
+                } else if (p.equals("*")) {
+                    matched = true;
                 }
             }
             return matched;
         }
 
-        private static boolean isLocal(String url) {
-            return url == null || url.startsWith("file:") || url.contains("://localhost") || url.contains("://127.0.0.1");
+        private static boolean isExternal(String url) {
+            return !isLocalHost(repositoryHost(url)) && !"file".equalsIgnoreCase(repositoryProtocol(url));
         }
+    }
+
+    /**
+     * Repository, das Maven mit {@code external:http:*} trifft – so sperrt der {@code maven-default-http-blocker}
+     * seit 3.8.1: http (auch {@code dav:http}), Host weder {@code localhost} noch {@code 127.0.0.1}.
+     */
+    public static boolean isExternalHttp(String url) {
+        String protocol = repositoryProtocol(url);
+        return ("http".equalsIgnoreCase(protocol) || "dav".equalsIgnoreCase(protocol)
+                || "dav:http".equalsIgnoreCase(protocol) || "dav+http".equalsIgnoreCase(protocol))
+                && !isLocalHost(repositoryHost(url));
+    }
+
+    private static boolean isLocalHost(String host) {
+        return "localhost".equals(host) || "127.0.0.1".equals(host);
     }
 
     /** Ein {@code <proxy>}-Eintrag; Zugangsdaten werden nicht gelesen. */
@@ -91,18 +117,20 @@ public final class MavenSettings {
             this.nonProxyHosts = nonProxyHosts;
         }
 
-        /** Mavens {@code nonProxyHosts}: mit {@code |} getrennt, {@code *} als Platzhalter. */
+        /**
+         * Mavens {@code nonProxyHosts} ({@code DefaultProxySelector}): nur mit {@code |} getrennt, ohne {@code trim}
+         * je Eintrag, {@code *} als Platzhalter, Groß/Klein egal. Ein Komma trennt bei Maven nichts.
+         */
         public boolean bypasses(String targetHost) {
             if (nonProxyHosts == null || targetHost == null) {
                 return false;
             }
-            for (String raw : nonProxyHosts.split("[|,]")) {
-                String p = raw.trim().toLowerCase(java.util.Locale.ROOT);
+            for (String p : nonProxyHosts.split("\\|")) {
                 if (p.isEmpty()) {
                     continue;
                 }
-                String regex = java.util.regex.Pattern.quote(p).replace("*", "\\E.*\\Q");
-                if (targetHost.toLowerCase(java.util.Locale.ROOT).matches(regex)) {
+                String regex = Pattern.quote(p).replace("*", "\\E.*\\Q");
+                if (Pattern.compile(regex, Pattern.CASE_INSENSITIVE).matcher(targetHost).matches()) {
                     return true;
                 }
             }
@@ -238,11 +266,14 @@ public final class MavenSettings {
             if ("user.home".equals(name) && userHome != null) {
                 return userHome.toString();
             }
+            String value;
             try {
-                return System.getProperty(name);
+                value = System.getProperty(name);
             } catch (SecurityException e) {
-                return null;
+                value = null;
             }
+            // Maven fragt zuletzt die Umgebung, auch ohne "env." davor (EnvarBasedValueSource)
+            return value != null || env == null ? value : env.get(name);
         }
     }
 
@@ -295,10 +326,11 @@ public final class MavenSettings {
             for (MavenSettings s : files) {
                 List<String> here = new ArrayList<String>();
                 for (Mirror m : s.mirrors) {
-                    if (m.id != null && ids.contains(m.id)) {
+                    String id = m.id == null ? "default" : m.id;   // Mavens Standard-ID
+                    if (ids.contains(id)) {
                         continue;
                     }
-                    here.add(m.id);
+                    here.add(id);
                     boolean hit = pass == 0 ? m.mirrorOf != null && m.mirrorOf.trim().equals(repositoryId)
                             : m.matches(repositoryId, repositoryUrl);
                     if (hit) {
@@ -316,8 +348,8 @@ public final class MavenSettings {
      * {@code nonProxyHosts} den Host nicht ausnehmen, je Protokoll der erste; für https ersatzweise der für http.
      */
     public static Proxy proxyFor(List<MavenSettings> files, String url) {
-        String protocol = url.toLowerCase(Locale.ROOT).startsWith("https") ? "https" : "http";
-        String host = io.github.bitshiftdev.mavendetective.core.check.Text.host(url);
+        String protocol = proxyProtocol(repositoryProtocol(url));
+        String host = repositoryHost(url);
         Map<String, Proxy> candidates = new HashMap<String, Proxy>();
         Set<String> ids = new HashSet<String>();
         for (MavenSettings s : files) {
@@ -340,6 +372,30 @@ public final class MavenSettings {
         }
         Proxy p = candidates.get(protocol);
         return p == null && "https".equals(protocol) ? candidates.get("http") : p;
+    }
+
+    /** Protokoll, unter dem Maven den Proxy sucht: {@code davs} → https, {@code dav}/{@code dav:x} → http/x. */
+    private static String proxyProtocol(String protocol) {
+        String p = protocol.toLowerCase(Locale.ROOT);
+        if ("davs".equals(p)) {
+            return "https";
+        }
+        if ("dav".equals(p)) {
+            return "http";
+        }
+        return p.startsWith("dav:") ? p.substring("dav:".length()) : p;
+    }
+
+    /** Protokoll einer Repository-URL wie {@code RemoteRepository} von Maven Resolver ({@code ""}, wenn unlesbar). */
+    static String repositoryProtocol(String url) {
+        Matcher m = url == null ? null : REPOSITORY_URL.matcher(url);
+        return m != null && m.matches() ? m.group(1) : "";
+    }
+
+    /** Host einer Repository-URL wie {@code RemoteRepository} (ohne Zugangsdaten und Port; {@code ""}, wenn keiner). */
+    static String repositoryHost(String url) {
+        Matcher m = url == null ? null : REPOSITORY_URL.matcher(url);
+        return m != null && m.matches() && m.group(5) != null ? m.group(5) : "";
     }
 
     /** Erster Mirror, der für das Repository greift – so wählt ihn auch Maven. */

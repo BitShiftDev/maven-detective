@@ -1,13 +1,18 @@
 package io.github.bitshiftdev.mavendetective.core.env;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -59,12 +64,12 @@ class BuildSetupTest {
         // Wrapper bis 3.2: dists/apache-maven-X-bin/<hash>/apache-maven-X
         Path old = home.resolve(".m2/wrapper/dists/apache-maven-3.9.6-bin/abc/apache-maven-3.9.6");
         Files.createDirectories(old.resolve("conf"));
-        assertEquals(old, BuildSetup.wrapperDistribution("3.9.6", home, env));
+        assertEquals(old, BuildSetup.wrapperDistribution("3.9.6", null, home, env));
         // Wrapper 3.3.x (only-script): dists/apache-maven-X/<hash>
         Path neu = home.resolve(".m2/wrapper/dists/apache-maven-3.9.11/5f2a1c");
         Files.createDirectories(neu.resolve("conf"));
-        assertEquals(neu, BuildSetup.wrapperDistribution("3.9.11", home, env));
-        assertNull(BuildSetup.wrapperDistribution("3.8.8", home, env));
+        assertEquals(neu, BuildSetup.wrapperDistribution("3.9.11", null, home, env));
+        assertNull(BuildSetup.wrapperDistribution("3.8.8", null, home, env));
     }
 
     @Test
@@ -79,12 +84,143 @@ class BuildSetupTest {
         assertNull(cli.getMavenConfig());
     }
 
+    @ParameterizedTest(name = "{0} → {1}")
+    @CsvSource(nullValues = "null", value = {
+        "1.8.0_402, 8", "21.0.4, 21", "17, 17", "' 11.0.2 ', 11", "25-ea, 25", "1.7, 7", "1, 1", "9.0.1+11, 9",
+        "null, -1", "'', -1", "abc, -1", "v17, -1",
+        // Zahlen jenseits von int (kaputte release-Datei, IDE-Angabe) sind unbekannt statt NumberFormatException
+        "99999999999, -1", "1.99999999999, 1", "123456789, 123456789",
+    })
+    void javaMajor(String version, int expected) {
+        assertEquals(expected, BuildSetup.javaMajor(version));
+    }
+
+    static final String URL_3_9_11 = "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.11/apache-maven-3.9.11-bin.zip";
+
+    /** Mehrere Hash-Ordner (alte URL, Firmen-Mirror): der zur aktuellen distributionUrl gewinnt, nicht der zufällig erste. */
     @Test
-    void javaMajor() {
-        assertEquals(8, BuildSetup.javaMajor("1.8.0_402"));
-        assertEquals(21, BuildSetup.javaMajor("21.0.4"));
-        assertEquals(17, BuildSetup.javaMajor("17"));
-        assertEquals(-1, BuildSetup.javaMajor(null));
+    void wrapperDistributionZurAktuellenUrl(@TempDir Path tmp) throws Exception {
+        Path home = tmp.resolve("home");
+        Path dists = home.resolve(".m2/wrapper/dists/apache-maven-3.9.11");
+        for (String other : new String[] {"0000", "1111", "ffffffff"}) {
+            Files.createDirectories(dists.resolve(other).resolve("conf"));
+        }
+        // a2d47e15 = hash_string aus mvnw 3.3.x (sh) für URL_3_9_11
+        Path script = dists.resolve("a2d47e15");
+        Files.createDirectories(script.resolve("conf"));
+        assertEquals(script, BuildSetup.wrapperDistribution("3.9.11", URL_3_9_11, home, Map.of()));
+        assertEquals("a2d47e15", BuildSetup.wrapperHashes(URL_3_9_11).get(0));
+
+        // ohne passenden Hash: fester erster Ordner statt Reihenfolge des Dateisystems
+        assertEquals(dists.resolve("0000"), BuildSetup.wrapperDistribution("3.9.11", "https://mirror.corp/x.zip", home, Map.of()));
+        assertEquals(dists.resolve("0000"), BuildSetup.wrapperDistribution("3.9.11", null, home, Map.of()));
+    }
+
+    @Test
+    void wrapperDistributionMitHashDerAnderenWrapper(@TempDir Path tmp) throws Exception {
+        Path home = tmp.resolve("home");
+        List<String> hashes = BuildSetup.wrapperHashes(URL_3_9_11);
+        assertEquals(4, hashes.size(), hashes.toString());
+        assertEquals(64, hashes.get(1).length(), "mvnw.cmd: SHA-256 als Hex");
+        assertEquals(32, hashes.get(2).length(), "mvnw.cmd bis 3.3.1: MD5 als Hex");
+        Path bin = home.resolve(".m2/wrapper/dists/apache-maven-3.9.11-bin");
+        Files.createDirectories(bin.resolve("aaaa/apache-maven-3.9.11/conf"));
+        // Wrapper bis 3.2: MD5 zur Basis 36, darunter apache-maven-X
+        Path md5 = bin.resolve(hashes.get(3)).resolve("apache-maven-3.9.11");
+        Files.createDirectories(md5.resolve("conf"));
+        assertEquals(md5, BuildSetup.wrapperDistribution("3.9.11", URL_3_9_11, home, Map.of()));
+        assertTrue(BuildSetup.wrapperHashes("").isEmpty());
+    }
+
+    @Test
+    void mavenUserHomeVerlegtDieWrapperDistributionen(@TempDir Path tmp) throws Exception {
+        Path userHome = tmp.resolve("m2-elsewhere");
+        Path dist = userHome.resolve("wrapper/dists/apache-maven-3.9.11/a2d47e15");
+        Files.createDirectories(dist.resolve("conf"));
+        Path project = tmp.resolve("p");
+        write(project.resolve(".mvn/wrapper/maven-wrapper.properties"), "distributionUrl=" + URL_3_9_11 + "\n");
+        BuildSetup cli = BuildSetup.detectCommandLine(project, tmp.resolve("home"), Map.of("MAVEN_USER_HOME", userHome.toString()));
+        assertEquals(dist.toString(), cli.getMavenHome());
+        assertEquals("3.9.11", cli.getMavenVersion());
+        assertEquals("Wrapper-Konfiguration ohne mvnw-Skript", cli.getMavenSource());
+        assertNull(BuildSetup.wrapperDistribution("3.9.11", URL_3_9_11, null, Map.of()), "ohne Home kein Ort");
+        assertNull(BuildSetup.wrapperDistribution(null, URL_3_9_11, tmp, Map.of()));
+    }
+
+    @Test
+    void m2HomeWennMavenHomeFehltOderNichtExistiert(@TempDir Path tmp) throws Exception {
+        Path m2 = tmp.resolve("maven-3.8.8");
+        write(m2.resolve("lib/maven-core-3.8.8.jar"), "");
+        Map<String, String> env = Map.of("MAVEN_HOME", tmp.resolve("gibt-es-nicht").toString(), "M2_HOME", m2.toString());
+        BuildSetup cli = BuildSetup.detectCommandLine(Files.createDirectories(tmp.resolve("p")), tmp, env);
+        assertEquals("3.8.8", cli.getMavenVersion());
+        assertEquals(m2.toString(), cli.getMavenHome());
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)   // ausführbares Skript und Symlink
+    void mavenUndJavaAusDemPath(@TempDir Path tmp) throws Exception {
+        Path maven = tmp.resolve("opt/apache-maven-3.9.9");
+        write(maven.resolve("lib/maven-core-3.9.9.jar"), "");
+        write(maven.resolve("bin/mvn"), "#!/bin/sh");
+        maven.resolve("bin/mvn").toFile().setExecutable(true);
+        Path jdk = tmp.resolve("jvm/temurin-17");
+        write(jdk.resolve("release"), "JAVA_VERSION=\"17.0.12\"\n");
+        write(jdk.resolve("bin/java"), "#!/bin/sh");
+        jdk.resolve("bin/java").toFile().setExecutable(true);
+        // /usr/bin/java → …/jvm/temurin-17/bin/java wie bei update-alternatives
+        Path usrBin = Files.createDirectories(tmp.resolve("usr/bin"));
+        Files.createSymbolicLink(usrBin.resolve("java"), jdk.resolve("bin/java"));
+        Path notExecutable = tmp.resolve("other/bin/mvn");
+        write(notExecutable, "");
+
+        String path = String.join(java.io.File.pathSeparator, "", tmp.resolve("other/bin").toString(),
+                maven.resolve("bin").toString(), usrBin.toString());
+        BuildSetup cli = BuildSetup.detectCommandLine(Files.createDirectories(tmp.resolve("p")), tmp, Map.of("PATH", path));
+        assertEquals("3.9.9", cli.getMavenVersion());
+        assertEquals(maven.toRealPath().toString(), cli.getMavenHome());
+        assertEquals(jdk.toRealPath().toString(), cli.getJavaHome());
+        assertEquals("17.0.12", cli.getJavaVersion());
+        assertEquals(1, cli.getNotes().size(), "Hinweis: JAVA_HOME fehlt");
+    }
+
+    @Test
+    void ohneMavenUndJavaBleibtBeidesUnbekanntMitHinweis(@TempDir Path tmp) throws Exception {
+        BuildSetup cli = BuildSetup.detectCommandLine(Files.createDirectories(tmp.resolve("p")), tmp,
+                Map.of("JAVA_HOME", " ", "MAVEN_OPTS", "  "));
+        assertNull(cli.getMavenVersion());
+        assertNull(cli.getMavenHome());
+        assertNull(cli.getJavaHome());
+        assertNull(cli.getMavenOpts());
+        assertNull(cli.getUserSettings());
+        assertEquals(1, cli.getNotes().size(), cli.getNotes().toString());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', value = {
+        "-s a.xml|a.xml",
+        "-sa.xml|a.xml",
+        "--settings a.xml|a.xml",
+        "--settings=a.xml|a.xml",
+        "-s a.xml -s b.xml|b.xml",
+        "'-s \"my settings.xml\"'|my settings.xml",
+        "--settings-security x|",
+        "-s|",
+        "-U -B|",
+    })
+    void settingsAusMavenConfig(String config, String expected) {
+        assertEquals(expected, BuildSetup.argValue(BuildSetup.splitArgs(config), "-s", "--settings"));
+    }
+
+    @Test
+    void profileUndLokalesRepositoryAusMavenConfig(@TempDir Path tmp) throws Exception {
+        Path project = tmp.resolve("p");
+        write(project.resolve(".mvn/maven.config"), "-P a,b -Pc --activate-profiles=d -P ,, -Dmaven.repo.local=/x\n-Dmaven.repo.local=/y");
+        BuildSetup cli = BuildSetup.detectCommandLine(project, tmp, Map.of());
+        assertEquals(List.of("a", "b", "c", "d"), cli.getProfiles());
+        assertEquals("/y", cli.getLocalRepository().replace('\\', '/').replaceFirst("^[A-Za-z]:", ""), "spätere Angabe gewinnt");
+        assertEquals(List.of("a b", "c", "d'e"), BuildSetup.splitArgs("'a b' c \"d'e\""));
+        assertTrue(BuildSetup.splitArgs(null).isEmpty());
     }
 
     @Test

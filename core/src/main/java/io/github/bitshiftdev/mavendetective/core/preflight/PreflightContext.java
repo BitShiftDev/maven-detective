@@ -184,7 +184,8 @@ final class PreflightContext {
         for (MavenSettings s : settings()) {
             String repo = s.getLocalRepository();
             if (repo != null && !repo.isEmpty()) {
-                return Paths.get(repo);
+                // relativ: wie Maven gegen das Verzeichnis, in dem der Build läuft (Projekt), nicht gegen diese JVM
+                return project.resolve(repo).normalize();
             }
         }
         return options.userHome == null ? null : options.userHome.resolve(".m2").resolve("repository");

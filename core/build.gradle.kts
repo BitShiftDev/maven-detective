@@ -24,6 +24,9 @@ dependencies {
     testImplementation("org.apache.maven:maven-resolver-provider:$mavenVersion")
     testImplementation("org.apache.maven.resolver:maven-resolver-impl:$mavenResolverVersion")
     testImplementation("org.apache.maven.resolver:maven-resolver-util:$mavenResolverVersion")
+    // nur im Test: MavenSettings gegen Mavens Settings-Builder (Platzhalter, Zusammenführen von Nutzer- und
+    // globaler settings.xml)
+    testImplementation("org.apache.maven:maven-settings-builder:$mavenVersion")
 }
 
 tasks.compileJava {

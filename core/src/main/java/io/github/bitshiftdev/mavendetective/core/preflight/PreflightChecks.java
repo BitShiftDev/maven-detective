@@ -19,7 +19,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,7 +28,7 @@ final class PreflightChecks {
 
     /** Mirror aus Mavens eigener {@code conf/settings.xml}, der http-Repositories sperrt. */
     static final String HTTP_BLOCKER = "maven-default-http-blocker";
-    private static final Pattern LINE_NUMBER = Pattern.compile("lineNumber: (\\d+)");
+    private static final Pattern LINE_NUMBER = Pattern.compile("lineNumber: (\\d{1,9})(?!\\d)");
     private static final Pattern RELEASE_TAG = Pattern.compile("<release>\\s*([^<\\s]+)\\s*</release>");
     private static final Pattern VERSION_TAG = Pattern.compile("<version>\\s*([^<]+?)\\s*</version>");
     private static final String[] RELEASE_PROPERTIES = {
@@ -73,13 +72,15 @@ final class PreflightChecks {
                     continue;
                 }
                 int line = Math.max(1, s.lineOf(m.url));
-                String https = "https://" + m.url.substring("http://".length());
+                String https = https(m.url);
                 Item item = blocks ? Item.error(Topic.SETTINGS, Texts.t("preflight.mirror.http", m.id))
                         : Item.warning(Topic.SETTINGS, Texts.t("preflight.mirror.http.old", m.id));
-                items.add(item.evidence(Evidence.setting(m.url, s.getFile().toString(), line))
-                        .fix(FixAction.of(FixAction.REPLACE_IN_FILE, Texts.t("preflight.switch.https"),
-                                "file", s.getFile().toString(), "search", m.url, "replace", https))
-                        .fix(open(s.getFile(), line, Texts.t("preflight.open.settings"))));
+                item.evidence(Evidence.setting(m.url, s.getFile().toString(), line));
+                if (https != null) {
+                    item.fix(FixAction.of(FixAction.REPLACE_IN_FILE, Texts.t("preflight.switch.https"),
+                            "file", s.getFile().toString(), "search", m.url, "replace", https));
+                }
+                items.add(item.fix(open(s.getFile(), line, Texts.t("preflight.open.settings"))));
             }
         }
 
@@ -321,10 +322,15 @@ final class PreflightChecks {
         return mavenVersion == null || MavenVersion.compare(mavenVersion, "3.8.1") >= 0;
     }
 
+    /** http-Repository, das Maven sperren würde (wie {@code external:http:*}, siehe {@link MavenSettings#isExternalHttp}). */
     static boolean isRemoteHttp(String url) {
-        String u = url.toLowerCase(Locale.ROOT);
-        return u.startsWith("http://") && !u.startsWith("http://localhost") && !u.startsWith("http://127.0.0.1")
-                && !u.startsWith("http://0.0.0.0");
+        return MavenSettings.isExternalHttp(url);
+    }
+
+    /** Dieselbe URL mit https; {@code null}, wenn sie nicht mit {@code http://} beginnt (etwa {@code dav:http://}). */
+    static String https(String url) {
+        return url.regionMatches(true, 0, "http://", 0, "http://".length())
+                ? "https://" + url.substring("http://".length()) : null;
     }
 
     // ------------------------------------------------------------------ Projekt

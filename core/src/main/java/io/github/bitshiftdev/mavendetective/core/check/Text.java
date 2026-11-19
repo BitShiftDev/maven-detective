@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 public final class Text {
 
     private static final Pattern FEATURE = Pattern.compile("^(?:1\\.)?(\\d{1,9})(?!\\d)");
-    private static final Pattern HOST = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.\\-]*://([^/:]+)");
+    private static final Pattern HOST = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.\\-]*(?::[a-zA-Z]+)?://(?:[^@/]*@)?([^/:]+)");
 
     private Text() {
     }

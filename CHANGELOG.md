@@ -27,6 +27,12 @@
 - `dependency:tree` output whose module version contains `+` (`1.0.0+build.5`) is read; before, that module's tree was dropped.
 - IDE: a `pom.xml` saved twice within the same second with the same length is no longer served from the cache in its old version (file systems with one- or two-second timestamps).
 - Preflight: an unreadable version range such as `(1.0)` in an enforcer rule is ignored instead of reported as violated.
+- Preflight and network check choose mirrors exactly as Maven does: a `mirrorOf` list with spaces (`central, snapshots`) does not mirror `snapshots` (Maven compares the entries untrimmed), an exact repository id ends the list, and `external:*` / `external:http:*` look at the host like Maven (`localhost.corp.example` is external, `HTTP://` and `dav:http://` count as http).
+- Proxies from `settings.xml`: `nonProxyHosts` is split at `|` only, as in Maven – a comma does not separate hosts; `file:` repositories get no proxy; a repository URL with credentials (`https://user:token@host/…`) is matched by its real host.
+- `settings.xml`: `${NAME}` without `env.` is resolved from the environment, as Maven does.
+- Preflight: http repositories on `0.0.0.0` or on a host that merely starts with `localhost` are reported as blocked, like Maven blocks them; a relative `<localRepository>` in `settings.xml` is resolved against the project, not against the IDE's working directory; the own repository manager is matched to a `settings.xml` mirror with case-sensitive paths.
+- IDE vs. command line: with several downloads of the same Maven version under `~/.m2/wrapper/dists`, the one for the project's current `distributionUrl` is used (and with it its `conf/settings.xml`); a Java version with absurdly long numbers no longer breaks the comparison.
+- "What changed?": the most recent snapshot is chosen by time, not by text – across the switch from summer time and between runs in different time zones.
 
 ## [0.1.1] - 2026-11-17
 
