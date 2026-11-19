@@ -7,8 +7,13 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-19
+
 ### Fixed
 
+- IDE: the tool window docked left or right (also floating or dragged narrow) switches to a narrow layout: lists, history and outline move above the content, toolbars, the diagnosis card's title and its buttons wrap instead of being cut off.
+- IDE: the explanation on empty pages (Conflicts, Duplicate Classes, Exclusions, Usage, Upgrade Simulator) wraps to the visible width.
+- IDE: the Preflight view scrolls as a whole, like the diagnosis card; in a low tool window the list of checks was squeezed to two rows.
 - Maven 4: a missing child project (`Child subproject … does not exist`) and a malformed or non-parseable POM (`Unable to read model: …`) are recognised again – from the extension's events and from the text log – instead of showing "Unknown error".
 - IDE: undoing a POM quick fix takes a single **Undo** again; before, the first one only moved the caret back from the changed line.
 - A text log with a very long error line full of spaces no longer stalls the diagnosis; removing the trailing `-> [Help 1]` took minutes on such lines.
@@ -114,6 +119,7 @@ First public release: IntelliJ plugin, Maven core extension and command line sha
 - Maven core extension (`-Dmaven.ext.class.path=…`) prints the diagnosis card into the Maven log and can write structured events; runs on Maven 3.9 with Java 8 and later and never changes the build.
 - Release workflow prepared for Maven Central (`io.github.bitshiftdev.mavendetective:maven-detective-core` and `io.github.bitshiftdev.mavendetective:maven-detective-extension`); the artifacts are not on Central yet, so `.mvn/extensions.xml` does not work until then – use the JAR from the GitHub release.
 
-[Unreleased]: https://github.com/BitShiftDev/maven-detective/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/BitShiftDev/maven-detective/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/BitShiftDev/maven-detective/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/BitShiftDev/maven-detective/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/BitShiftDev/maven-detective/releases/tag/v0.1.0
