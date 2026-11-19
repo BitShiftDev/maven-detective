@@ -459,6 +459,20 @@ class ChecksTest {
         assertEquals(java.nio.file.Paths.get("pom.xml"), Text.localPath("pom.xml"));
     }
 
+    /**
+     * CI Windows: {@code a:} ist dort laufwerksrelativ, {@code toAbsolutePath()} wirft für ein fehlendes
+     * Laufwerk {@code java.io.IOError} – ein Error, den BuildDoctor nicht abfängt; die Diagnose bräche ab.
+     */
+    @Test
+    void driveRelativePathsFromTheLogAreNotLocalPaths() {
+        assertNull(Text.localPath("a:"));
+        assertNull(Text.localPath(" a: "));
+        assertNull(Text.localPath("C:pom.xml"));
+        assertNull(Text.localPath("z:..\\x.jar"));
+        assertEquals(java.nio.file.Paths.get("C:/dev/pom.xml"), Text.localPath("C:/dev/pom.xml"));
+        assertEquals(java.nio.file.Paths.get("C:\\dev\\pom.xml"), Text.localPath("C:\\dev\\pom.xml"));
+    }
+
     /** Review #9: 403 und ZipException aus Tests sind keine Maven-Probleme. */
     @Test
     void failuresFromTestsDoNotBecomeRepositoryOrJarProblems() throws Exception {

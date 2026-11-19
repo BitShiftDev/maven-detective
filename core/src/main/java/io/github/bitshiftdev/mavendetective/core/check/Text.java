@@ -113,13 +113,18 @@ public final class Text {
      * ({@code \\\\host\\share}, {@code //host/share}, {@code \\\\?\\UNC\\…}) und ungültige Pfade. Unter Windows
      * baut schon {@code Files.exists} auf einen UNC-Pfad eine SMB-Verbindung auf und sendet dabei den
      * NTLM-Hash des Nutzers – ein fremdes Log darf das nicht auslösen.
+     * <p>
+     * Auch {@code null} für laufwerksrelative Pfade ({@code a:}, {@code C:pom.xml}): Unter Windows hängen sie
+     * vom Arbeitsverzeichnis des Laufwerks ab, und {@code toAbsolutePath()} wirft für ein fehlendes Laufwerk
+     * {@code java.io.IOError} – ein Error, den keine Prüfung erwartet. Geprüft wird der Text, damit jedes
+     * Betriebssystem gleich entscheidet.
      */
     public static Path localPath(String s) {
         if (s == null) {
             return null;
         }
         String t = s.trim();
-        if (t.isEmpty() || isNetworkPath(t)) {
+        if (t.isEmpty() || isNetworkPath(t) || isDriveRelative(t)) {
             return null;
         }
         Path p;
@@ -130,6 +135,18 @@ public final class Text {
         }
         Path root = p.getRoot();
         return root != null && isNetworkPath(root.toString()) ? null : p;
+    }
+
+    /** Laufwerksbuchstabe und Doppelpunkt ohne folgenden Trenner: {@code a:}, {@code C:pom.xml}. */
+    private static boolean isDriveRelative(String t) {
+        if (t.length() < 2 || t.charAt(1) != ':' || !isAsciiLetter(t.charAt(0))) {
+            return false;
+        }
+        return t.length() == 2 || (t.charAt(2) != '\\' && t.charAt(2) != '/');
+    }
+
+    private static boolean isAsciiLetter(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
     }
 
     private static boolean isNetworkPath(String t) {
