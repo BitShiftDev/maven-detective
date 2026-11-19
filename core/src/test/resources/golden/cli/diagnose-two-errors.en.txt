@@ -1,0 +1,10 @@
+exit 0
++-- Maven Detective · Build Doctor ----------------------------
+| #9 Compiler error caused by a dependency · likely
+| Cause: The package org.springframework.web.bind is not on the classpath when compiling: the dependency is missing, has the wrong scope or was removed by an exclusion.
+|   - /home/dev/shop/web/src/main/java/com/acme/web/Api.java:[4,33] package org.springframework.web.bind does not exist
+|   - Error location in the source -> /home/dev/shop/web/src/main/java/com/acme/web/Api.java:4
+|   - Error in main code – is the dependency only declared with scope test or provided, or was it removed by an exclusion?
+| Fix: Go to the error location  (/home/dev/shop/web/src/main/java/com/acme/web/Api.java:4)
+| More matches: Tests failed
++--------------------------------------------------------------

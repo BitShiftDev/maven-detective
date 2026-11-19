@@ -1,0 +1,7 @@
+exit 4
++-- Maven Detective · Build Doctor ----------------------------
+| Unknown error · likely
+| Cause: No entry in the error catalog matches. First error message: the flux capacitor is out of plutonium
+|   - the flux capacitor is out of plutonium
+| Fix: Report it as a test case (“Wrong diagnosis”) so the catalog grows
++--------------------------------------------------------------

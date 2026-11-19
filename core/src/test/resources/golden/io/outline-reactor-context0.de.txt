@@ -1,0 +1,10 @@
+Log: 54 Zeilen, BUILD FAILURE
+
+2 Module:
+  ✓ parent  Zeilen 9–19  0.210 s
+  ✗ core  Zeilen 20–38  1.134 s  1 Fehler  ← gescheitert in compiler:compile (default-compile)
+
+Erster Fehler, Zeile 33:
+  >     33  [ERROR] /work/core/src/main/java/com/acme/Foo.java:[3,17] cannot find symbol
+
+4 Download-Zeilen in 1 Block (outline --strip blendet sie aus)

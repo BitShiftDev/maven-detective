@@ -179,4 +179,11 @@ class SnapshotDiffTest {
         assertEquals(List.of("PARENT g:parent 1 2 [g:a, g:app, g:b]"), changes(green, current));
         assertNull(SnapshotDiff.compare(green, current).limitationText());
     }
+
+    @ParameterizedTest
+    @CsvSource(value = {"2026-11-12T08:14:03Z, 2026-11-12 08:14", "2026-11-12T08:14, 2026-11-12 08:14",
+            "2026-11-12 08:14:03, 2026-11-12 08:14:03", "heute, heute", "NULL, NULL"}, nullValues = "NULL")
+    void shortTimeCutsAnIsoTimestampToTheMinute(String at, String expected) {
+        assertEquals(expected, SnapshotDiff.shortTime(at));
+    }
 }

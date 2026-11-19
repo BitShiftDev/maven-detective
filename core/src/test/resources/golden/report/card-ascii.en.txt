@@ -1,0 +1,17 @@
++-- Maven Detective - Build Doctor ----------------------------
+| #3 Artifact fehlt - certain
+| Cause: org.acme:lib:1.0 liegt in keinem Repository - der Fehlversuch ist gemerkt
+|   - [ERROR] Failed to execute goal on project app: Could not resolve dependencies: org.acme:lib:jar:1.0 was not found in https://repo.maven.apache.org/maven2 during a previous attempt. This failure was cached in the local r...
+|   - Fehlversuch im lokalen Repository gemerkt -> /repo/org/acme/lib/1.0/lib-1.0.jar.lastUpdated
+|   - Mirror "corp" fuer * -> /home/u/.m2/settings.xml:12
+|   - Maven 3.9.11, JDK 21
+|   - Groesse der Datei: 0 Bytes
+|   - Deklaration -> /w/app/pom.xml:27
+| Fix: Fehlversuche loeschen und neu bauen  (2 files)
+|   or: Mit -U neu bauen  (mvn ... -U verify)
+|   or: Deklaration oeffnen  (/w/app/pom.xml:27)
+| More matches: Offline-Modus
+| Since the last green build:
+|   - JDK 21.0.4 -> 17.0.2
+|   - Dependency org.acme:lib 1.0 -> 2.0
++--------------------------------------------------------------

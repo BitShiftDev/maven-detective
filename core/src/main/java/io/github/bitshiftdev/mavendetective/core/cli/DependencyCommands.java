@@ -49,8 +49,8 @@ final class DependencyCommands {
      * erklärt, die die Dependency deklarieren oder (laut Baum) enthalten.
      */
     static int why(CliOptions o, PrintStream out, PrintStream err, InputStream stdin) throws IOException {
-        String[] ga = o.target.split(":");
-        if (ga.length < 2) {
+        String[] ga = o.target.split(":", -1);
+        if (ga.length < 2 || ga[0].trim().isEmpty() || ga[1].trim().isEmpty()) {
             err.println(Texts.t("cli.expected.ga"));
             return 2;
         }
@@ -81,8 +81,7 @@ final class DependencyCommands {
             if (modules.isEmpty()) {
                 PomFile rootPom = locator.load(root.resolve("pom.xml"));
                 if (rootPom == null) {
-                    err.println(Texts.t("cli.no.pom", root));
-                    return 1;
+                    return noPom(root, err);
                 }
                 modules.add(rootPom);
             }
@@ -103,6 +102,24 @@ final class DependencyCommands {
             }
         }
         return 0;
+    }
+
+    /** Exit-Code 1: keine pom.xml – oder eine, die sich nicht lesen lässt (dann mit Grund statt „keine pom.xml“). */
+    private static int noPom(Path root, PrintStream err) {
+        Path pom = root.resolve("pom.xml");
+        if (!Files.isRegularFile(pom)) {
+            err.println(Texts.t("cli.no.pom", root));
+            return 1;
+        }
+        String reason;
+        try {
+            PomFile.read(pom);
+            reason = "?";
+        } catch (Exception e) {
+            reason = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        }
+        err.println(Texts.t("cli.unreadable.pom", pom, reason));
+        return 1;
     }
 
     private static Path projectRoot(CliOptions o) {
@@ -152,8 +169,7 @@ final class DependencyCommands {
             }
         }
         if (poms.isEmpty()) {
-            err.println(Texts.t("cli.no.pom", root));
-            return 1;
+            return noPom(root, err);
         }
         ConflictMatrix matrix = ConflictMatrix.build(locator, root, poms, trees);
         if (o.pin != null) {
@@ -194,8 +210,7 @@ final class DependencyCommands {
         PomLocator locator = new PomLocator(root, repo);
         List<PomFile> poms = projectPoms(locator, root);
         if (poms.isEmpty()) {
-            err.println(Texts.t("cli.no.pom", root));
-            return 1;
+            return noPom(root, err);
         }
         ExclusionAudit audit = ExclusionAudit.build(locator, poms, trees);
         if (o.remove) {
@@ -238,8 +253,7 @@ final class DependencyCommands {
         PomLocator locator = new PomLocator(root, localRepository(o, root));
         List<PomFile> poms = projectPoms(locator, root);
         if (poms.isEmpty()) {
-            err.println(Texts.t("cli.no.pom", root));
-            return 1;
+            return noPom(root, err);
         }
         DuplicateClasses result = DuplicateClasses.build(locator, poms, trees, new JarIndex(), null);
         if (o.exclude) {
@@ -296,8 +310,7 @@ final class DependencyCommands {
         PomLocator locator = new PomLocator(root, localRepository(o, root));
         List<PomFile> poms = projectPoms(locator, root);
         if (poms.isEmpty()) {
-            err.println(Texts.t("cli.no.pom", root));
-            return 1;
+            return noPom(root, err);
         }
         DependencyUsage result = DependencyUsage.build(locator, poms, trees, new JarIndex(), DependencyUsage.sourceScanner(null), null);
         if (o.declare || o.remove) {
@@ -367,8 +380,7 @@ final class DependencyCommands {
         PomLocator locator = new PomLocator(root, repo);
         List<PomFile> poms = projectPoms(locator, root);
         if (poms.isEmpty()) {
-            err.println(Texts.t("cli.no.pom", root));
-            return 1;
+            return noPom(root, err);
         }
         UpgradeSimulator.Result result = UpgradeSimulator.simulate(locator, poms, request, trees, null);
         if (o.fetch) {
@@ -435,8 +447,8 @@ final class DependencyCommands {
     }
 
     private static int pin(ConflictMatrix matrix, String spec, PrintStream out, PrintStream err) throws IOException {
-        String[] parts = spec.split(":");
-        if (parts.length < 2) {
+        String[] parts = spec.split(":", -1);
+        if (parts.length < 2 || parts.length > 3 || parts[0].isEmpty() || parts[1].isEmpty() || parts.length == 3 && parts[2].isEmpty()) {
             err.println(Texts.t("cli.pin.format"));
             return 2;
         }

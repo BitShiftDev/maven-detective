@@ -1,0 +1,12 @@
+exit 3
+Duplicate classes: 1 finding in 2 modules – 1 with different content, 1 on the runtime classpath
+Note: rebuilt from the POMs without a tree – order estimated (more precise with --tree, output of mvn dependency:tree -Dverbose).
+
+Module a (6 entries)
+  different    1 class in commons-logging:1.2 and jcl-over-slf4j:1.7.36 – all different; the one from commons-logging:1.2 is loaded.
+      1. commons-logging:1.2  (via org.web:web:1.0, compile)
+         jcl-over-slf4j:1.7.36  (direct, compile)
+      Packages: org.apache.commons.logging
+      Classes: org.apache.commons.logging.Log
+      Recommendation: Remove commons-logging:1.2: known pair – jcl-over-slf4j or spring-jcl replace commons-logging on purpose – the original has to go, otherwise the order decides which logging applies.
+        → Add exclusion commons-logging:commons-logging to org.web:web

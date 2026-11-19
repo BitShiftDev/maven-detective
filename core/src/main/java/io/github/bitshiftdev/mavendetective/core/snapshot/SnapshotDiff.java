@@ -179,11 +179,16 @@ public final class SnapshotDiff {
 
     /** Überschrift mit Zeitpunkt des grünen Builds, z. B. „Seit dem letzten grünen Build (2026-11-12 08:14)“. */
     public String headline() {
-        String at = green.getCreatedAt();
-        if (at != null && at.length() >= 16) {
-            at = at.substring(0, 10) + " " + at.substring(11, 16);
-        }
+        String at = shortTime(green.getCreatedAt());
         return Texts.t("changes.headline") + (at == null ? "" : " (" + at + ")");
+    }
+
+    /** Zeitstempel eines Schnappschusses kurz: {@code 2026-11-12T08:14:03Z} → {@code 2026-11-12 08:14}. */
+    public static String shortTime(String at) {
+        if (at != null && at.length() >= 16 && at.charAt(10) == 'T') {
+            return at.substring(0, 10) + " " + at.substring(11, 16);
+        }
+        return at;
     }
 
     // ---------------------------------------------------------------- intern

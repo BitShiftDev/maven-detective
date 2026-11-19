@@ -1,0 +1,12 @@
+exit 3
+Dependency usage: 1 undeclared, 1 unused, 0 only in tests – 2 modules
+Basis: classes the source code references by name (imports, fully qualified names).
+Note: rebuilt from the POMs without a tree – classpath estimated (more precise with --tree, output of mvn dependency:tree -Dverbose).
+
+Module a (1 source, 0 test files)
+  undeclared    slf4j-api:2.0 is not declared but referenced: org.slf4j.Logger – only arrives transitively via web:1.0.
+      Path: org.web:web:1.0 → org.slf4j:slf4j-api:2.0
+      referenced: org.slf4j.Logger (A.java:3)
+        → Declare org.slf4j:slf4j-api:2.0 in a
+  unused        lib:1.0 is declared, but none of its classes is referenced in the code.
+        → Remove org.unused:lib from a

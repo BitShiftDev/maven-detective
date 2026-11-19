@@ -1,0 +1,10 @@
+Log: 54 lines, BUILD FAILURE
+
+2 modules:
+  ✓ parent  lines 9–19  0.210 s
+  ✗ core  lines 20–38  1.134 s  1 error  ← failed in compiler:compile (default-compile)
+
+First error, line 33:
+  >     33  [ERROR] /work/core/src/main/java/com/acme/Foo.java:[3,17] cannot find symbol
+
+4 download lines in 1 block (outline --strip hides them)

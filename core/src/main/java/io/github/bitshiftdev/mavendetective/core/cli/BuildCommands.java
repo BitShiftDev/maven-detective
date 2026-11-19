@@ -134,11 +134,11 @@ final class BuildCommands {
             return 1;
         }
         if (latest == null || !Boolean.FALSE.equals(latest.getSuccessful())) {
-            out.println(Texts.t("cli.changes.green", green.getCreatedAt()));
+            out.println(Texts.t("cli.changes.green", SnapshotDiff.shortTime(green.getCreatedAt())));
             return 0;
         }
         SnapshotDiff diff = SnapshotDiff.compare(green, latest);
-        out.println(Texts.t("cli.changes.headline", diff.headline(), latest.getCreatedAt()));
+        out.println(Texts.t("cli.changes.headline", diff.headline(), SnapshotDiff.shortTime(latest.getCreatedAt())));
         if (diff.isEmpty()) {
             out.println("  " + Texts.t(diff.limitationText() == null ? "cli.changes.none" : "cli.changes.not.comparable"));
         }

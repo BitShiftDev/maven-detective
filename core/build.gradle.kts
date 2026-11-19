@@ -45,6 +45,8 @@ tasks.test {
     useJUnitPlatform()
     // Die meisten Tests vergleichen deutsche Texte; Englisch prüfen TextsTest und CatalogLanguagesTest gezielt
     systemProperty("mavenDetective.language", "de")
+    // Golden Files neu schreiben: ./gradlew :core:test -DupdateGolden=true (testkit/Golden)
+    providers.systemProperty("updateGolden").orNull?.let { systemProperty("updateGolden", it) }
 }
 
 tasks.jar {

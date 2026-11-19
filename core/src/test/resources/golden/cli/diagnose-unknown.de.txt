@@ -1,0 +1,7 @@
+exit 4
++-- Maven Detective · Build Doctor ----------------------------
+| Unbekannter Fehler · wahrscheinlich
+| Ursache: Kein Eintrag im Fehlerkatalog passt. Erste Fehlermeldung: the flux capacitor is out of plutonium
+|   - the flux capacitor is out of plutonium
+| Behebung: Als Testfall melden („Falsch erkannt“), damit der Katalog wächst
++--------------------------------------------------------------

@@ -297,7 +297,8 @@ java -jar maven-detective-cli.jar diagnose build.log --markdown
 
 All commands accept `--project <dir>` and `--lang en|de`. Dependency commands take the resolved tree via
 `--tree tree.txt` (from `mvn dependency:tree -Dverbose`) and otherwise rebuild it from the POMs in your local
-repository. Exit code `3` means "findings" – handy as a CI gate.
+repository. Exit code `3` means "findings" – handy as a CI gate; `2` means the command line itself is wrong
+(unknown command or option, missing value). Options can be written as `--option value` or `--option=value`.
 
 ## Extend the error catalog
 

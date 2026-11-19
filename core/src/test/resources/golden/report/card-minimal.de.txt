@@ -1,0 +1,5 @@
++-- Maven Detective · Build Doctor ----------------------------
+| Unbekannter Fehler · wahrscheinlich
+| Ursache: Keine Regel passt
+|   - [ERROR] something odd
++--------------------------------------------------------------

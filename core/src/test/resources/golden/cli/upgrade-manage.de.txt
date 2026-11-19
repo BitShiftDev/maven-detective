@@ -1,0 +1,13 @@
+exit 0
+Upgrade-Simulation: com.google.guava:guava 33.3.1-jre/32.1.3-jre → 33.3.1-jre (POMs unverändert)
+
+Änderung an den POMs:
+  1. <dependencyManagement> mit com.google.guava:guava:33.3.1-jre angelegt  → $PROJECT/pom.xml:11
+     Wie gewünscht im dependencyManagement festgelegt – gilt für transitive Vorkommen und für Deklarationen ohne eigene <version>
+
+Modul parent: keine Änderung
+
+Modul a: keine Änderung (bleibt 33.3.1-jre)
+
+Modul b: keine Änderung (bleibt 32.1.3-jre)
+  ! com.google.guava:guava bleibt hier bei 32.1.3-jre: Version 32.1.3-jre: direkt im Modul angegeben – eine direkte Angabe gewinnt immer, auch gegen dependencyManagement.

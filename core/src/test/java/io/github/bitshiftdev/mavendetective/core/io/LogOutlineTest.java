@@ -2,6 +2,7 @@ package io.github.bitshiftdev.mavendetective.core.io;
 
 import io.github.bitshiftdev.mavendetective.core.io.LogOutline.Module;
 import io.github.bitshiftdev.mavendetective.core.io.LogOutline.Result;
+import io.github.bitshiftdev.mavendetective.core.testkit.Golden;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -98,6 +99,15 @@ class LogOutlineTest {
         assertTrue(o.getLines().get(o.getFirstError()).contains("Foo.java:[3,17]"), o.getLines().get(o.getFirstError()));
         assertEquals(failed, o.moduleAt(o.getFirstError()));
         assertTrue(o.getLines().get(o.getResultLine()).contains("BUILD FAILURE"));
+    }
+
+    @Test
+    void zusammenfassungAlsGoldenFile() {
+        LogOutline o = LogOutline.of(List.of(REACTOR.split("\n", -1)));
+        Golden.both("io/outline-reactor", "txt", () -> String.join("\n", o.summary(3)));
+        Golden.both("io/outline-reactor-context0", "txt", () -> String.join("\n", o.summary(0)));
+        Golden.check("io/outline-reactor-strip.txt", String.join("\n", Golden.in(io.github.bitshiftdev.mavendetective.core.Texts.Language.DE,
+                o::withoutDownloads)));
     }
 
     @Test

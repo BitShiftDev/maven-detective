@@ -1,0 +1,12 @@
+exit 3
+Dependency-Nutzung: 1 undeklariert, 1 ungenutzt, 0 nur in Tests – 2 Module
+Grundlage: Klassen, die der Quelltext beim Namen nennt (Imports, voll qualifizierte Namen).
+Hinweis: ohne Baum aus den POMs nachgebaut – Classpath geschätzt (genauer mit --tree, Ausgabe von mvn dependency:tree -Dverbose).
+
+Modul a (1 Quell-, 0 Testdateien)
+  undeklariert  slf4j-api:2.0 ist nicht deklariert, wird aber genannt: org.slf4j.Logger – kommt nur transitiv über web:1.0.
+      Pfad: org.web:web:1.0 → org.slf4j:slf4j-api:2.0
+      genannt: org.slf4j.Logger (A.java:3)
+        → org.slf4j:slf4j-api:2.0 in a deklarieren
+  ungenutzt     lib:1.0 ist deklariert, aber keine seiner Klassen wird im Code genannt.
+        → org.unused:lib aus a entfernen

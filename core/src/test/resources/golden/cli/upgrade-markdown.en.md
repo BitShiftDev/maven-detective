@@ -1,0 +1,12 @@
+exit 0
+### Upgrade simulation: com.google.guava:guava 33.3.1-jre/32.1.3-jre → 33.3.1-jre
+
+**Change to the POMs** (not applied yet)
+
+1. Dependency guava: version changed from 32.1.3-jre to 33.3.1-jre — `$PROJECT/b/pom.xml:13`
+
+#### Module `b` – 1 upgraded
+
+| | Artifact | before | after | Path |
+|---|---|---|---|---|
+| ↑ | `com.google.guava:guava` | 32.1.3-jre | 33.3.1-jre | direct |

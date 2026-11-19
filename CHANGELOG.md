@@ -33,6 +33,11 @@
 - Preflight: http repositories on `0.0.0.0` or on a host that merely starts with `localhost` are reported as blocked, like Maven blocks them; a relative `<localRepository>` in `settings.xml` is resolved against the project, not against the IDE's working directory; the own repository manager is matched to a `settings.xml` mirror with case-sensitive paths.
 - IDE vs. command line: with several downloads of the same Maven version under `~/.m2/wrapper/dists`, the one for the project's current `distributionUrl` is used (and with it its `conf/settings.xml`); a Java version with absurdly long numbers no longer breaks the comparison.
 - "What changed?": the most recent snapshot is chosen by time, not by text – across the switch from summer time and between runs in different time zones.
+- Command line: an unknown option (`--markdwon`), an option without its value or a second file name is reported with exit code 2 instead of being ignored; options also work as `--option=value` (before, `--project=dir` was taken for the file name). `why` and `matrix --pin` reject coordinates with an empty part (`g:`, `:a`).
+- Command line: a `pom.xml` that cannot be parsed is reported as unreadable, with the reason, instead of "No pom.xml"; `changes` shows both times in the same format.
+- The console card no longer fails on a quick fix without file parameters, and the plain-ASCII card (consoles without UTF-8) writes accented letters without their accent (`é` → `e`) and an emoji as a single `?`.
+- Counts in reports use singular and plural correctly ("1 module", "1 rule", "1 line").
+- `upgrade --manage` no longer refers to a `--pin` option and says that a pinned version does not override a direct `<version>`.
 
 ## [0.1.1] - 2026-11-17
 

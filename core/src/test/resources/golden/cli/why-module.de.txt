@@ -1,0 +1,5 @@
+exit 0
+Warum org.slf4j:slf4j-api in com.acme:a:1.0?
+Weder deklariert noch in dependencyManagement – die Version kommt transitiv (nearest wins).
+Hinweise:
+  - Für Pfad und verdrängte Versionen den Baum mitgeben: mvn dependency:tree -Dverbose -Dincludes=org.slf4j:slf4j-api > tree.txt, dann --tree tree.txt

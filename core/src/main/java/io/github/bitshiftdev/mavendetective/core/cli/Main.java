@@ -8,7 +8,12 @@ import io.github.bitshiftdev.mavendetective.core.check.Checks;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Kommandozeile.
@@ -36,6 +41,12 @@ import java.nio.file.Paths;
  */
 public final class Main {
 
+    private static final Set<String> COMMANDS = new HashSet<String>(Arrays.asList("diagnose", "evaluate", "validate-catalog",
+            "changes", "why", "matrix", "exclusions", "duplicates", "analyze", "upgrade", "preflight", "outline"));
+    /** Befehle, die ein Ziel brauchen (Datei, Ordner, Koordinate, Spezifikation). */
+    private static final Set<String> NEEDS_TARGET = new HashSet<String>(Arrays.asList("diagnose", "evaluate",
+            "validate-catalog", "why", "upgrade", "outline"));
+
     private Main() {
     }
 
@@ -47,25 +58,59 @@ public final class Main {
     }
 
     static int run(String[] args, PrintStream out, PrintStream err, InputStream stdin) {
-        for (int i = 0; i + 1 < args.length; i++) {
-            if ("--lang".equals(args[i])) {
-                System.setProperty(Texts.PROPERTY, args[i + 1]);
+        // --lang gilt nur für diesen Aufruf; danach wieder die Sprache von vorher (Tests, eingebettete Aufrufe)
+        String languageBefore = System.getProperty(Texts.PROPERTY);
+        String lang = CliOptions.language(args);
+        if (lang != null && Texts.Language.parse(lang) != null) {
+            System.setProperty(Texts.PROPERTY, lang);
+        }
+        try {
+            return command(args, out, err, stdin);
+        } finally {
+            if (languageBefore == null) {
+                System.clearProperty(Texts.PROPERTY);
+            } else {
+                System.setProperty(Texts.PROPERTY, languageBefore);
             }
         }
+    }
+
+    private static int command(String[] args, PrintStream out, PrintStream err, InputStream stdin) {
         if (args.length < 1) {
             usage(err);
             return 2;
         }
+        String command = args[0];
+        if ("help".equals(command) || "--help".equals(command) || "-h".equals(command)) {
+            usage(out);
+            return 0;
+        }
+        if (!COMMANDS.contains(command)) {
+            err.println(Texts.t("cli.unknown.command", command));
+            usage(err);
+            return 2;
+        }
+        CliOptions o;
         try {
-            String command = args[0];
-            CliOptions o = CliOptions.parse(args);
-            if ("diagnose".equals(command) && o.target != null) {
+            o = CliOptions.parse(args);
+        } catch (CliOptions.UsageException e) {
+            err.println(e.getMessage());
+            usage(err);
+            return 2;
+        }
+        if (o.target == null && NEEDS_TARGET.contains(command)) {
+            err.println(Texts.t("cli.missing.argument", command));
+            usage(err);
+            return 2;
+        }
+        try {
+            if ("diagnose".equals(command)) {
                 return BuildCommands.diagnose(o, out, stdin);
             }
             if ("changes".equals(command)) {
                 return BuildCommands.changes(o, out);
             }
-            if ("why".equals(command) && o.target != null) {
+            if ("why".equals(command)) {
                 return DependencyCommands.why(o, out, err, stdin);
             }
             if ("matrix".equals(command)) {
@@ -80,36 +125,39 @@ public final class Main {
             if ("analyze".equals(command)) {
                 return DependencyCommands.analyze(o, out, err, stdin);
             }
-            if ("upgrade".equals(command) && o.target != null) {
+            if ("upgrade".equals(command)) {
                 return DependencyCommands.upgrade(o, out, err, stdin);
             }
             if ("preflight".equals(command)) {
                 return BuildCommands.preflight(o, out, err);
             }
-            if ("outline".equals(command) && o.target != null) {
+            if ("outline".equals(command)) {
                 return BuildCommands.outline(o, out, stdin);
             }
-            if ("evaluate".equals(command) && o.target != null) {
+            if ("evaluate".equals(command)) {
                 return BuildCommands.evaluate(o, out);
             }
-            if ("validate-catalog".equals(command) && o.target != null) {
-                RuleCatalog c = RuleCatalog.load(Paths.get(o.target));
-                new BuildDoctor(RuleCatalog.loadDefault().merge(c), Checks.defaults());
-                out.println(Texts.t("cli.catalog.ok", c.getRules().size()));
-                return 0;
-            }
-            usage(err);
-            return 2;
+            RuleCatalog c = RuleCatalog.load(Paths.get(o.target));
+            new BuildDoctor(RuleCatalog.loadDefault().merge(c), Checks.defaults());
+            out.println(Texts.t("cli.catalog.ok", c.getRules().size()));
+            return 0;
         } catch (RuleCatalog.CatalogException e) {
             err.println(Texts.t("cli.catalog.error", e.getMessage()));
             return 3;
+        } catch (InvalidPathException e) {
+            // z. B. ein Nullzeichen oder unter Windows ein „:“ mitten im Pfad
+            err.println(Texts.t("cli.error", e.getMessage()));
+            return 2;
         } catch (IOException e) {
             err.println(Texts.t("cli.error", e.getMessage()));
+            return 1;
+        } catch (UncheckedIOException e) {
+            err.println(Texts.t("cli.error", e.getCause().getMessage()));
             return 1;
         }
     }
 
-    private static void usage(PrintStream err) {
-        err.println(Texts.t("cli.usage"));
+    private static void usage(PrintStream stream) {
+        stream.println(Texts.t("cli.usage"));
     }
 }

@@ -1,0 +1,5 @@
+exit 3
+Exclusion-Hygiene: 1 Exclusion in 3 POMs – 1 veraltet, 0 doppelt, 0 nicht prüfbar
+
+veraltet  $PROJECT/a/pom.xml:15
+    Exclusion org.gone:gone schließt nichts aus: org.web:web:1.0 bringt org.gone:gone nicht (mehr) transitiv mit – kann weg.

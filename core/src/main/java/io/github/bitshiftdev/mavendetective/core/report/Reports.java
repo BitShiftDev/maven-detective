@@ -88,10 +88,25 @@ public final class Reports {
                 case '…': sb.append("..."); break;
                 case '→': sb.append("->"); break;
                 case '„': case '“': case '”': sb.append('"'); break;
-                default: sb.append(c < 128 ? c : '?');
+                default:
+                    if (c < 128) {
+                        sb.append(c);
+                    } else if (Character.isHighSurrogate(c) && i + 1 < s.length() && Character.isLowSurrogate(s.charAt(i + 1))) {
+                        sb.append('?'); // ein Zeichen außerhalb der BMP (Emoji) ist ein Zeichen, nicht zwei
+                        i++;
+                    } else {
+                        sb.append(withoutAccent(c));
+                    }
             }
         }
         return sb.toString();
+    }
+
+    /** {@code é} → {@code e}, {@code Å} → {@code A}; was sich nicht zerlegen lässt, wird {@code ?}. */
+    private static char withoutAccent(char c) {
+        String decomposed = java.text.Normalizer.normalize(String.valueOf(c), java.text.Normalizer.Form.NFD);
+        char base = decomposed.charAt(0);
+        return decomposed.length() > 1 && base < 128 ? base : '?';
     }
 
     /** {@code true}, wenn die Konsole Umlaute und Sonderzeichen der Karte darstellen kann. */
@@ -126,11 +141,11 @@ public final class Reports {
         if (FixAction.REBUILD.equals(f.getType()) && f.param("args") != null && !f.param("args").isEmpty()) {
             return label + "  (mvn … " + f.param("args") + ")";
         }
-        if (FixAction.DELETE_FILES.equals(f.getType())) {
+        if (FixAction.DELETE_FILES.equals(f.getType()) && f.param("files") != null) {
             String[] files = f.param("files").split("\n");
             return label + "  (" + (files.length == 1 ? Texts.t("card.files.one", files[0]) : Texts.t("card.files.many", files.length)) + ")";
         }
-        if (FixAction.OPEN_FILE.equals(f.getType())) {
+        if (FixAction.OPEN_FILE.equals(f.getType()) && f.param("file") != null) {
             return label + "  (" + f.param("file") + (f.param("line") != null && !"-1".equals(f.param("line")) ? ":" + f.param("line") : "") + ")";
         }
         return label;
@@ -177,7 +192,7 @@ public final class Reports {
                 : s.getJavaVersion() + (s.getJavaHome() == null ? "" : " (" + s.getJavaHome() + ")"));
         appendIf(sb, Texts.t("report.offline"), s.getOffline() == null ? null : String.valueOf(s.getOffline()));
         appendIf(sb, "settings.xml", s.getUserSettings());
-        appendIf(sb, Texts.t("report.profiles"), s.getActiveProfiles().isEmpty() ? null : String.valueOf(s.getActiveProfiles()));
+        appendIf(sb, Texts.t("report.profiles"), s.getActiveProfiles().isEmpty() ? null : String.join(", ", s.getActiveProfiles()));
         appendIf(sb, Texts.t("report.goals"), s.getGoals().isEmpty() ? null : String.join(" ", s.getGoals()));
         appendIf(sb, "OS", System.getProperty("os.name") + " " + System.getProperty("os.version"));
         sb.append(footer());
@@ -199,6 +214,13 @@ public final class Reports {
         if (s == null) {
             return "";
         }
-        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
+        if (s.length() <= max) {
+            return s;
+        }
+        int end = max - 1;
+        if (Character.isHighSurrogate(s.charAt(end - 1))) {
+            end--; // kein halbes Emoji vor dem „…“
+        }
+        return s.substring(0, end) + "…";
     }
 }
