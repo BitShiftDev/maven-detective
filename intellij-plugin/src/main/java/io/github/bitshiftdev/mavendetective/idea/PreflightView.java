@@ -21,6 +21,7 @@ import io.github.bitshiftdev.mavendetective.idea.ui.DetectiveColors;
 import io.github.bitshiftdev.mavendetective.idea.ui.DetectivePanel;
 import io.github.bitshiftdev.mavendetective.idea.ui.FixBar;
 import io.github.bitshiftdev.mavendetective.idea.ui.Locations;
+import io.github.bitshiftdev.mavendetective.idea.ui.TrackingPanel;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -31,6 +32,7 @@ import javax.swing.JButton;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.ListSelectionModel;
+import javax.swing.ScrollPaneConstants;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.event.ActionListener;
@@ -104,15 +106,21 @@ final class PreflightView extends JPanel {
             }
         });
         details.setBorder(JBUI.Borders.empty(8, 12));
+        details.setOpaque(false);
+        list.setBorder(JBUI.Borders.customLine(JBColor.border(), 1, 0, 1, 0));
 
-        JBScrollPane scroll = new JBScrollPane(list);
-        scroll.setBorder(JBUI.Borders.customLine(JBColor.border(), 1, 0, 1, 0));
-        JBScrollPane detailScroll = new JBScrollPane(details);
-        detailScroll.setBorder(JBUI.Borders.empty());
-        detailScroll.setPreferredSize(JBUI.size(200, 150));
-        add(head, BorderLayout.NORTH);
-        add(DetectivePanel.copyable(scroll, this::selectedText), BorderLayout.CENTER);
-        add(detailScroll, BorderLayout.SOUTH);
+        // Eine Seite, die als Ganzes scrollt: Kopf, Liste und Details nehmen ihre volle Höhe. Vorher
+        // bekam die Liste im CENTER nur, was Kopf (NORTH) und feste Detailhöhe (SOUTH) übrig ließen –
+        // in einem flachen Werkzeugfenster kaum zwei Zeilen.
+        head.setOpaque(false);
+        TrackingPanel page = new TrackingPanel(new VerticalLayout(0));
+        page.add(head);
+        page.add(DetectivePanel.copyable(list, this::selectedText));
+        page.add(details);
+        JBScrollPane scroll = new JBScrollPane(page, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(JBUI.Borders.empty());
+        add(scroll, BorderLayout.CENTER);
     }
 
     void loading() {
