@@ -82,6 +82,26 @@ subprojects {
     }
 }
 
+// Testabdeckung (JaCoCo) nur auf Wunsch: ./gradlew -Pcoverage :core:test :core:jacocoTestReport
+// Fest angewendet bräuchte jeder Testlauf die JaCoCo-Artefakte von Maven Central – offline (Sandbox)
+// liegen sie nicht im Cache. CI erzeugt den Bericht als Artefakt, noch ohne Schwelle.
+if (providers.gradleProperty("coverage").isPresent) {
+    centralModules.forEach { path ->
+        project(path) {
+            apply(plugin = "jacoco")
+            configure<JacocoPluginExtension> { toolVersion = "0.8.14" }
+            // jacocoTestReport entsteht erst mit dem java-Plugin des Moduls, das nach diesem Skript kommt
+            tasks.withType<JacocoReport>().configureEach {
+                reports {
+                    xml.required.set(true)
+                    csv.required.set(true)
+                    html.required.set(true)
+                }
+            }
+        }
+    }
+}
+
 tasks.register<Zip>("centralBundle") {
     group = "publishing"
     description = "Baut das signierte Bundle für den Upload ins Maven Central Portal."

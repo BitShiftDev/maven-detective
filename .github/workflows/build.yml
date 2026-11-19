@@ -31,8 +31,23 @@ jobs:
         with:
           gradle-home-cache-strict-match: true
       # --continue: Auch nach Fehlschlägen im Kern die Extension-Tests laufen lassen – alle Befunde je OS auf einmal
+      # Unter Ubuntu mit Testabdeckung (JaCoCo, -Pcoverage); Bericht als Artefakt, noch ohne Schwelle
       - name: Unit-Tests (Kern, Katalog, Prüfungen, Extension)
-        run: ./gradlew --continue :core:test :maven-extension:test
+        run: |
+          if [ "${{ matrix.os }}" = ubuntu-latest ]; then
+            ./gradlew --continue -Pcoverage :core:test :maven-extension:test :core:jacocoTestReport :maven-extension:jacocoTestReport
+          else
+            ./gradlew --continue :core:test :maven-extension:test
+          fi
+      - name: Abdeckungsbericht hochladen
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: |
+            core/build/reports/jacoco/test
+            maven-extension/build/reports/jacoco/test
+          if-no-files-found: ignore
       - run: mvn -v
       - name: Extension bauen und Fixtures mit echtem Maven auslösen
         run: ./gradlew :maven-extension:fixtureTest

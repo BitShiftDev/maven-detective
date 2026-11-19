@@ -15,6 +15,7 @@ Requires JDK 21 (core and extension are still compiled to Java 8 bytecode).
 
 ```bash
 ./gradlew :core:test                    # unit tests incl. the error catalog
+./gradlew -Pcoverage :core:test :core:jacocoTestReport  # with JaCoCo coverage → core/build/reports/jacoco/
 ./gradlew :intellij-plugin:test         # plugin tests (texts, colours, fix planning)
 ./gradlew :maven-extension:fixtureTest  # triggers every failure in fixtures/ with a real Maven (mvn on PATH)
 ./gradlew :intellij-plugin:runIde       # start IntelliJ IDEA with the plugin
