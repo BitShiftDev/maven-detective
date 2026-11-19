@@ -7,5 +7,5 @@
 
 - [ ] `./gradlew :core:test :intellij-plugin:test`
 - [ ] New texts added to both `…properties` files (English and German)
-- [ ] New rule: test log added under `core/src/test/resources/logs/`
+- [ ] New rule: at least three test logs added under `core/src/test/resources/logs/`
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]`

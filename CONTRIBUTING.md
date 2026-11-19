@@ -31,7 +31,7 @@ Requires JDK 21 (core and extension are still compiled to Java 8 bytecode).
 ### Adding a rule to the error catalog
 
 1. Add the rule to `core/src/main/resources/io/github/bitshiftdev/mavendetective/core/catalog/build-doctor-v1.yaml` (fields are documented in the file header; regexes in single quotes, an `…_en:` next to every text).
-2. Add a test log `core/src/test/resources/logs/<rule-id>__<description>.log` – `LogCatalogTest` requires at least one per rule.
+2. Add at least three test logs `core/src/test/resources/logs/<rule-id>__<description>.log` (e.g. Maven 3.9 and Maven 4, a second message form, a CI prefix or Windows) – `LogCatalogTest` requires three per rule. Windows logs with CRLF line endings get `crlf` in the file name. Near misses that must *not* be recognised as the rule go into `logs-negative/`, logs with two errors into `logs-multi/<higher-priority-rule>+<other-rule>__<description>.log`.
 3. If the failure is reproducible: add a fixture under `fixtures/NN-name/` and a line in `fixtures/fixtures.txt`.
 4. Update the README if new categories or checks are added: table *What it recognises* or list *Available checks*.
 

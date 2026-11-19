@@ -49,9 +49,11 @@ knows these classics, **proves** which one hit you and fixes it.
 
 ## Installation
 
+<a href="https://plugins.jetbrains.com/plugin/36131"><img src="https://img.shields.io/jetbrains/plugin/v/36131?label=JetBrains%20Marketplace&color=5EA1FE&logo=jetbrains" alt="Maven Detective on JetBrains Marketplace"></a>
+
 | You want… | Do this |
 | --- | --- |
-| **The IntelliJ plugin** | *Settings → Plugins → Marketplace* → search for **Maven Detective** (IntelliJ IDEA 2025.3 or newer).<br>Offline: download `maven-detective-<version>.zip` from the [releases](https://github.com/BitShiftDev/maven-detective/releases) and use *Install Plugin from Disk…* |
+| **The IntelliJ plugin** | *Settings → Plugins → Marketplace* → search for **Maven Detective**, or install it from the [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/36131) (IntelliJ IDEA 2025.3 or newer).<br>Offline: download `maven-detective-<version>.zip` from the [releases](https://github.com/BitShiftDev/maven-detective/releases) and use *Install Plugin from Disk…* |
 | **The diagnosis in every `mvn` run** (terminal, CI) | Add the Maven extension – see [Maven extension](#maven-extension). |
 | **The command line tool** | Download `maven-detective-cli-<version>.jar` from the [releases](https://github.com/BitShiftDev/maven-detective/releases) and run `java -jar maven-detective-cli-<version>.jar diagnose build.log` (Java 8+). |
 
