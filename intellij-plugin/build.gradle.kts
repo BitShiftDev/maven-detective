@@ -155,17 +155,20 @@ intellijPlatform {
 // Text für das GitHub-Release (release.yml): Abschnitt der aktuellen Version aus CHANGELOG.md als Markdown.
 // Schlägt fehl, wenn es den Abschnitt nicht gibt – so geht kein Release ohne Changelog-Eintrag raus.
 // Eine SNAPSHOT-Version (Entwicklung, CI auf main) liest "## [Unreleased]"; release.yml lässt sie nie durch.
+// Direkt nach einem Release ist "## [Unreleased]" leer – das ist für eine SNAPSHOT-Version kein Fehler.
 val releaseNotes by tasks.registering {
     group = "publishing"
     description = "Schreibt den CHANGELOG-Abschnitt der aktuellen Version nach build/release-notes.md."
     val changelog = changelogFile.asFile
     val output = layout.buildDirectory.file("release-notes.md")
-    val version = if (pluginVersion.endsWith("-SNAPSHOT")) "Unreleased" else pluginVersion
+    val snapshot = pluginVersion.endsWith("-SNAPSHOT")
+    val version = if (snapshot) "Unreleased" else pluginVersion
     inputs.file(changelog)
+    inputs.property("version", version)
     outputs.file(output)
     doLast {
         val section = Changelog.section(changelog.readText(), version)
-        check(section.isNotEmpty()) { "CHANGELOG.md hat keinen Abschnitt \"## [$version]\"" }
-        output.get().asFile.writeText(section + "\n")
+        check(snapshot || section.isNotEmpty()) { "CHANGELOG.md: Abschnitt \"## [$version]\" fehlt oder ist leer" }
+        output.get().asFile.writeText(if (section.isEmpty()) "" else section + "\n")
     }
 }
