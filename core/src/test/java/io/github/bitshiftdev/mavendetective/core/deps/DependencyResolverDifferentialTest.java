@@ -188,7 +188,7 @@ class DependencyResolverDifferentialTest {
         }));
         out.add(Arguments.of("system-Scope bleibt transitiv", (Scenario) (dir, repo) -> {
             repo.pom(TestPom.of("org.a", "a", "1").dependency("org.sys", "sys", "1", "<scope>system</scope>",
-                    "<systemPath>/opt/sys.jar</systemPath>").dependency("org.b", "b", "1"));
+                    "<systemPath>" + dir.resolve("sys.jar").toAbsolutePath() + "</systemPath>").dependency("org.b", "b", "1"));
             repo.pom(TestPom.of("org.b", "b", "1").dependency("org.sys", "sys", "1"));
             repo.pom("org.sys", "sys", "1");
             return module(dir, TestPom.of("org.app", "app", "1").dependency("org.a", "a", "1", "<scope>runtime</scope>"));
@@ -306,8 +306,13 @@ class DependencyResolverDifferentialTest {
         }
     }
 
+    /**
+     * 300 Graphen; unter Windows 50 – dort kosten die rund 36 POMs je Graph im {@code @TempDir} Minuten, und der
+     * Windows-Job prüft Pfade und Zeilenenden, nicht die Algorithmen (die laufen unter Linux und macOS voll).
+     */
     static Stream<Integer> seeds() {
-        return java.util.stream.IntStream.range(0, 300).boxed();
+        boolean windows = System.getProperty("os.name", "").startsWith("Windows");
+        return java.util.stream.IntStream.range(0, windows ? 50 : 300).boxed();
     }
 
     /**
