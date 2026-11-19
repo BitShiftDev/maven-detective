@@ -1,0 +1,33 @@
+[INFO] --- surefire:3.5.2:test (default-test) @ billing ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.acme.billing.InvoiceServiceTest
+[ERROR] Tests run: 4, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 1.102 s <<< FAILURE! -- in com.acme.billing.InvoiceServiceTest
+[ERROR] com.acme.billing.InvoiceServiceTest.createsInvoice -- Time elapsed: 0.512 s <<< ERROR!
+java.lang.NoClassDefFoundError: org/apache/commons/lang3/function/FailableSupplier
+	at com.acme.billing.InvoiceService.create(InvoiceService.java:44)
+	at com.acme.billing.InvoiceServiceTest.createsInvoice(InvoiceServiceTest.java:31)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+Caused by: java.lang.ClassNotFoundException: org.apache.commons.lang3.function.FailableSupplier
+	at java.base/jdk.internal.loader.BuiltinClassLoader.loadClass(BuiltinClassLoader.java:641)
+	at java.base/jdk.internal.loader.ClassLoaders$AppClassLoader.loadClass(ClassLoaders.java:188)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:528)
+	... 3 more
+
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Errors: 
+[ERROR]   InvoiceServiceTest.createsInvoice:31 » NoClassDefFound org/apache/commons/lang3/function/FailableSupplier
+[INFO] 
+[ERROR] Tests run: 4, Failures: 0, Errors: 1, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project billing: There are test failures.
+[ERROR] 
+[ERROR] Please refer to /home/dev/billing/target/surefire-reports for the individual test results.

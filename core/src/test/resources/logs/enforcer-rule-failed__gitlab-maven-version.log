@@ -1,0 +1,10 @@
+2026-11-19T05:12:01.104411Z 01O [INFO] --- enforcer:3.5.0:enforce (enforce-maven) @ platform ---
+2026-11-19T05:12:01.215532Z 01O [ERROR] Rule 0: org.apache.maven.enforcer.rules.version.RequireMavenVersion failed with message:
+2026-11-19T05:12:01.215533Z 01O [ERROR] Detected Maven Version: 3.6.3 is not in the allowed range [3.9.0,).
+2026-11-19T05:12:01.220001Z 01O [INFO] ------------------------------------------------------------------------
+2026-11-19T05:12:01.220002Z 01O [INFO] BUILD FAILURE
+2026-11-19T05:12:01.220003Z 01O [INFO] ------------------------------------------------------------------------
+2026-11-19T05:12:01.224410Z 01O [ERROR] Failed to execute goal org.apache.maven.plugins:maven-enforcer-plugin:3.5.0:enforce (enforce-maven) on project platform: 
+2026-11-19T05:12:01.224411Z 01O [ERROR] Rule 0: org.apache.maven.enforcer.rules.version.RequireMavenVersion failed with message:
+2026-11-19T05:12:01.224412Z 01O [ERROR] Detected Maven Version: 3.6.3 is not in the allowed range [3.9.0,).
+2026-11-19T05:12:01.224413Z 01O [ERROR] -> [Help 1]

@@ -1,0 +1,12 @@
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The POM for com.acme.legacy:codes:jar:1.0 is missing, no dependency information available
+[INFO] --- compiler:3.13.0:compile (default-compile) @ portal ---
+[ERROR] COMPILATION ERROR : 
+[ERROR] /home/dev/portal/src/main/java/com/acme/portal/App.java:[9,8] cannot find symbol
+  symbol:   class Codes
+  location: package com.acme.legacy
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project portal: Compilation failure
+[ERROR] /home/dev/portal/src/main/java/com/acme/portal/App.java:[9,8] cannot find symbol
+[ERROR]   symbol:   class Codes
+[ERROR]   location: package com.acme.legacy

@@ -1,0 +1,12 @@
+[INFO] Running com.acme.api.SecurityIT
+[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 2.31 s <<< FAILURE! -- in com.acme.api.SecurityIT
+[ERROR] com.acme.api.SecurityIT.anonymousIsRejected -- Time elapsed: 0.42 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <403 Forbidden> but was: <200 OK>
+	at com.acme.api.SecurityIT.anonymousIsRejected(SecurityIT.java:41)
+
+[INFO] Results:
+[ERROR] Failures: 
+[ERROR]   SecurityIT.anonymousIsRejected:41 expected: <403 Forbidden> but was: <200 OK>
+[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-failsafe-plugin:3.5.2:verify (default) on project api: There are test failures.

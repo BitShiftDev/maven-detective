@@ -91,7 +91,8 @@ public final class BuildDoctor {
 
     private List<Diagnosis> diagnose(BuildFailure failure, Environment env, boolean withWeak, Cancellation cancel) {
         List<String> lines = failure.searchableLines(true, withWeak);
-        ProjectPoms poms = new ProjectPoms(env.getProjectDirectory());
+        // der Abbruch gilt auch für das Einlesen der Projekt-POMs und zwischen den Regeln, nicht nur in langen Prüfungen
+        ProjectPoms poms = new ProjectPoms(env.getProjectDirectory(), cancel);
         List<Rule> rules = new ArrayList<Rule>(catalog.getRules());
         Collections.sort(rules, new Comparator<Rule>() {
             @Override
@@ -101,6 +102,7 @@ public final class BuildDoctor {
         });
         List<Diagnosis> out = new ArrayList<Diagnosis>();
         for (Rule rule : rules) {
+            cancel.check();
             Diagnosis d = apply(rule, failure, env, lines, poms, withWeak, cancel);
             if (d != null) {
                 out.add(d);

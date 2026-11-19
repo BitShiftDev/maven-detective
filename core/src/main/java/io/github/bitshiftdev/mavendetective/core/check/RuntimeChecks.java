@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,12 +34,12 @@ final class RuntimeChecks {
         @Override
         public CheckResult run(CheckContext ctx) {
             int required = Text.javaFeatureVersion(ctx.var("required"));
-            if (required < 0 && ctx.var("classVersion") != null) {
-                required = Text.javaForClassVersion(Integer.parseInt(ctx.var("classVersion")));
+            if (required < 0) {
+                required = Text.javaForClassVersion(ctx.var("classVersion"));
             }
             int runner = Text.javaFeatureVersion(ctx.env().getRunnerJavaVersion());
-            if (runner < 0 && ctx.var("runtimeClassVersion") != null) {
-                runner = Text.javaForClassVersion(Integer.parseInt(ctx.var("runtimeClassVersion")));
+            if (runner < 0) {
+                runner = Text.javaForClassVersion(ctx.var("runtimeClassVersion"));
             }
             if (runner < 0 && ctx.var("runner") != null) {
                 runner = Text.javaFeatureVersion(ctx.var("runner"));
@@ -83,8 +84,10 @@ final class RuntimeChecks {
     // ------------------------------------------------------------------ source-location
 
     static final class SourceLocation implements Check {
-        private static final Pattern LOCATION = Pattern.compile("(?<![^\\s:\\[(])(" + Text.absolutePath("java|kt|groovy")
-                + "|[^\\s:\\[\\\\/][^\\s:\\[]*\\.(?:java|kt|groovy)):\\[(\\d+),(\\d+)\\]");
+        /** javac unter Windows schreibt {@code /C:/pfad/A.java}; der Schrägstrich vor dem Laufwerk gehört nicht zum Pfad. */
+        private static final Pattern LOCATION = Pattern.compile("(?<![^\\s:\\[(])(?:/(?=[A-Za-z]:))?("
+                + Text.absolutePath("java|kt|groovy")
+                + "|[^\\s:\\[\\\\/][^\\s:\\[]*\\.(?:java|kt|groovy)):\\[(\\d{1,9}),(\\d+)\\]");
 
         @Override
         public String id() { return "source-location"; }
@@ -150,7 +153,9 @@ final class RuntimeChecks {
     // ------------------------------------------------------------------ memory-settings
 
     static final class MemorySettings implements Check {
-        private static final Pattern XMX = Pattern.compile("-Xmx(\\d+)([kKmMgG]?)");
+        /** Bis 15 Stellen, damit das Verdoppeln in {@code long} passt; längere Werte gelten als unbekannt. */
+        private static final Pattern XMX = Pattern.compile("-Xmx(\\d{1,15})(?!\\d)([kKmMgG]?)");
+        private static final Pattern SIZE = Pattern.compile("(\\d{1,15})([kKmMgG]?)");
 
         @Override
         public String id() { return "memory-settings"; }
@@ -236,12 +241,12 @@ final class RuntimeChecks {
             if (xmx == null) {
                 return "2g";
             }
-            Matcher m = Pattern.compile("(\\d+)([kKmMgG]?)").matcher(xmx);
+            Matcher m = SIZE.matcher(xmx);
             if (!m.matches()) {
                 return "2g";
             }
             long n = Long.parseLong(m.group(1)) * 2;
-            String unit = m.group(2).toLowerCase();
+            String unit = m.group(2).toLowerCase(Locale.ROOT);
             if (unit.equals("m") && n >= 1024 && n % 1024 == 0) {
                 return (n / 1024) + "g";
             }

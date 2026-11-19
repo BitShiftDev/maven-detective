@@ -1,0 +1,9 @@
+2026-11-19T06:02:11.1234567Z [INFO] --- compiler:3.13.0:compile (default-compile) @ reporting ---
+2026-11-19T06:02:11.2345678Z [INFO] Compiling 1873 source files with javac [debug release 21] to target/classes
+2026-11-19T06:02:40.7654321Z [INFO] ------------------------------------------------------------------------
+2026-11-19T06:02:40.7654322Z [INFO] BUILD FAILURE
+2026-11-19T06:02:40.7654323Z [INFO] ------------------------------------------------------------------------
+2026-11-19T06:02:40.7660001Z [ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project reporting: Fatal error compiling: java.lang.OutOfMemoryError: Metaspace -> [Help 1]
+2026-11-19T06:02:40.7660002Z [ERROR] 
+2026-11-19T06:02:40.7660003Z [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+2026-11-19T06:02:40.8120001Z ##[error]Process completed with exit code 1.

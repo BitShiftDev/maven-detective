@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 /** Kleine Textwerkzeuge für Prüfungen. */
 public final class Text {
 
-    private static final Pattern FEATURE = Pattern.compile("^(?:1\\.)?(\\d+)");
+    private static final Pattern FEATURE = Pattern.compile("^(?:1\\.)?(\\d{1,9})(?!\\d)");
     private static final Pattern HOST = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.\\-]*://([^/:]+)");
 
     private Text() {
@@ -38,6 +38,25 @@ public final class Text {
     /** Class-File-Version → Java-Version (65 → 21). */
     public static int javaForClassVersion(int classVersion) {
         return classVersion > 44 ? classVersion - 44 : -1;
+    }
+
+    /** Wie oben, Version als Text aus dem Log; -1, wenn es keine Zahl ist oder sie nicht in {@code int} passt. */
+    public static int javaForClassVersion(String classVersion) {
+        int n = number(classVersion);
+        return n < 0 ? -1 : javaForClassVersion(n);
+    }
+
+    /** Nicht negative Zahl aus dem Log; -1, wenn {@code s} fehlt, keine Zahl ist oder nicht in {@code int} passt. */
+    public static int number(String s) {
+        if (s == null || s.isEmpty() || s.length() > 9) {
+            return -1;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) < '0' || s.charAt(i) > '9') {
+                return -1;
+            }
+        }
+        return Integer.parseInt(s);
     }
 
     private static final Pattern USER_INFO = Pattern.compile("^([a-zA-Z][a-zA-Z0-9+.\\-]*://)[^/@\\s]+@");

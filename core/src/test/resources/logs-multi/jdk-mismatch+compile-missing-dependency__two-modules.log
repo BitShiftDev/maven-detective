@@ -1,0 +1,8 @@
+[INFO] --- compiler:3.13.0:compile (default-compile) @ legacy ---
+[ERROR] COMPILATION ERROR : 
+[ERROR] /home/dev/suite/legacy/src/main/java/com/acme/Old.java:[5,17] package sun.misc.BASE64 does not exist
+[INFO] --- compiler:3.13.0:compile (default-compile) @ modern ---
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project legacy: Compilation failure
+[ERROR] /home/dev/suite/legacy/src/main/java/com/acme/Old.java:[5,17] package sun.misc.BASE64 does not exist
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project modern: Fatal error compiling: error: release version 25 not supported

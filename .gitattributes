@@ -5,3 +5,5 @@
 *.bat -text
 # Test-POMs mit Windows-Zeilenenden: PomEditorInvariantTest prüft, dass CRLF erhalten bleibt
 core/src/test/resources/poms/*crlf*.xml -text
+# Testlogs aus Windows-Builds: der Parser muss CRLF selbst verkraften
+core/src/test/resources/logs*/*crlf*.log -text

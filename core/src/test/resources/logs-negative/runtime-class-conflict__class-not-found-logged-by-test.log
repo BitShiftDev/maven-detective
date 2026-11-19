@@ -1,0 +1,14 @@
+[INFO] Running com.acme.plugins.LoaderTest
+08:14:02.117 [main] WARN  com.acme.plugins.Loader - optional plugin skipped
+java.lang.ClassNotFoundException: com.acme.extra.ReportingPlugin
+	at java.base/jdk.internal.loader.BuiltinClassLoader.loadClass(BuiltinClassLoader.java:641)
+	at com.acme.plugins.Loader.tryLoad(Loader.java:52)
+[ERROR] Tests run: 5, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.31 s <<< FAILURE! -- in com.acme.plugins.LoaderTest
+[ERROR] com.acme.plugins.LoaderTest.loadsAllBuiltIns -- Time elapsed: 0.02 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <4> but was: <3>
+	at com.acme.plugins.LoaderTest.loadsAllBuiltIns(LoaderTest.java:28)
+[ERROR] Failures: 
+[ERROR]   LoaderTest.loadsAllBuiltIns:28 expected: <4> but was: <3>
+[ERROR] Tests run: 5, Failures: 1, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project plugins: There are test failures.

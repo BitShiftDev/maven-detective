@@ -1,0 +1,15 @@
+[INFO] --- enforcer:3.5.0:enforce (enforce-convergence) @ shop ---
+[WARNING] Rule 0: org.apache.maven.enforcer.rules.dependency.DependencyConvergence failed with message:
+Dependency convergence error for org.slf4j:slf4j-api:jar:2.0.9 paths to dependency are:
++-com.acme:shop:jar:1.0
+  +-org.slf4j:slf4j-api:jar:2.0.9
+and
++-com.acme:shop:jar:1.0
+  +-ch.qos.logback:logback-classic:jar:1.4.14
+    +-org.slf4j:slf4j-api:jar:2.0.7
+[INFO] --- compiler:3.13.0:compile (default-compile) @ shop ---
+[ERROR] COMPILATION ERROR : 
+[ERROR] /home/dev/shop/src/main/java/com/acme/shop/Cart.java:[3,26] package com.acme.pricing does not exist
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project shop: Compilation failure
+[ERROR] /home/dev/shop/src/main/java/com/acme/shop/Cart.java:[3,26] package com.acme.pricing does not exist

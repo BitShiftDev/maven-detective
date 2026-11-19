@@ -16,6 +16,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
@@ -29,8 +30,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Jede Datei unter {@code logs/} heißt {@code <erwartete-regel-id>__<beschreibung>.log}.
  * Der Test prüft, dass Build Doctor genau diese Regel als wahrscheinlichste Ursache meldet –
  * so wird jeder „Falsch erkannt“-Fall zu einem dauerhaften Testfall.
+ *
+ * <p>{@code logs-negative/<regel-id>__<beschreibung>.log} sind Beinahe-Treffer: die Regel darf in keiner
+ * Diagnose auftauchen. {@code logs-multi/<regel-a>+<regel-b>__<beschreibung>.log} enthalten zwei Fehler:
+ * die Regel mit der höheren {@code priority} steht vorn, die andere folgt.
  */
 class LogCatalogTest {
+
+    /** Maven 3.9, Maven 4 bzw. eine zweite Fehlerform, CI-Präfix oder Windows. */
+    private static final int MIN_LOGS_PER_RULE = 3;
 
     private final BuildDoctor doctor = BuildDoctor.withDefaults();
 
@@ -54,17 +62,65 @@ class LogCatalogTest {
     }
 
     @Test
-    void everyRuleHasAtLeastOneLog() throws Exception {
-        Set<String> covered = logs().stream()
-                .map(p -> p.getFileName().toString().split("__")[0])
-                .collect(Collectors.toCollection(TreeSet::new));
+    void everyRuleHasEnoughLogs() throws Exception {
+        Map<String, Long> perRule = logs().stream()
+                .collect(Collectors.groupingBy(p -> p.getFileName().toString().split("__")[0], Collectors.counting()));
         List<String> missing = new ArrayList<>();
         for (Rule r : doctor.getCatalog().getRules()) {
-            if (!covered.contains(r.getId())) {
-                missing.add(r.getId());
+            long n = perRule.getOrDefault(r.getId(), 0L);
+            if (n < MIN_LOGS_PER_RULE) {
+                missing.add(r.getId() + " (" + n + ")");
             }
         }
-        assertTrue(missing.isEmpty(), "Regeln ohne Testlog: " + missing);
+        assertTrue(missing.isEmpty(), "Regeln mit weniger als " + MIN_LOGS_PER_RULE + " Testlogs: " + missing);
+    }
+
+    @Test
+    void nearMissesDoNotTriggerTheirRule() throws Exception {
+        Environment env = isolatedEnvironment();
+        List<Path> logs = logs("/logs-negative");
+        assertFalse(logs.isEmpty(), "keine Negativ-Logs gefunden");
+        List<String> failures = new ArrayList<>();
+        for (Path log : logs) {
+            String forbidden = log.getFileName().toString().split("__")[0];
+            assertTrue(doctor.getCatalog().rule(forbidden) != null, log + ": unbekannte Regel " + forbidden);
+            List<String> ids = ruleIds(doctor.diagnose(parse(log), env));
+            if (ids.contains(forbidden)) {
+                failures.add(log.getFileName() + ": " + ids);
+            }
+        }
+        assertTrue(failures.isEmpty(), String.join("\n", failures));
+    }
+
+    @Test
+    void twoErrorsAreOrderedByPriority() throws Exception {
+        Environment env = isolatedEnvironment();
+        List<Path> logs = logs("/logs-multi");
+        assertFalse(logs.isEmpty(), "keine Logs mit zwei Fehlern gefunden");
+        List<String> failures = new ArrayList<>();
+        for (Path log : logs) {
+            String[] expected = log.getFileName().toString().split("__")[0].split("\\+");
+            Rule first = doctor.getCatalog().rule(expected[0]);
+            Rule second = doctor.getCatalog().rule(expected[1]);
+            assertTrue(first.getPriority() > second.getPriority(), log + ": Dateiname nicht nach Priorität geordnet");
+            List<String> ids = ruleIds(doctor.diagnose(parse(log), env));
+            if (ids.isEmpty() || !ids.get(0).equals(expected[0]) || !ids.contains(expected[1])) {
+                failures.add(log.getFileName() + ": " + ids);
+            }
+        }
+        assertTrue(failures.isEmpty(), String.join("\n", failures));
+    }
+
+    private static List<String> ruleIds(List<Diagnosis> diagnoses) {
+        List<String> ids = new ArrayList<>();
+        for (Diagnosis d : diagnoses) {
+            ids.add(d.getRuleId());
+        }
+        return ids;
+    }
+
+    private static BuildFailure parse(Path log) throws IOException {
+        return MavenLogParser.parse(new String(Files.readAllBytes(log), StandardCharsets.UTF_8));
     }
 
     @Test
@@ -117,7 +173,11 @@ class LogCatalogTest {
     }
 
     static List<Path> logs() throws IOException, URISyntaxException {
-        Path dir = Paths.get(LogCatalogTest.class.getResource("/logs").toURI());
+        return logs("/logs");
+    }
+
+    static List<Path> logs(String resource) throws IOException, URISyntaxException {
+        Path dir = Paths.get(LogCatalogTest.class.getResource(resource).toURI());
         try (Stream<Path> s = Files.list(dir)) {
             return s.filter(p -> p.toString().endsWith(".log")).sorted().collect(Collectors.toList());
         }

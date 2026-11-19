@@ -30,8 +30,9 @@ final class PomChecks {
     // ------------------------------------------------------------------ pom-location
 
     static final class PomLocation implements Check {
-        private static final Pattern WITH_FILE = Pattern.compile("@ ([^,\\r\\n]{1,500}?\\.xml), line (\\d+), column (\\d+)");
-        private static final Pattern LINE_ONLY = Pattern.compile("@ line (\\d+), column (\\d+)");
+        /** Zeilennummern bis 9 Stellen – mehr passt nicht in {@code int} und kommt nur in verstümmelten Logs vor. */
+        private static final Pattern WITH_FILE = Pattern.compile("@ ([^,\\r\\n]{1,500}?\\.xml), line (\\d{1,9}), column (\\d+)");
+        private static final Pattern LINE_ONLY = Pattern.compile("@ line (\\d{1,9}), column (\\d+)");
         private static final Pattern PROJECT_FILE = Pattern.compile("The project \\S+ \\(([^)]+\\.xml)\\) has \\d+ errors?");
 
         @Override
@@ -101,13 +102,15 @@ final class PomChecks {
     // ------------------------------------------------------------------ parent-relative-path
 
     static final class ParentRelativePath implements Check {
+        private static final Pattern PROJECT_FILE = Pattern.compile("The project \\S+ \\(([^)]+\\.xml)\\) has");
+
         @Override
         public String id() { return "parent-relative-path"; }
 
         @Override
         public CheckResult run(CheckContext ctx) {
             Path childFile = null;
-            Matcher m = ctx.find(Pattern.compile("The project \\S+ \\(([^)]+\\.xml)\\) has"));
+            Matcher m = ctx.find(PROJECT_FILE);
             if (m != null) {
                 childFile = Text.localPath(m.group(1));
             } else if (ctx.var("project") != null) {
@@ -328,10 +331,11 @@ final class PomChecks {
             String plugin = ctx.var("plugin");
             // Nur die Warnung „'build.plugins.plugin.version' for … is missing“ handelt von einer fehlenden Version;
             // dieselbe Regel deckt auch unbekannte Prefixe und Goals ab
-            if (plugin == null || plugin.indexOf(':') < 0 || !ctx.anyLineContains("'build.plugins.plugin.version'")) {
+            String[] parts = plugin == null ? new String[0] : plugin.split(":", -1);
+            if (parts.length < 2 || parts[0].isEmpty() || parts[1].isEmpty()
+                    || !ctx.anyLineContains("'build.plugins.plugin.version'")) {
                 return CheckResult.notApplicable();
             }
-            String[] parts = plugin.split(":");
             String groupId = parts[0];
             String artifactId = parts[1];
             boolean declared = false;
@@ -378,21 +382,24 @@ final class PomChecks {
             "<(dependencies|configuration|executions|goals)\\b[^>]*>.*?</\\1\\s*>|<(dependencies|configuration|executions|goals)\\b[^>]*/>",
             Pattern.DOTALL);
     private static final Pattern CHILD = Pattern.compile("<(groupId|artifactId|version)\\s*>\\s*([^<]*?)\\s*</\\1\\s*>");
+    private static final Pattern COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
 
     /**
      * Alle {@code <plugin>}-Einträge einer POM (build, pluginManagement, Profile, reporting). Kommentare
-     * zählen nicht; Koordinaten aus verschachtelten {@code <dependencies>}/{@code <configuration>} auch nicht.
+     * zählen nicht; Koordinaten aus verschachtelten {@code <dependencies>}/{@code <configuration>} auch nicht –
+     * auch kein {@code <plugin>} in der Konfiguration eines anderen (z. B. {@code reportPlugins}).
      */
     static List<PluginEntry> pluginEntries(List<String> lines) {
         StringBuilder sb = new StringBuilder();
         for (String line : lines) {
             sb.append(line).append('\n');
         }
-        String text = blank(sb.toString(), Pattern.compile("<!--.*?-->", Pattern.DOTALL));
+        // verschachtelte Blöcke vor der Plugin-Suche ausblenden, sonst endet ein Plugin am </plugin> seiner Konfiguration
+        String text = blank(blank(sb.toString(), COMMENT), NESTED);
         List<PluginEntry> out = new ArrayList<PluginEntry>();
         Matcher m = PLUGIN_BLOCK.matcher(text);
         while (m.find()) {
-            String body = blank(m.group(1), NESTED);
+            String body = m.group(1);
             PluginEntry e = new PluginEntry();
             Matcher c = CHILD.matcher(body);
             while (c.find()) {

@@ -1,0 +1,11 @@
+[INFO] Running com.acme.importer.ArchiveTest
+[ERROR] Tests run: 2, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.2 s <<< FAILURE! -- in com.acme.importer.ArchiveTest
+[ERROR] com.acme.importer.ArchiveTest.rejectsBrokenUpload -- Time elapsed: 0.05 s <<< ERROR!
+java.util.zip.ZipException: zip END header not found
+	at java.base/java.util.zip.ZipFile$Source.findEND(ZipFile.java:1469)
+	at com.acme.importer.Archive.open(Archive.java:20)
+[ERROR] Errors: 
+[ERROR]   ArchiveTest.rejectsBrokenUpload:33 » Zip zip END header not found
+[ERROR] Tests run: 2, Failures: 0, Errors: 1, Skipped: 0
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project importer: There are test failures.

@@ -112,7 +112,14 @@ final class RepositoryChecks {
             }
             String trimmed = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
             String https = "https://" + trimmed.substring("http://".length());
-            List<ProjectPoms.Location> hits = ctx.projectPoms().findText(trimmed);
+            Pattern value = urlValue(trimmed);
+            List<ProjectPoms.Location> hits = new ArrayList<ProjectPoms.Location>();
+            for (ProjectPoms.Pom pom : ctx.projectPoms().all()) {
+                int line = lineOf(pom.lines, value);
+                if (line > 0) {
+                    hits.add(new ProjectPoms.Location(pom, line));
+                }
+            }
             if (!hits.isEmpty()) {
                 ProjectPoms.Location loc = hits.get(0);
                 CheckResult r = CheckResult.confirmed()
@@ -127,8 +134,8 @@ final class RepositoryChecks {
                                 "file", loc.pom.file.toString(), "line", String.valueOf(loc.line)));
             }
             MavenSettings s = ctx.env().userSettings();
-            if (s != null && s.lineOf(trimmed) > 0) {
-                int line = s.lineOf(trimmed);
+            int line = s == null ? -1 : lineOf(s.getLines(), value);
+            if (line > 0) {
                 return CheckResult.confirmed()
                         .cause(Texts.t("check.http.settings.cause"))
                         .evidence(Evidence.setting(Texts.t("check.http.settings.evidence"), s.getFile().toString(), line))
@@ -140,11 +147,29 @@ final class RepositoryChecks {
                     .evidence(Evidence.hint(Texts.t("check.http.transitive.evidence")));
             if (s != null) {
                 r.fix(FixAction.of(FixAction.OPEN_FILE, Texts.t("check.http.mirror", ctx.var("repoId")),
-                        "file", s.getFile().toString(), "line", String.valueOf(Math.max(1, s.lineOf("<mirrors>")))));
+                        "file", s.getFile().toString(), "line", String.valueOf(Math.max(1, s.lineOf("<mirrors")))));
             } else {
                 r.fix(FixAction.of(FixAction.MANUAL, Texts.t("check.http.mirror", ctx.var("repoId"))));
             }
             return r;
+        }
+
+        /**
+         * Die Adresse als ganzer Elementwert ({@code >http://host/pfad<}, abschließender {@code /} egal) – so
+         * findet sie auch {@code replace-url}; eine längere Adresse mit demselben Anfang ist ein anderes Repository.
+         */
+        private static Pattern urlValue(String url) {
+            return Pattern.compile(">\\s*" + Pattern.quote(url) + "/?\\s*<");
+        }
+
+        /** Erste Zeile (ab 1) mit einem Treffer, sonst -1. */
+        private static int lineOf(List<String> lines, Pattern p) {
+            for (int i = 0; i < lines.size(); i++) {
+                if (p.matcher(lines.get(i)).find()) {
+                    return i + 1;
+                }
+            }
+            return -1;
         }
     }
 

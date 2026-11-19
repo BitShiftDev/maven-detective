@@ -80,7 +80,7 @@ final class ResolutionChecks {
 
     static final class NetworkFailure implements Check {
         private static final Pattern UNKNOWN_HOST = Pattern.compile(
-                "(?:Unknown host (\\S+?)[:\\s]|(?<!\\S)(\\S+?): (?:Name or service not known|nodename nor servname provided|No such host is known|Temporary failure in name resolution))");
+                "(?:Unknown host ([^\\s:]+)|(?<!\\S)(\\S+?): (?:Name or service not known|nodename nor servname provided|No such host is known|Temporary failure in name resolution))");
         private static final Pattern REFUSED = Pattern.compile(
                 "(?:Connect to (\\S+?) .*failed|Connection refused|No route to host|Network is unreachable)");
         private static final Pattern TIMEOUT = Pattern.compile("(?:connect timed out|Connection timed out|Read timed out|ConnectTimeoutException)");
@@ -281,6 +281,9 @@ final class ResolutionChecks {
     // ------------------------------------------------------------------ requested-repository
 
     static final class RequestedRepository implements Check {
+        /** Höchstens so viele verschiedene Repositories als Beleg. */
+        private static final int MAX_SHOWN = 5;
+
         @Override
         public String id() { return "requested-repository"; }
 
@@ -288,17 +291,24 @@ final class ResolutionChecks {
         public CheckResult run(CheckContext ctx) {
             CheckResult r = CheckResult.info();
             boolean any = false;
+            String repoId = ctx.var("repoId");
+            String repoUrl = ctx.var("repoUrl");
             Set<String> seen = new LinkedHashSet<String>();
             for (RepositoryRequest req : ctx.failure().getRepositoryRequests()) {
                 if (req.isFailed() && req.getRepositoryId() != null
-                        && seen.add(req.getRepositoryId() + " " + req.getRepositoryUrl()) && seen.size() <= 5) {
+                        && seen.add(req.getRepositoryId() + " " + req.getRepositoryUrl()) && seen.size() <= MAX_SHOWN) {
                     r.evidence(Evidence.environment(Texts.t("check.requested", req.getRepositoryId() + " (" + req.getRepositoryUrl() + ") → " + req.getFailure())));
-                    r.var("repoId", req.getRepositoryId()).var("repoUrl", req.getRepositoryUrl());
+                    if (!any) {
+                        // das erste gescheiterte Repository nennt die Ursache; ohne Angabe im Text gilt es auch für den Mirror
+                        r.var("repoId", req.getRepositoryId()).var("repoUrl", req.getRepositoryUrl());
+                        if (repoId == null) {
+                            repoId = req.getRepositoryId();
+                            repoUrl = req.getRepositoryUrl();
+                        }
+                    }
                     any = true;
                 }
             }
-            String repoId = ctx.var("repoId");
-            String repoUrl = ctx.var("repoUrl");
             if (!any && repoId != null) {
                 r.evidence(Evidence.environment(Texts.t("check.requested", repoId + (repoUrl == null ? "" : " (" + repoUrl + ")"))));
                 any = true;

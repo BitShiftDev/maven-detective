@@ -248,6 +248,9 @@ public final class MavenSettings {
 
     public Path getFile() { return file; }
 
+    /** Zeilen der Datei (Zeile n = Index n - 1), für Suchen mit eigener Regex. */
+    public List<String> getLines() { return Collections.unmodifiableList(lines); }
+
     public List<String> getServerIds() { return serverIds; }
 
     public List<Mirror> getMirrors() { return mirrors; }

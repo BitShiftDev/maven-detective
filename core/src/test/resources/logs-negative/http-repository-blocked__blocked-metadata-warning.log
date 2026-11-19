@@ -1,0 +1,13 @@
+[INFO] -----------------------< com.acme:legacy-client >-----------------------
+[INFO] Building legacy-client 2.4.0
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] Could not transfer metadata com.acme.internal:soap-stubs/maven-metadata.xml from/to maven-default-http-blocker (http://0.0.0.0/): Blocked mirror for repositories: [acme-legacy (http://maven.acme-legacy.example/releases, default, releases)]
+[INFO] --- compiler:3.13.0:compile (default-compile) @ legacy-client ---
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /home/dev/legacy-client/src/main/java/com/acme/Client.java:[7,24] package org.apache.http.client does not exist
+[INFO] 1 error
+[INFO] BUILD FAILURE
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project legacy-client: Compilation failure
+[ERROR] /home/dev/legacy-client/src/main/java/com/acme/Client.java:[7,24] package org.apache.http.client does not exist

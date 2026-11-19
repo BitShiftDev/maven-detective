@@ -1,0 +1,23 @@
+2026-11-19T07:41:10.1029384Z [INFO] Scanning for projects...
+2026-11-19T07:41:10.9384756Z [INFO] 
+2026-11-19T07:41:10.9385012Z [INFO] ------------------------< com.acme:orders-api >------------------------
+2026-11-19T07:41:10.9385210Z [INFO] Building orders-api 1.12.0-SNAPSHOT
+2026-11-19T07:41:10.9385399Z [INFO]   from pom.xml
+2026-11-19T07:41:10.9385581Z [INFO] --------------------------------[ jar ]---------------------------------
+2026-11-19T07:41:11.4021193Z [INFO] ------------------------------------------------------------------------
+2026-11-19T07:41:11.4021455Z [INFO] BUILD FAILURE
+2026-11-19T07:41:11.4021648Z [INFO] ------------------------------------------------------------------------
+2026-11-19T07:41:11.4021840Z [INFO] Total time:  1.502 s
+2026-11-19T07:41:11.4022034Z [INFO] Finished at: 2026-11-19T07:41:11Z
+2026-11-19T07:41:11.4022223Z [INFO] ------------------------------------------------------------------------
+2026-11-19T07:41:11.4025117Z [ERROR] Plugin com.acme.build:codegen-maven-plugin:3.1 or one of its dependencies could not be resolved:
+2026-11-19T07:41:11.4025410Z [ERROR] 	The following artifacts could not be resolved: com.acme.build:codegen-maven-plugin:jar:3.1 (absent): Could not transfer artifact com.acme.build:codegen-maven-plugin:jar:3.1 from/to maven-default-http-blocker (http://0.0.0.0/): Blocked mirror for repositories: [acme-plugins (http://plugins.acme.example/maven2, default, releases+snapshots)]
+2026-11-19T07:41:11.4025703Z [ERROR] 
+2026-11-19T07:41:11.4025891Z [ERROR] -> [Help 1]
+2026-11-19T07:41:11.4026078Z [ERROR] 
+2026-11-19T07:41:11.4026260Z [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+2026-11-19T07:41:11.4026448Z [ERROR] Re-run Maven using the -X switch to enable full debug logging.
+2026-11-19T07:41:11.4026633Z [ERROR] 
+2026-11-19T07:41:11.4026819Z [ERROR] For more information about the errors and possible solutions, please read the following articles:
+2026-11-19T07:41:11.4027005Z [ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/PluginResolutionException
+2026-11-19T07:41:11.4720011Z ##[error]Process completed with exit code 1.

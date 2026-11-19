@@ -14,6 +14,12 @@
 - A text log with a very long error line full of spaces no longer stalls the diagnosis; removing the trailing `-> [Help 1]` took minutes on such lines.
 - POM quick fixes no longer fail on a POM that contains an empty `<exclusion/>`.
 - Custom catalogs (`--catalog`): a folded block (`>`) turns a blank line into one line break, as YAML does, instead of two.
+- Blocked http repository: a longer URL that only starts like the blocked one (`…/m2-old` for `…/m2`) is no longer taken for it; before, the card offered a quick fix that found nothing to replace.
+- Compiler errors from Windows (`/C:/project/src/…/App.java:[12,9]`) open the right file; the drive letter was lost.
+- A missing plugin version is found when the plugin's configuration contains other `<plugin>` entries (e.g. `reportPlugins`).
+- Network errors: `Unknown host repo.example.com` at the end of a line names the host; the mirror from `settings.xml` is shown for repositories that only the extension's events name, and the cause names the first repository that failed, not the last.
+- Line numbers, class file versions and `-Xmx` values too large for a number no longer end a check with an error ("Check '…' failed"), and doubling a huge `-Xmx` no longer gives a negative value.
+- IDE: cancelling a diagnosis also stops reading the project's POMs and skips the remaining rules.
 
 ## [0.1.1] - 2026-11-17
 
