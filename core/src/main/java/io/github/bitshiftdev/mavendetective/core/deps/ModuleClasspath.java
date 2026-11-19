@@ -233,10 +233,14 @@ public final class ModuleClasspath {
         }
         PomFile module = reactor == null ? null : reactor.get(g + ":" + a);
         if (module != null && v.equals(module.getVersion())) {
-            Path classes = module.getFile().getParent().resolve("target").resolve("classes");
+            // wie Mavens ReactorReader: Test-Artifacts (test-jar, Classifier tests) kommen aus target/test-classes
+            String c = "test-jar".equals(t) && classifier == null ? "tests" : classifier;
+            boolean tests = "tests".equals(c);
+            Path target = module.getFile().getParent().resolve("target");
+            Path classes = target.resolve(tests ? "test-classes" : "classes");
             Path file = Files.isDirectory(classes) ? classes : null;
             if (file == null) {
-                Path jar = module.getFile().getParent().resolve("target").resolve(a + "-" + v + ".jar");
+                Path jar = target.resolve(a + "-" + v + (c == null ? "" : "-" + c) + ".jar");
                 file = Files.isRegularFile(jar) ? jar : null;
             }
             entries.add(new Entry(g, a, v, t, classifier, scope, path, file, classes.toString(), false, true));

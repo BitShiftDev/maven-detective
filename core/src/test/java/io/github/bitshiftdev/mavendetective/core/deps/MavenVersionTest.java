@@ -80,4 +80,45 @@ class MavenVersionTest {
         }
         assertTrue(checked > 100_000);
     }
+    /**
+     * Strukturierte Paare (Testplan Welle 3): jede Basis × Trenner × Qualifier × Nachsatz gegen jede andere – Qualifier
+     * in Lang- und Kurzform, Wechsel Ziffer/Buchstabe ohne Trenner, führende Nullen, Groß-/Kleinschreibung.
+     */
+    @Test
+    void generiertePaareWieComparableVersion() {
+        String[] bases = {"1", "1.0", "1.0.0", "01", "1.00", "1.0.1", "2", "1-0"};
+        String[] separators = {"", ".", "-"};
+        String[] qualifiers = {"", "alpha", "a", "beta", "b", "milestone", "m", "rc", "cr", "RC", "snapshot", "SNAPSHOT",
+                "sp", "ga", "final", "release", "GA", "jre", "x"};
+        String[] suffixes = {"", "1", "01", "-1", ".1", "10"};
+        List<String> versions = new ArrayList<>();
+        for (String base : bases) {
+            for (String sep : separators) {
+                for (String q : qualifiers) {
+                    for (String suffix : suffixes) {
+                        if (q.isEmpty() && (sep.isEmpty() || suffix.isEmpty())) {
+                            continue;
+                        }
+                        versions.add(base + sep + q + suffix);
+                    }
+                }
+            }
+        }
+        List<ComparableVersion> maven = new ArrayList<>();
+        for (String v : versions) {
+            maven.add(new ComparableVersion(v));
+        }
+        int checked = 0;
+        for (int i = 0; i < versions.size(); i++) {
+            for (int j = i; j < versions.size(); j++) {
+                int expected = Integer.signum(maven.get(i).compareTo(maven.get(j)));
+                int actual = MavenVersion.compare(versions.get(i), versions.get(j));
+                if (expected != actual) {
+                    assertEquals(expected, actual, versions.get(i) + " vs " + versions.get(j));
+                }
+                checked++;
+            }
+        }
+        assertTrue(checked > 500_000, "nur " + checked);
+    }
 }

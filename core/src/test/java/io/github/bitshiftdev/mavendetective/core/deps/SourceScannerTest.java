@@ -1,7 +1,12 @@
 package io.github.bitshiftdev.mavendetective.core.deps;
 
+import io.github.bitshiftdev.mavendetective.core.Cancellation;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Set;
@@ -92,5 +97,39 @@ class SourceScannerTest {
         SourceScanner.scanText(groovy, false, Paths.get("S.groovy"), u);
         assertTrue(u.names(false).containsAll(List.of("org.x.G", "org.real.Z")), u.names(false).toString());
         assertFalse(u.names(false).contains("org.fake.Single"), u.names(false).toString());
+    }
+
+    static void write(Path file, String text) throws IOException {
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, text);
+    }
+
+    /** Modul mit Quellen in allen Sprachen und generierten Quellen (Testplan Welle 3). */
+    @Test
+    void modulMitKotlinGroovyUndGeneriertenQuellen(@TempDir Path module) throws IOException {
+        write(module.resolve("src/main/java/a/A.java"), "package a;\nimport org.main.Java;\nclass A {}\n");
+        write(module.resolve("src/main/kotlin/a/K.kt"), "package a\nimport org.main.Kotlin\n");
+        write(module.resolve("src/main/groovy/a/G.groovy"), "package a\nimport org.main.Groovy\n");
+        write(module.resolve("src/test/kotlin/a/KT.kt"), "package a\nimport org.test.Kotlin\n");
+        write(module.resolve("src/test/groovy/a/GT.groovy"), "package a\nimport org.test.Groovy\n");
+        write(module.resolve("target/generated-sources/annotations/a/Gen.java"), "package a;\nimport org.main.Generated;\n");
+        write(module.resolve("target/generated-test-sources/test-annotations/a/GenT.java"), "package a;\nimport org.test.Generated;\n");
+        write(module.resolve("src/main/resources/a/NotSource.txt"), "import org.never.Seen;\n");
+        write(module.resolve("build.gradle.kts"), "import org.never.Script\n");
+        ClassUsages u = SourceScanner.scan(module, Cancellation.NONE);
+        assertEquals(Set.of("org.main.Java", "org.main.Kotlin", "org.main.Groovy", "org.main.Generated"), filter(u.names(false)));
+        assertEquals(Set.of("org.test.Kotlin", "org.test.Groovy", "org.test.Generated"), filter(u.names(true)));
+        assertEquals(4, u.getMainFiles());
+        assertEquals(3, u.getTestFiles());
+    }
+
+    private static Set<String> filter(Set<String> names) {
+        Set<String> out = new java.util.TreeSet<>();
+        for (String n : names) {
+            if (n.startsWith("org.")) {
+                out.add(n);
+            }
+        }
+        return out;
     }
 }

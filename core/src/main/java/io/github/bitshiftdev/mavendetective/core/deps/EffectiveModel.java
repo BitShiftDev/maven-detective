@@ -127,6 +127,8 @@ public final class EffectiveModel {
     private final List<ImportStep> imports = new ArrayList<ImportStep>();
     private final List<ImportStep> missingImports = new ArrayList<ImportStep>();
     private final List<String> notes = new ArrayList<String>();
+    /** Doppelte Management-Einträge derselben POM: Schlüssel → letzter Eintrag (gilt, sobald ein BOM importiert wird). */
+    private Map<String, Managed> lastDuplicates;
     private boolean building;
     /** {@code groupId:artifactId} → verwaltete Einträge in Reihenfolge; nach dem Bau einmal angelegt. */
     private Map<String, List<Managed>> managedByGa;
@@ -164,25 +166,92 @@ public final class EffectiveModel {
         }
     }
 
+    /**
+     * Das Kind gewinnt. Deklariert eine POM eine Dependency zweimal, gilt wie bei Maven die letzte Deklaration (an der
+     * Stelle der ersten). Doppelte Management-Einträge behandelt Maven je nach Lage verschieden – nachgebaut ist die
+     * Reihenfolge des Model-Builders, siehe {@link #inheritManagement()}.
+     */
     private void inherit() {
+        inheritManagement();
         for (PomFile p : chain) {
-            for (PomFile.Dep d : p.managed) {
-                if (!d.isImport() && !managed.containsKey(d.managementKey())) {
-                    managed.put(d.managementKey(), new Managed(d, p, this, Collections.<ImportStep>emptyList()));
-                }
-            }
-            for (PomFile.Dep d : p.dependencies) {
-                if (!dependencies.containsKey(d.managementKey())) {
+            for (PomFile.Dep raw : p.dependencies) {
+                PomFile.Dep d = coordinates(raw);
+                Declared before = dependencies.get(d.managementKey());
+                if (before == null || before.declaredIn == p) {
                     dependencies.put(d.managementKey(), new Declared(d, p));
                 }
             }
         }
     }
 
+    /**
+     * {@code dependencyManagement} wie Mavens Vererbung, von der obersten POM nach unten: Hat der Parent (schon
+     * zusammengeführt) Einträge, kommen erst die des Kindes in eine Map (bei doppeltem Schlüssel der letzte), dann die
+     * des Parents, soweit der Schlüssel frei ist (bei Duplikaten dort der erste). Was nie zusammengeführt wurde, bleibt
+     * doppelt stehen; Maven wendet dann je Attribut den ersten Wert an ({@link PomFile.Dep#mergedWith}). Wird später
+     * ein BOM importiert, gilt bei solchen Duplikaten der letzte Eintrag ({@link #importBoms()}).
+     */
+    private void inheritManagement() {
+        List<Managed> acc = new ArrayList<Managed>();
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            PomFile p = chain.get(i);
+            List<Managed> own = new ArrayList<Managed>();
+            for (PomFile.Dep raw : p.managed) {
+                PomFile.Dep d = coordinates(raw);
+                if (!d.isImport()) {
+                    own.add(new Managed(d, p, this, Collections.<ImportStep>emptyList()));
+                }
+            }
+            if (acc.isEmpty()) {
+                acc = own;
+                continue;
+            }
+            Map<String, Managed> merged = new LinkedHashMap<String, Managed>();
+            for (Managed m : own) {
+                merged.put(m.dep.managementKey(), m);
+            }
+            for (Managed m : acc) {
+                if (!merged.containsKey(m.dep.managementKey())) {
+                    merged.put(m.dep.managementKey(), m);
+                }
+            }
+            acc = new ArrayList<Managed>(merged.values());
+        }
+        for (Managed m : acc) {
+            String key = m.dep.managementKey();
+            Managed before = managed.get(key);
+            if (before == null) {
+                managed.put(key, m);
+            } else {
+                managed.put(key, new Managed(before.dep.mergedWith(m.dep), before.declaredIn, this,
+                        Collections.<ImportStep>emptyList()));
+                if (lastDuplicates == null) {
+                    lastDuplicates = new HashMap<String, Managed>();
+                }
+                lastDuplicates.put(key, m);
+            }
+        }
+    }
+
+    /**
+     * Wie Maven: Ausdrücke in groupId, artifactId, type und classifier werden vor dem Zusammenführen im Kontext
+     * dieses Modells eingesetzt ({@code <groupId>${project.groupId}</groupId>} bei Geschwistermodulen). Die Version
+     * bleibt roh, damit {@link Managed#version()} die benutzten Properties nennen kann. Ohne Ausdruck: dieselbe Instanz.
+     */
+    private PomFile.Dep coordinates(PomFile.Dep d) {
+        if (!d.hasCoordinateExpression()) {
+            return d;
+        }
+        return d.withCoordinates(interpolate(d.getGroupId()).value, interpolate(d.getArtifactId()).value,
+                interpolate(d.getType()).value, interpolate(d.getClassifier()).value);
+    }
+
     private void importBoms() {
+        boolean imported = false;
         Set<String> importKeys = new HashSet<String>();
         for (PomFile p : chain) {
-            for (PomFile.Dep d : p.managed) {
+            for (PomFile.Dep raw : p.managed) {
+                PomFile.Dep d = coordinates(raw);
                 if (!d.isImport() || !importKeys.add(d.managementKey())) {
                     continue;
                 }
@@ -194,6 +263,7 @@ public final class EffectiveModel {
                     missingImports.add(step);
                     continue;
                 }
+                imported = true;
                 EffectiveModel bomModel = locator.model(bom);
                 if (bomModel.building) {
                     notes.add(Texts.t("model.import.cycle", bom.gav()));
@@ -213,6 +283,12 @@ public final class EffectiveModel {
                         managed.put(key, new Managed(m.dep, m.declaredIn, m.context, Collections.unmodifiableList(via)));
                     }
                 }
+            }
+        }
+        if (imported && lastDuplicates != null) {
+            // Mavens Import-Schritt legt das eigene Management vorher in eine Map: bei Duplikaten gilt der letzte Eintrag
+            for (Map.Entry<String, Managed> e : lastDuplicates.entrySet()) {
+                managed.put(e.getKey(), e.getValue());
             }
         }
     }
@@ -357,8 +433,10 @@ public final class EffectiveModel {
             value = pom.getArtifactId();
         } else if ("project.parent.version".equals(n) || "parent.version".equals(n)) {
             value = pom.getParentVersion();
-        } else if ("project.parent.groupId".equals(n)) {
+        } else if ("project.parent.groupId".equals(n) || "parent.groupId".equals(n)) {
             value = pom.getParentGroupId();
+        } else if ("project.parent.artifactId".equals(n) || "parent.artifactId".equals(n)) {
+            value = pom.getParentArtifactId();
         }
         return value == null ? null : new PropertyOrigin(name, value, null, -1);
     }

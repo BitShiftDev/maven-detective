@@ -44,6 +44,23 @@ public final class TestPom {
         return new TestPom(groupId, artifactId, version);
     }
 
+    public String groupId() { return groupId != null ? groupId : parent == null ? null : parent[0]; }
+
+    public String artifactId() { return artifactId; }
+
+    public String version() { return version != null ? version : parent == null ? null : parent[2]; }
+
+    /** {@code <exclusions>} für {@code extra} von {@link #dependency}/{@link #managed}; je Eintrag {@code "g:a"}. */
+    public static String exclusions(String... gas) {
+        StringBuilder sb = new StringBuilder("<exclusions>");
+        for (String ga : gas) {
+            String[] p = ga.split(":", -1);
+            sb.append("<exclusion><groupId>").append(p[0]).append("</groupId><artifactId>").append(p[1])
+                    .append("</artifactId></exclusion>");
+        }
+        return sb.append("</exclusions>").toString();
+    }
+
     public TestPom packaging(String value) {
         this.packaging = value;
         return this;

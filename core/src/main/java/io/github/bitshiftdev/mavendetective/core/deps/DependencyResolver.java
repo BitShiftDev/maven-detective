@@ -68,6 +68,11 @@ public final class DependencyResolver {
         final List<N> children = new ArrayList<N>();
         /** Alle Vorkommen desselben Artifacts (nur beim Gewinner gefüllt, inklusive ihm selbst). */
         final List<N> occurrences = new ArrayList<N>();
+        /**
+         * Scope kommt aus dem Management des Moduls: Maven leitet ihn nicht über den Parent ab
+         * ({@code MANAGED_SCOPE} im {@code ConflictResolver}), sondern übernimmt ihn wörtlich.
+         */
+        boolean scopeManaged;
         String scope;
         N winner;
 
@@ -179,6 +184,7 @@ public final class DependencyResolver {
                 String scope = ownScope;
                 String premanagedVersion = null;
                 String premanagedScope = null;
+                boolean scopeManaged = false;
                 List<PomFile.Exclusion> exclusions = new ArrayList<PomFile.Exclusion>(n.exclusions);
                 exclusions.addAll(dep.getExclusionEntries());
                 if (dep.getExclusionEntries().isEmpty() && own != null) {
@@ -193,14 +199,18 @@ public final class DependencyResolver {
                         version = v.value;
                     }
                     String ms = cm.dep.getScope();
-                    if (ms != null && !ms.isEmpty() && !ms.equals(ownScope) && !"import".equals(ms)) {
-                        premanagedScope = ownScope;
-                        scope = ms;
+                    if (ms != null && !ms.isEmpty() && !"import".equals(ms)) {
+                        scopeManaged = true;
+                        if (!ms.equals(ownScope)) {
+                            premanagedScope = ownScope;
+                            scope = ms;
+                        }
                     }
                     exclusions.addAll(cm.dep.getExclusionEntries());
                 }
                 N child = new N(dep.getGroupId(), dep.getArtifactId(), dep.getType(), dep.getClassifier(), version, scope,
                         premanagedVersion, premanagedScope, n, exclusions);
+                child.scopeManaged = scopeManaged;
                 if (version == null) {
                     missing.add(dep.ga() + " (" + Texts.t("excl.missing.undetermined", n.groupId + ":" + n.artifactId + ":" + n.version) + ")");
                 }
@@ -255,13 +265,15 @@ public final class DependencyResolver {
             boolean changed = false;
             for (N w : winners.values()) {
                 String s;
-                if (w.depth == 1) {
-                    s = w.declaredScope;
+                if (w.depth == 1 || "system".equals(w.declaredScope)) {
+                    s = w.declaredScope; // JavaScopeSelector: ein system-Gewinner behält system
                 } else {
                     Set<String> scopes = new LinkedHashSet<String>();
                     for (N o : w.occurrences) {
                         String ps = o.parent.depth == 0 ? null : o.parent.winner.scope;
-                        if (o.parent.depth == 0 || ps != null) {
+                        if (o.scopeManaged) {
+                            scopes.add(o.declaredScope);
+                        } else if (o.parent.depth == 0 || ps != null) {
                             scopes.add(derive(ps, o.declaredScope));
                         }
                     }
@@ -284,7 +296,8 @@ public final class DependencyResolver {
     }
 
     private static void convert(DepNode parent, N n, int depth) {
-        String scope = n.isWinner() ? n.scope : derive(n.parent.depth == 0 ? null : n.parent.winner.scope, n.declaredScope);
+        String scope = n.isWinner() ? n.scope : n.scopeManaged ? n.declaredScope
+                : derive(n.parent.depth == 0 ? null : n.parent.winner.scope, n.declaredScope);
         DepNode d = parent.add(new DepNode(n.groupId, n.artifactId, n.type, n.classifier, n.version, scope));
         d.setPremanagedVersion(n.premanagedVersion).setPremanagedScope(n.premanagedScope);
         if (!n.isWinner()) {

@@ -8,6 +8,7 @@ repositories {
 }
 
 val mavenVersion: String by project
+val mavenResolverVersion: String by project
 
 dependencies {
     // Bewusst keine Laufzeit-Abhängigkeiten: der Kern läuft in der IDE, in der Maven-Extension
@@ -17,6 +18,12 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     // nur im Test: MavenVersion wird gegen Mavens eigenes ComparableVersion geprüft
     testImplementation("org.apache.maven:maven-artifact:$mavenVersion")
+    // nur im Test: Differenztests – EffectiveModel gegen Mavens Model-Builder, DependencyResolver gegen den
+    // Collector von Maven Resolver (offline, nur aus einem lokalen Repository im @TempDir)
+    testImplementation("org.apache.maven:maven-model-builder:$mavenVersion")
+    testImplementation("org.apache.maven:maven-resolver-provider:$mavenVersion")
+    testImplementation("org.apache.maven.resolver:maven-resolver-impl:$mavenResolverVersion")
+    testImplementation("org.apache.maven.resolver:maven-resolver-util:$mavenResolverVersion")
 }
 
 tasks.compileJava {

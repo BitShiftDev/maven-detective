@@ -24,7 +24,8 @@ public final class DependencyTreeParser {
 
     private static final Pattern PREFIX = Pattern.compile("^.*?\\[INFO\\] ?");
     private static final Pattern ANSI = Pattern.compile("\u001B\\[[0-9;]*m");
-    private static final Pattern ROOT = Pattern.compile("^([\\w.\\-]+):([\\w.\\-]+):([\\w.\\-]+):([\\w.\\-${}]+)$");
+    /** {@code g:a:packaging:version}; die Version darf alles außer Doppelpunkt und Leerraum enthalten ({@code 1.0+build}). */
+    private static final Pattern ROOT = Pattern.compile("^([\\w.\\-]+):([\\w.\\-]+):([\\w.\\-]+):([^:\\s]+)$");
     private static final Pattern CONFLICT = Pattern.compile("omitted for conflict with ([^\\s;)]+)");
     private static final Pattern MANAGED_VERSION = Pattern.compile("version managed from ([^\\s;)]+)");
     private static final Pattern MANAGED_SCOPE = Pattern.compile("scope (?:managed|updated) from ([^\\s;)]+)");

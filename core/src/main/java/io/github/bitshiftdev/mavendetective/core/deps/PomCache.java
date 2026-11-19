@@ -8,23 +8,35 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Gelesene POMs über mehrere {@link PomLocator} hinweg – für die IDE, die bei jeder Prüfung einen
- * neuen Locator baut. Ein Eintrag gilt, solange Änderungszeit und Größe der Datei gleich sind.
+ * neuen Locator baut. Ein Eintrag gilt, solange Änderungszeit und Größe der Datei gleich sind – aber nur,
+ * wenn die Datei beim Lesen schon {@value #RACY_MILLIS} ms alt war (wie Gits „racily clean“): Dateisysteme mit
+ * grober Zeitauflösung (FAT 2 s, HFS+ und manche Netzlaufwerke 1 s) zeigen eine zweite Änderung gleicher Länge
+ * in derselben Sekunde sonst nie. Eben geänderte Dateien werden deshalb beim nächsten Zugriff neu gelesen.
  * Thread-sicher; {@link PomFile} wird nach dem Lesen nicht mehr verändert.
  */
 public final class PomCache {
 
     private static final int MAX_ENTRIES = 20000;
+    /** Gröbste übliche Zeitauflösung von Dateisystemen (FAT). */
+    static final long RACY_MILLIS = 2000;
 
     private static final class Entry {
         final long modified;
         final long size;
+        final boolean settled;
         final PomFile pom;
 
         Entry(long modified, long size, PomFile pom) {
             this.modified = modified;
             this.size = size;
+            this.settled = isSettled(modified);
             this.pom = pom;
         }
+    }
+
+    /** War die Datei beim Lesen alt genug, dass eine weitere Änderung eine andere Zeit hätte? */
+    private static boolean isSettled(long modified) {
+        return System.currentTimeMillis() - modified > RACY_MILLIS;
     }
 
     private final Map<Path, Entry> entries = new ConcurrentHashMap<Path, Entry>();
@@ -39,11 +51,13 @@ public final class PomCache {
     private static final class View {
         final long modified;
         final long size;
+        final boolean settled;
         final Object value;
 
         View(long modified, long size, Object value) {
             this.modified = modified;
             this.size = size;
+            this.settled = isSettled(modified);
             this.value = value;
         }
     }
@@ -64,7 +78,7 @@ public final class PomCache {
             return null;
         }
         View v = views.get(file);
-        if (v != null && v.modified == modified && v.size == size) {
+        if (v != null && v.settled && v.modified == modified && v.size == size) {
             return (T) v.value;
         }
         T value;
@@ -98,7 +112,7 @@ public final class PomCache {
             return null;
         }
         Entry e = entries.get(file);
-        if (e != null && e.modified == modified && e.size == size) {
+        if (e != null && e.settled && e.modified == modified && e.size == size) {
             return e.pom;
         }
         PomFile pom;

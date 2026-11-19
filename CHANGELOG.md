@@ -20,6 +20,13 @@
 - Network errors: `Unknown host repo.example.com` at the end of a line names the host; the mirror from `settings.xml` is shown for repositories that only the extension's events name, and the cause names the first repository that failed, not the last.
 - Line numbers, class file versions and `-Xmx` values too large for a number no longer end a check with an error ("Check '…' failed"), and doubling a huge `-Xmx` no longer gives a negative value.
 - IDE: cancelling a diagnosis also stops reading the project's POMs and skips the remaining rules.
+- Dependency analysis: coordinates written as expressions (`<groupId>${project.groupId}</groupId>`, also in `artifactId`, `type` and `classifier`) are resolved like in Maven; before, such sibling dependencies got no managed version and were missing from the tree. `${project.parent.artifactId}` and `${parent.groupId}` are resolved too.
+- A dependency declared twice in the same POM counts with its last declaration, as in Maven (before: the first); duplicate `dependencyManagement` entries are merged the way Maven applies them.
+- Dependency tree without Maven: a scope set by `dependencyManagement` is taken as is for transitive dependencies (e.g. `provided` below a `runtime` dependency stays `provided`), and a `system` dependency that wins keeps its scope – both as in Maven.
+- A dependency on the `test-jar` of another module in the reactor points to its `target/test-classes`, not to its main classes.
+- `dependency:tree` output whose module version contains `+` (`1.0.0+build.5`) is read; before, that module's tree was dropped.
+- IDE: a `pom.xml` saved twice within the same second with the same length is no longer served from the cache in its old version (file systems with one- or two-second timestamps).
+- Preflight: an unreadable version range such as `(1.0)` in an enforcer rule is ignored instead of reported as violated.
 
 ## [0.1.1] - 2026-11-17
 

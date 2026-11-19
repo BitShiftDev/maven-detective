@@ -92,6 +92,55 @@ public final class PomFile {
         public boolean isImport() {
             return "import".equals(scope) && "pom".equals(type);
         }
+
+        /** Ob groupId, artifactId, type oder classifier noch einen Ausdruck {@code ${…}} enthalten. */
+        boolean hasCoordinateExpression() {
+            return contains(groupId) || contains(artifactId) || contains(type) || contains(classifier);
+        }
+
+        private static boolean contains(String s) {
+            return s != null && s.contains("${");
+        }
+
+        /**
+         * Doppelter Eintrag derselben POM im {@code dependencyManagement}: wie Maven (Model-Builder und
+         * {@code ClassicDependencyManager}) je Attribut der erste Wert – Version und Scope von hier, wenn gesetzt,
+         * sonst von {@code later}; Exclusions aus beiden.
+         */
+        Dep mergedWith(Dep later) {
+            Dep copy = withCoordinates(groupId, artifactId, type, classifier);
+            if (copy.version == null) {
+                copy.version = later.version;
+                copy.versionLine = later.versionLine > 0 ? later.versionLine : later.line;
+            }
+            if (copy.scope == null) {
+                copy.scope = later.scope;
+            }
+            for (Exclusion e : later.exclusionEntries) {
+                if (!copy.exclusions.contains(e.ga())) {
+                    copy.exclusions.add(e.ga());
+                    copy.exclusionEntries.add(e);
+                }
+            }
+            return copy;
+        }
+
+        /** Kopie mit anderen Koordinaten (eingesetzte Ausdrücke); Version, Scope, Zeilen und Exclusions bleiben. */
+        Dep withCoordinates(String g, String a, String t, String c) {
+            Dep copy = new Dep();
+            copy.groupId = g;
+            copy.artifactId = a;
+            copy.version = version;
+            copy.type = t;
+            copy.classifier = c;
+            copy.scope = scope;
+            copy.optional = optional;
+            copy.line = line;
+            copy.versionLine = versionLine;
+            copy.exclusions.addAll(exclusions);
+            copy.exclusionEntries.addAll(exclusionEntries);
+            return copy;
+        }
     }
 
     /**

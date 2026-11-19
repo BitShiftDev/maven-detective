@@ -31,6 +31,11 @@ final class VersionRange {
             return true;
         }
         for (String set : sets) {
+            if (set.indexOf(',') < 0 && (set.charAt(0) != '[' || set.charAt(set.length() - 1) != ']')) {
+                return true; // eine einzelne Version nur in [] – "(1.0)" lehnt Maven ab
+            }
+        }
+        for (String set : sets) {
             if (inSet(set, version)) {
                 return true;
             }
