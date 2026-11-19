@@ -41,6 +41,8 @@ Concept/roadmap: `Maven Detective – Plugin-Konzept.md` (module A dependency an
 
 In the Claude sandbox (`~/.gradle` and `/tmp` read-only, no X11): use the unpacked distribution `~/.gradle/wrapper/dists/gradle-*/…/bin/gradle --offline` with `GRADLE_USER_HOME=$TMPDIR/gh GRADLE_RO_DEP_CACHE=~/.gradle/caches`, `JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=$TMPDIR/jtmp -Djava.awt.headless=true"`, `DISPLAY=`; `buildPlugin -x buildSearchableOptions`.
 
+Full `./gradlew` (release check, network) runs only outside the sandbox and with `JAVA_HOME=/usr/lib/jvm/java-21-openjdk` – the shell's sdkman `current` is Java 8 ("Gradle requires JVM 17"). `gh` inside the sandbox is not logged in (shared IP hits the anonymous rate limit fast); run `gh` outside the sandbox (keyring login BitShiftDev). Logs of a finished job while its run is still going: `gh api --allow-escape-sequences repos/BitShiftDev/maven-detective/actions/jobs/<id>/logs`.
+
 The build needs JDK 21. Versions in `gradle.properties` (`mavenVersion=3.9.11`, `platformVersion=2025.3`).
 
 ## Diagnosis flow
@@ -159,7 +161,7 @@ Gate 1 (measure 30 real logs with `evaluate`) is pending; the plugin (incl. A1, 
 
 ## Release
 
-Process and secrets in `RELEASING.md`. `CHANGELOG.md` is **English** (Keep a Changelog): the `## [x.y.z]` section becomes the Marketplace change notes (HTML) via the `Changelog` object in `intellij-plugin/build.gradle.kts` and the GitHub release text via `:intellij-plugin:releaseNotes` – only `### `, `- `, `**…**`, `` `…` ``, `*…*`, `[t](u)`. New feature ⇒ a line under `## [Unreleased]`. Tag `v<version>` → `release.yml` (draft with `maven-detective-<v>.zip`, `maven-detective-cli-<v>.jar`, extension JAR, `SHA256SUMS`); publishing the draft → `publish.yml` (Marketplace, environment `marketplace`). The repository is still private; checklist for switching in `RELEASING.md`.
+Process and secrets in `RELEASING.md`. `CHANGELOG.md` is **English** (Keep a Changelog): the `## [x.y.z]` section becomes the Marketplace change notes (HTML) via the `Changelog` object in `intellij-plugin/build.gradle.kts` and the GitHub release text via `:intellij-plugin:releaseNotes` – only `### `, `- `, `**…**`, `` `…` ``, `*…*`, `[t](u)`. New feature ⇒ a line under `## [Unreleased]`. Tag `v<version>` → `release.yml` (draft with `maven-detective-<v>.zip`, `maven-detective-cli-<v>.jar`, extension JAR, `SHA256SUMS`); publishing the draft → `publish.yml` (Marketplace, environment `marketplace`; Maven Central with `USER_MANAGED` ends at `VALIDATED` – the user clicks **Publish** under central.sonatype.com → Deployments, Claude cannot). `releaseNotes` reads `## [<version>]`, for a `-SNAPSHOT` `## [Unreleased]`; release versions fail if the section is missing or empty, a SNAPSHOT may have an empty `[Unreleased]` (normal right after a release – `build.yml`'s plugin job runs `releaseNotes` on main). After a release: `version=<next>-SNAPSHOT`, leave `## [Unreleased]` as an empty heading. CI flake: fixture `10-ear-module-not-dependency` downloads `maven-ear-plugin` from Central into an empty repo; "The POM for …maven-ear-plugin… is missing" + card "artifact not resolvable" instead of `javaee-packaging` = network, not code → `gh run rerun <run-id> --failed`. The repository is still private; checklist for switching in `RELEASING.md`.
 
 ## Git
 
