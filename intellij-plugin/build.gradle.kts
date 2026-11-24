@@ -4,7 +4,7 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 plugins {
     java
     // Aktuelle Version prüfen: https://plugins.gradle.org/plugin/org.jetbrains.intellij.platform
-    id("org.jetbrains.intellij.platform") version "2.12.0"
+    id("org.jetbrains.intellij.platform") version "2.20.1"
 }
 
 repositories {
@@ -81,7 +81,7 @@ dependencies {
         testFramework(TestFrameworkType.Plugin.Java)
     }
 
-    testImplementation(platform("org.junit:junit-bom:5.13.4"))
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     // Die Plattform-Testklassen erben von junit.framework.TestCase (JUnit 3/4); die Vintage-Engine führt sie
