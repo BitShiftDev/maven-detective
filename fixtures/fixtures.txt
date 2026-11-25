@@ -13,3 +13,4 @@
 08-missing-child-module    | reactor-problem         | validate
 08-reactor-cycle           | reactor-problem         | validate
 10-ear-module-not-dependency | javaee-packaging      | generate-resources
+11-compile-missing-package | compile-missing-dependency | compile
