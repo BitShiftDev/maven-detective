@@ -34,9 +34,17 @@ echo "Fixtures mit Maven $MAVEN_VERSION ($(java -version 2>&1 | head -1)) – Lo
 
 pass=0
 fail=0
-while IFS='|' read -r dir rule args; do
-  dir="$(echo "$dir" | xargs)"; rule="$(echo "$rule" | xargs)"; args="$(echo "$args" | xargs)"
+skipped=0
+while IFS='|' read -r dir rule args since; do
+  dir="$(echo "$dir" | xargs)"; rule="$(echo "$rule" | xargs)"; args="$(echo "$args" | xargs)"; since="$(echo "$since" | xargs)"
   [[ -z "$dir" || "$dir" == \#* ]] && continue
+  # Fehler, den es erst ab einer Maven-Version gibt (z. B. http-Blocker ab 3.8.1): auf älteren überspringen
+  # Ohne sort -V (leere Ausgabe) lieber laufen lassen als still überspringen
+  lowest=""; [[ -n "$since" ]] && lowest="$(printf '%s\n%s\n' "$since" "$MAVEN_VERSION" | sort -V 2>/dev/null | head -1)"
+  if [[ -n "$lowest" && "$MAVEN_VERSION" != unbekannt && "$lowest" != "$since" ]]; then
+    skipped=$((skipped + 1)); printf '  – %-28s übersprungen (erst ab Maven %s)\n' "$dir" "$since"
+    continue
+  fi
   repo="$WORK/$dir/repo"
   mkdir -p "$repo"
   [[ -x "$HERE/$dir/setup.sh" || -f "$HERE/$dir/setup.sh" ]] && bash "$HERE/$dir/setup.sh" "$repo"
@@ -141,5 +149,5 @@ XML
   fi
 fi
 
-echo "Maven $MAVEN_VERSION: $pass bestanden, $fail fehlgeschlagen"
+echo "Maven $MAVEN_VERSION: $pass bestanden, $fail fehlgeschlagen, $skipped übersprungen"
 [[ $fail -eq 0 ]]

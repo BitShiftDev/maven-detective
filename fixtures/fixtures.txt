@@ -1,11 +1,12 @@
 # Beispielprojekte, die je einen Fehler absichtlich auslösen.
-# Format: <verzeichnis> | <erwartete regel-id> | <maven-argumente>
+# Format: <verzeichnis> | <erwartete regel-id> | <maven-argumente> [| <ab maven-version>]
+# Mit vierter Spalte läuft die Fixture erst ab dieser Maven-Version (ältere: übersprungen).
 # Optional liegt im Verzeichnis ein setup.sh, das vor dem Lauf das lokale Repository ($1) vorbereitet.
 # Ausführen: ./gradlew :maven-extension:fixtureTest   oder   bash fixtures/run-fixtures.sh <extension.jar>
 
 01-artifact-offline        | artifact-not-resolvable | -o validate
 01-artifact-not-found      | artifact-not-resolvable | validate
-03-http-repository-blocked | http-repository-blocked | validate
+03-http-repository-blocked | http-repository-blocked | validate | 3.8.1
 04-corrupt-jar             | corrupt-jar             | -o com.example.fixture:broken-maven-plugin:1.0:hello
 06-unknown-plugin-prefix   | plugin-missing          | -o nosuchprefix:goal
 07-malformed-pom           | invalid-pom             | validate
