@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The Maven extension is tested in CI against Maven 3.8, 3.9, 3.10 and the latest Maven 4 release candidate (3.6.3 is measured as well); the README names the Maven Central coordinates instead of a placeholder note.
+
+### Fixed
+
+- Compiler errors from a `javac` running in German, Japanese or Chinese (`Package … ist nicht vorhanden`, `Symbol nicht gefunden`, …) are recognised; Maven compiles in its own JVM, so the messages follow its locale – before, the card showed "Unknown error".
+- A plugin without `<version>` that is found in no plugin repository (`Error resolving version for plugin …`) is recognised as *Plugin missing or without version* instead of "Unknown error".
+
 ## [0.1.2] - 2026-11-19
 
 ### Fixed

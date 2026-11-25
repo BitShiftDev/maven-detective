@@ -1,0 +1,53 @@
+[INFO] Scanning for projects...
+[INFO] Loaded 24632 auto-discovered prefixes for remote repository central (prefixes-central.txt)
+[WARNING]
+[WARNING] 1 problem was encountered while building the effective model for 'com.example.shop:web:1.0.0-SNAPSHOT' (use -e to see details)
+[WARNING]
+[WARNING] Total model problems reported: 1
+[WARNING]
+[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+[WARNING]
+[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+[WARNING]
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO]
+[INFO] spring-shop                                                        [pom]
+[INFO] shared                                                             [jar]
+[INFO] service                                                            [jar]
+[INFO] web                                                                [jar]
+[INFO]
+[INFO] --------------------< com.example.shop:spring-shop >--------------------
+[INFO] Building spring-shop 1.0.0-SNAPSHOT                                [1/4]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO]
+[INFO] ----------------------< com.example.shop:shared >-----------------------
+[INFO] Building shared 1.0.0-SNAPSHOT                                     [2/4]
+[INFO]   from shared/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] ----------------------< com.example.shop:service >----------------------
+[INFO] Building service 1.0.0-SNAPSHOT                                    [3/4]
+[INFO]   from service/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] ------------------------< com.example.shop:web >------------------------
+[INFO] Building web 1.0.0-SNAPSHOT                                        [4/4]
+[INFO]   from web/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] Plugin com.example.missing:missing-maven-plugin not found in any plugin repository
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for spring-shop 1.0.0-SNAPSHOT:
+[INFO]
+[INFO] spring-shop ........................................ SUCCESS [  0.014 s]
+[INFO] shared ............................................. SUCCESS [  0.001 s]
+[INFO] service ............................................ SUCCESS [  0.000 s]
+[ERROR] web ................................................ FAILURE [  0.038 s]
+[INFO] ------------------------------------------------------------------------
+[ERROR] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  1.143 s
+[INFO] Finished at: 2026-11-25T19:06:59+01:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Error resolving version for plugin 'com.example.missing:missing-maven-plugin' from the repositories [local (/home/dev/.m2/repository), central (https://repo.maven.apache.org/maven2)]: Plugin not found in any plugin repository -> [Help 1]

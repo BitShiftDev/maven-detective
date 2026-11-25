@@ -238,6 +238,13 @@ rules:
           type: manual
           label: 'Version für {plugin} in <pluginManagement> des Parents festlegen'
           label_en: 'Set the version for {plugin} in the parent''s <pluginManagement>'
+      - regex: 'Error resolving version for plugin ''(?<plugin>[^'']+)'' from the repositories'
+        cause: 'Maven kann keine Version für {plugin} ermitteln: Ohne <version> sucht es die neueste in den Plugin-Repositories und findet das Plugin dort nicht – Tippfehler in groupId/artifactId, fehlendes <pluginRepository> oder offline.'
+        cause_en: 'Maven cannot determine a version for {plugin}: without <version> it looks for the latest one in the plugin repositories and does not find the plugin there – a typo in groupId/artifactId, a missing <pluginRepository>, or offline.'
+        fix:
+          type: manual
+          label: 'Koordinaten von {plugin} prüfen und eine <version> festlegen; Plugins aus einem eigenen Repository brauchen ein <pluginRepository>'
+          label_en: 'Check the coordinates of {plugin} and set a <version>; plugins from your own repository need a <pluginRepository>'
       - regex: 'Could not find goal ''(?<goal>[^'']+)'' in plugin (?<plugin>\S+)'
         cause: 'Das Plugin {plugin} kennt kein Goal ''{goal}'' – Tippfehler oder Goal erst in neuerer Plugin-Version.'
         cause_en: 'The plugin {plugin} has no goal ''{goal}'' – a typo, or the goal only exists in a newer plugin version.'
@@ -343,23 +350,32 @@ rules:
     category_en: 'Compiler error caused by a dependency'
     priority: 55
     patterns:
-      - regex: 'package (?<package>(?:javax|jakarta)\.(?:servlet|ejb|persistence|ws\.rs|inject|enterprise|faces|annotation|transaction|validation|jms|mail|json|xml\.bind|xml\.ws|xml\.soap|jws|activation|websocket|batch|security|resource|interceptor|decorator)\b[\w.]*) does not exist'
+      # javac meldet in der Sprache der JVM (Maven kompiliert im eigenen Prozess): Englisch, Deutsch,
+      # Japanisch, Chinesisch – die Muster nehmen alle vier Formen. (?!\w) statt \b: Unter Java 8 ist
+      # \b zwischen „servlet“ und „は“ keine Wortgrenze.
+      - regex: '(?:package |Package |パッケージ|程序包)(?<package>(?:javax|jakarta)\.(?:servlet|ejb|persistence|ws\.rs|inject|enterprise|faces|annotation|transaction|validation|jms|mail|json|xml\.bind|xml\.ws|xml\.soap|jws|activation|websocket|batch|security|resource|interceptor|decorator)(?!\w)[\w.]*)(?: does not exist| ist nicht vorhanden|は存在しません|不存在)'
         cause: 'Das Paket {package} gehört zur Java-EE/Jakarta-EE-API und ist beim Kompilieren nicht im Classpath: die API-Dependency fehlt (meist mit Scope provided), oder javax.* und jakarta.* passen nicht zusammen.'
         cause_en: 'The package {package} belongs to the Java EE/Jakarta EE API and is not on the classpath when compiling: the API dependency is missing (usually with scope provided), or javax.* and jakarta.* do not match.'
-      - regex: 'package (?<package>[\w.]+) does not exist'
+      - regex: '(?:package |Package |パッケージ|程序包)(?<package>[\w.]+)(?: does not exist| ist nicht vorhanden|は存在しません|不存在)'
         cause: 'Das Paket {package} ist beim Kompilieren nicht im Classpath: Dependency fehlt, hat den falschen Scope oder wurde per Exclusion entfernt.'
         cause_en: 'The package {package} is not on the classpath when compiling: the dependency is missing, has the wrong scope or was removed by an exclusion.'
-      - regex: 'class file for (?<class>[\w.$]+) not found'
+      - regex: '(?:class file for |Klassendatei für |找不到)(?<class>[\w.$]+)(?: not found| nicht gefunden|的类文件)'
         cause: 'Der Compiler braucht {class}, die Klasse liegt aber in keiner Dependency im Classpath – oft fehlt eine transitive Dependency.'
         cause_en: 'The compiler needs {class}, but the class is in no dependency on the classpath – often a transitive dependency is missing.'
-      - regex: 'cannot access (?<class>[\w.$]+)'
+      - regex: '(?<class>[\w.$]+)のクラス・ファイルが見つかりません'
+        cause: 'Der Compiler braucht {class}, die Klasse liegt aber in keiner Dependency im Classpath – oft fehlt eine transitive Dependency.'
+        cause_en: 'The compiler needs {class}, but the class is in no dependency on the classpath – often a transitive dependency is missing.'
+      - regex: '(?:cannot access |Kein Zugriff auf |无法访问)(?<class>[\w.$]+)'
         cause: 'Der Compiler kann {class} nicht laden – fehlende oder unpassende Dependency.'
         cause_en: 'The compiler cannot load {class} – a missing or mismatching dependency.'
-      - regex: 'cannot find symbol'
+      - regex: '(?<class>[\w.$]+)にアクセスできません'
+        cause: 'Der Compiler kann {class} nicht laden – fehlende oder unpassende Dependency.'
+        cause_en: 'The compiler cannot load {class} – a missing or mismatching dependency.'
+      - regex: '(?:cannot find symbol|Symbol nicht gefunden|シンボルを見つけられません|找不到符号)'
         cause: 'Der Compiler findet {symbol|ein Symbol}. Stammt es aus einer Bibliothek, fehlt die Dependency oder hat den falschen Scope; sonst ist es ein Fehler im Code.'
         cause_en: 'The compiler cannot find {symbol|a symbol}. If it comes from a library, the dependency is missing or has the wrong scope; otherwise it is a bug in the code.'
     extract:
-      - 'symbol:\s+(?:class|variable|method) (?<symbol>[\w$]+)'
+      - '(?:symbol|Symbol|シンボル|符号):\s+(?:class|variable|method|Klasse|Variable|Methode|クラス|変数|メソッド|类|变量|方法) (?<symbol>[\w$]+)'
     checks: [ee-namespace, source-location, class-location]
 
   # ---------------------------------------------------------------- 1
