@@ -6,7 +6,7 @@
   <a href="https://github.com/BitShiftDev/maven-detective/actions/workflows/build.yml"><img src="https://github.com/BitShiftDev/maven-detective/actions/workflows/build.yml/badge.svg" alt="Build"></a>
   <a href="https://github.com/BitShiftDev/maven-detective/releases"><img src="https://img.shields.io/github/v/release/BitShiftDev/maven-detective?label=release&color=7C8BFB" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/IntelliJ%20IDEA-2025.3%2B-5EA1FE?logo=intellijidea&logoColor=white" alt="IntelliJ IDEA 2025.3+">
-  <img src="https://img.shields.io/badge/Maven-3.9-9D75F8?logo=apachemaven&logoColor=white" alt="Maven 3.9">
+  <img src="https://img.shields.io/badge/Maven-3.8%2B-9D75F8?logo=apachemaven&logoColor=white" alt="Maven 3.8+">
   <img src="https://img.shields.io/badge/Java-8%2B-orange" alt="Java 8+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
 </p>
@@ -253,8 +253,10 @@ mvn -Dmaven.ext.class.path=/path/to/maven-detective-extension-<version>.jar veri
 
 **For all your builds:** copy the JAR to `$MAVEN_HOME/lib/ext/`.
 
-The extension has no dependencies, runs on Maven 3.9 with Java 8 or newer, never changes the outcome of the build and
-swallows its own errors.
+The extension has no dependencies, runs on Maven 3.8 or newer with Java 8 or newer (Maven 4 needs Java 17), never
+changes the outcome of the build and swallows its own errors. CI tests it against every Maven version in
+[`fixtures/maven-versions.txt`](fixtures/maven-versions.txt); Maven 4 release candidates are tested, but not yet
+supported officially.
 
 | Option | Effect |
 | --- | --- |
