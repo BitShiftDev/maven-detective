@@ -1,14 +1,17 @@
 # Maven-Versionen, gegen die Extension und Fixtures geprüft werden – einzige Quelle für CI
 # (build.yml), install-maven.sh, compileAgainstMaven (maven-extension/build.gradle.kts) und README.
 #
-#   <version> | <rolle>
+#   <version> | <rolle> [| <sha512>]
 #
 # reference  Referenz: core-and-extension auf allen drei Betriebssystemen; muss mavenVersion in
 #            gradle.properties entsprechen (die Extension kompiliert gegen genau diese API)
 # blocking   Matrix-Job fixtures-matrix, ein Fehlschlag färbt den Lauf rot
 # measured   nur gemessen: Matrix-Job läuft, ist aber nicht blockierend (Untergrenze, Maven 4 vor Phase 2)
-3.6.3       | measured
-3.8.9       | blocking
+#
+# sha512 des -bin.tar.gz nur für Versionen ohne .sha512 auf Maven Central (vor 3.9). Quelle:
+# archive.apache.org/dist/maven/ – das drosselt GitHub-Runner (HTTP 429), daher hier fest eingetragen.
+3.6.3       | measured   | c35a1803a6e70a126e80b2b3ae33eed961f83ed74d18fcd16909b2d44d7dada3203f1ffe726c17ef8dcca2dcaa9fca676987befeadc9b9f759967a8cb77181c0
+3.8.9       | blocking   | 4a490b7f331a0e7869b61da24600241e445339f2801ed94e32f835b63ed78597ad05ef8c1cce2501b4c2c3dcde30030eb395cd5756be739c20ac687ad6f82f0e
 3.9.11      | reference
 3.10.2      | blocking
 4.0.0-rc-7  | measured

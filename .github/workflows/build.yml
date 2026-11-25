@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: read
         run: |
-          matrix=$(awk -F'|' '!/^#/ && NF == 2 {
+          matrix=$(awk -F'|' '!/^#/ && NF >= 2 {
               gsub(/ /, "", $1); gsub(/ /, "", $2)
               if ($2 != "reference") printf "%s{\"version\":\"%s\",\"blocking\":%s}", (n++ ? "," : ""), $1, ($2 == "blocking" ? "true" : "false")
             }' fixtures/maven-versions.txt)
