@@ -230,7 +230,10 @@ The simulator finds the place that sets the version today – property, BOM impo
 
 Put the diagnosis card into **every** Maven run – on your machine and in CI – without changing the build itself.
 
-**Per project** (everyone on the team and CI get it), in `.mvn/extensions.xml`:
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.bitshiftdev.mavendetective/maven-detective-extension?label=Maven%20Central&color=9D75F8)](https://central.sonatype.com/artifact/io.github.bitshiftdev.mavendetective/maven-detective-extension)
+
+**Per project** (everyone on the team and CI get it), in `.mvn/extensions.xml` – replace `VERSION` with the latest
+version from the badge above:
 
 ```xml
 <extensions>
@@ -242,10 +245,7 @@ Put the diagnosis card into **every** Maven run – on your machine and in CI �
 </extensions>
 ```
 
-> Maven Central coordinates are available starting with the next release. Until then, use the JAR from the
-> [releases](https://github.com/BitShiftDev/maven-detective/releases):
-
-**Without touching the project:**
+**Without touching the project** (JAR from the [releases](https://github.com/BitShiftDev/maven-detective/releases)):
 
 ```bash
 mvn -Dmaven.ext.class.path=/path/to/maven-detective-extension-<version>.jar verify

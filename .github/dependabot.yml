@@ -17,3 +17,8 @@ updates:
     groups:
       gradle:
         patterns: ['*']
+    ignore:
+      # Die Extension kompiliert compileOnly gegen die slf4j-API, die Maven 3.9 mitbringt (1.7.x) –
+      # eine neuere Major-Version wäre zur Laufzeit nicht da.
+      - dependency-name: org.slf4j:slf4j-api
+        update-types: ['version-update:semver-major']
