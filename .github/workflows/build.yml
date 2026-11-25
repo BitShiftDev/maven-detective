@@ -6,8 +6,9 @@ on:
   pull_request:
 
 jobs:
-  # Kern und Extension auf allen drei Betriebssystemen: Pfade (Windows), Homebrew-Maven (macOS) und
-  # mvn.cmd verhalten sich verschieden. Maven ist auf allen Runnern vorinstalliert (Version je Image).
+  # Kern und Extension auf allen drei Betriebssystemen: Pfade (Windows) und Shells verhalten sich
+  # verschieden. Maven = Referenzversion aus fixtures/maven-versions.txt, nicht das Maven des Runners
+  # (Version je Image, wechselt unbemerkt).
   core-and-extension:
     name: core-and-extension (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -48,9 +49,64 @@ jobs:
             core/build/reports/jacoco/test
             maven-extension/build/reports/jacoco/test
           if-no-files-found: ignore
+      - name: Maven (Referenzversion) installieren
+        run: |
+          version=$(awk -F'|' '$2 ~ /reference/ { gsub(/ /, "", $1); print $1 }' fixtures/maven-versions.txt)
+          bash fixtures/install-maven.sh "$version" "$RUNNER_TEMP/maven" >> "$GITHUB_PATH"
       - run: mvn -v
       - name: Extension bauen und Fixtures mit echtem Maven auslösen
+        run: ./gradlew :maven-extension:compileAgainstMaven :maven-extension:fixtureTest
+
+  # Liest fixtures/maven-versions.txt für fixtures-matrix (alle Einträge außer der Referenz)
+  maven-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.read.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: read
+        run: |
+          matrix=$(awk -F'|' '!/^#/ && NF == 2 {
+              gsub(/ /, "", $1); gsub(/ /, "", $2)
+              if ($2 != "reference") printf "%s{\"version\":\"%s\",\"blocking\":%s}", (n++ ? "," : ""), $1, ($2 == "blocking" ? "true" : "false")
+            }' fixtures/maven-versions.txt)
+          echo "matrix={\"include\":[$matrix]}" | tee -a "$GITHUB_OUTPUT"
+
+  # Fixtures und Kompatibilitäts-Compile je Maven-Version. measured-Einträge sind nicht blockierend:
+  # Ein Fehlschlag färbt nur den Job rot, nicht den Lauf.
+  fixtures-matrix:
+    name: fixtures (Maven ${{ matrix.version }}${{ !matrix.blocking && ', nicht blockierend' || '' }})
+    needs: maven-versions
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ !matrix.blocking }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.maven-versions.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 21
+      # Nur den eigenen Cache-Eintrag wiederherstellen: Fehlt er (verdrängt), nähme setup-gradle sonst
+      # den neuesten Eintrag irgendeines Jobs – auch einen mit mehreren GB IDEs – und füllte die Platte.
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+        with:
+          gradle-home-cache-strict-match: true
+      - run: bash fixtures/install-maven.sh "${{ matrix.version }}" "$RUNNER_TEMP/maven" >> "$GITHUB_PATH"
+      - run: mvn -v
+      - name: Extension gegen die API von Maven ${{ matrix.version }} kompilieren
+        run: ./gradlew :maven-extension:compileAgainstMaven -PmavenApi=${{ matrix.version }}
+      - name: Fixtures mit Maven ${{ matrix.version }} auslösen
+        if: always()
         run: ./gradlew :maven-extension:fixtureTest
+      - name: Logs der Fixtures hochladen
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fixture-logs-${{ matrix.version }}
+          path: build/fixture-logs
+          if-no-files-found: ignore
 
   # Frühwarnung für Maven 4 (neueste Version von Maven Central, auch Release Candidates).
   # Nicht blockierend: Ein Fehlschlag färbt nur diesen Job rot, nicht den Lauf.
@@ -71,16 +127,9 @@ jobs:
           gradle-home-cache-strict-match: true
       - name: Neuestes Maven 4 laden
         run: |
-          base=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven
-          # Die Metadaten führen die Versionen in Veröffentlichungsreihenfolge – die letzte 4.x ist die neueste
-          version=$(curl -fsSL "$base/maven-metadata.xml" | sed -n 's|.*<version>\(4\.[^<]*\)</version>.*|\1|p' | tail -1)
-          [ -n "$version" ] || { echo "::error::Keine Maven-4-Version in den Metadaten"; exit 1; }
-          file="apache-maven-$version-bin.tar.gz"
-          curl -fsSLo "$RUNNER_TEMP/$file" "$base/$version/$file"
-          echo "$(curl -fsSL "$base/$version/$file.sha512" | awk '{print $1}')  $RUNNER_TEMP/$file" | sha512sum -c -
-          tar -xzf "$RUNNER_TEMP/$file" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/apache-maven-$version/bin" >> "$GITHUB_PATH"
-          echo "Fixtures gegen Maven $version" >> "$GITHUB_STEP_SUMMARY"
+          bin=$(bash fixtures/install-maven.sh latest-4 "$RUNNER_TEMP/maven")
+          echo "$bin" >> "$GITHUB_PATH"
+          echo "Fixtures gegen $(basename "$(dirname "$bin")")" >> "$GITHUB_STEP_SUMMARY"
       - run: mvn -v
       - name: Extension bauen und Fixtures mit Maven 4 auslösen
         run: ./gradlew :maven-extension:fixtureTest

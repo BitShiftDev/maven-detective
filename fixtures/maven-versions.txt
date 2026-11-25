@@ -1,0 +1,14 @@
+# Maven-Versionen, gegen die Extension und Fixtures geprüft werden – einzige Quelle für CI
+# (build.yml), install-maven.sh, compileAgainstMaven (maven-extension/build.gradle.kts) und README.
+#
+#   <version> | <rolle>
+#
+# reference  Referenz: core-and-extension auf allen drei Betriebssystemen; muss mavenVersion in
+#            gradle.properties entsprechen (die Extension kompiliert gegen genau diese API)
+# blocking   Matrix-Job fixtures-matrix, ein Fehlschlag färbt den Lauf rot
+# measured   nur gemessen: Matrix-Job läuft, ist aber nicht blockierend (Untergrenze, Maven 4 vor Phase 2)
+3.6.3       | measured
+3.8.9       | blocking
+3.9.11      | reference
+3.10.2      | blocking
+4.0.0-rc-7  | measured

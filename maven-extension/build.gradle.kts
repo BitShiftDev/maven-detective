@@ -117,6 +117,63 @@ tasks.named("publishMavenPublicationToFixtureRepository") {
     doFirst { delete(fixtureRepo) }
 }
 
+// Kompatibilitäts-Compile: Die Extension kompiliert gegen die API genau einer Maven-Version
+// (mavenVersion). Eine Methode, die es erst ab 3.9 gibt, fiele unter 3.8 erst zur Laufzeit auf –
+// die Extension schluckt den NoSuchMethodError, die Karte fehlte still. Daher die Quellen zusätzlich
+// gegen maven-core jeder Version aus fixtures/maven-versions.txt kompilieren (Ausgabe wird verworfen).
+// compileAgainstMaven (in check) prüft reference + blocking; einzelne Versionen, auch measured,
+// mit -PmavenApi=4.0.0-rc-7[,3.6.3] (CI-Job fixtures-matrix).
+data class MavenEntry(val version: String, val role: String)
+
+val mavenVersions: List<MavenEntry> = rootProject.file("fixtures/maven-versions.txt").readLines()
+    .map { it.substringBefore('#').trim() }
+    .filter { it.isNotEmpty() }
+    .map { line -> line.split('|').map { it.trim() }.let { MavenEntry(it[0], it[1]) } }
+
+mavenVersions.filter { it.role == "reference" }.let { refs ->
+    check(refs.size == 1 && refs[0].version == mavenVersion) {
+        "fixtures/maven-versions.txt: genau eine Version mit Rolle reference, gleich mavenVersion=$mavenVersion " +
+            "aus gradle.properties (gefunden: ${refs.map { it.version }})"
+    }
+}
+
+val compileAgainstMavenTasks = mavenVersions.associate { entry ->
+    val id = entry.version.replace(Regex("[^A-Za-z0-9]"), "_")
+    val api = configurations.create("mavenApi_$id") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+    }
+    dependencies {
+        api("org.apache.maven:maven-core:${entry.version}")
+        api("javax.inject:javax.inject:1")
+        api("org.slf4j:slf4j-api:1.7.36")
+    }
+    entry.version to tasks.register<JavaCompile>("compileAgainstMaven_$id") {
+        group = "verification"
+        description = "Kompiliert die Extension gegen die API von Maven ${entry.version} (Ausgabe wird verworfen)."
+        source = sourceSets.main.get().java
+        classpath = api + project(":core").sourceSets.main.get().output
+        destinationDirectory.set(layout.buildDirectory.dir("tmp/compileAgainstMaven/$id"))
+        // Maven 4 ist mit Java 17 gebaut – mit --release 8 lehnte javac dessen Klassen ab
+        options.release.set(if (entry.version.startsWith("3.")) 8 else 17)
+        options.encoding = "UTF-8"
+        options.compilerArgs.addAll(listOf("-Xlint:-options", "-proc:none"))
+    }
+}
+
+val compileAgainstMaven by tasks.registering {
+    group = "verification"
+    description = "Kompiliert die Extension gegen jede Maven-Version aus fixtures/maven-versions.txt."
+    val requested = providers.gradleProperty("mavenApi").orNull
+        ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+    val versions = requested ?: mavenVersions.filter { it.role != "measured" }.map { it.version }
+    versions.forEach { v ->
+        dependsOn(compileAgainstMavenTasks[v] ?: throw GradleException("Maven $v steht nicht in fixtures/maven-versions.txt"))
+    }
+}
+
+tasks.named("check") { dependsOn(compileAgainstMaven) }
+
 // Führt alle Beispielprojekte unter fixtures/ mit einem echten Maven und der Extension aus
 // und prüft, ob Build Doctor jeweils die erwartete Regel liefert. Braucht `mvn` im PATH.
 tasks.register<Exec>("fixtureTest") {

@@ -10,6 +10,10 @@
 # .mvn/extensions.xml – so wie Nutzer die Extension aus Maven Central einbinden.
 #
 # Voraussetzungen: mvn im PATH, Java 8+. Jede Fixture bekommt ein eigenes, leeres lokales Repository.
+# Andere Maven-Version: PATH vorher auf fixtures/install-maven.sh <version> setzen.
+#
+# Die Logs aller Läufe landen in build/fixture-logs/<maven-version>/ (Rohquelle für Testlogs;
+# anderes Ziel über FIXTURE_LOGS=<verzeichnis>).
 set -uo pipefail
 
 # Die Prüfungen unten suchen deutsche Texte der Karte; Englisch ist sonst Standard außerhalb deutscher Systeme
@@ -21,6 +25,12 @@ EXT_REPO="${2:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/md-fixtures.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
+
+MAVEN_VERSION="$(mvn -v 2>/dev/null | sed -n 's/^Apache Maven \([^ ]*\).*/\1/p' | head -1)"
+MAVEN_VERSION="${MAVEN_VERSION:-unbekannt}"
+LOGS="${FIXTURE_LOGS:-$HERE/../build/fixture-logs/$MAVEN_VERSION}"
+mkdir -p "$LOGS"; find "${LOGS:?}" -maxdepth 1 -type f \( -name '*.log' -o -name '*.jsonl' \) -delete
+echo "Fixtures mit Maven $MAVEN_VERSION ($(java -version 2>&1 | head -1)) – Logs in $LOGS"
 
 pass=0
 fail=0
@@ -40,6 +50,7 @@ while IFS='|' read -r dir rule args; do
   from_events="$(java -cp "$EXT_JAR" io.github.bitshiftdev.mavendetective.core.cli.Main diagnose "$events" --id 2>/dev/null)"
   from_log="$(java -cp "$EXT_JAR" io.github.bitshiftdev.mavendetective.core.cli.Main diagnose "$log" --project "$HERE/$dir" --id 2>/dev/null)"
   card_in_log="nein"; grep -q "Maven Detective .* Build Doctor" "$log" && card_in_log="ja"
+  cp "$log" "$LOGS/$dir.log"; [[ -f "$events" ]] && cp "$events" "$LOGS/$dir.events.jsonl"
 
   if [[ "$from_events" == "$rule" && "$from_log" == "$rule" && "$card_in_log" == "ja" ]]; then
     pass=$((pass + 1)); printf '  ✓ %-28s %s\n' "$dir" "$rule"
@@ -63,6 +74,7 @@ green_ok="nein"
 sed -i.bak 's/33.0.0-jre/33.3.1-jre/' "$work/pom.xml"
 (cd "$work" && mvn "${common[@]}" nosuchprefix:goal > "$work/red.log" 2>&1)
 expected="Property guava.version 33.0.0-jre → 33.3.1-jre"
+for f in red0 green red; do cp "$work/$f.log" "$LOGS/$dir-$f.log"; done
 # Ohne UTF-8-Konsole (Windows) schreibt die Extension die Karte transliteriert: grünen → gruenen, → → ->
 if [[ $green_exit -eq 0 && "$green_ok" == "ja" ]] && grep -q "Maven Detective .* Build Doctor" "$work/red0.log" \
     && grep -qE "Seit dem letzten gr(ü|ue)nen Build" "$work/red.log" \
@@ -120,6 +132,7 @@ XML
       -DmavenDetective.eventsFile="$work/events.jsonl" -DmavenDetective.home="$work/home" nosuchprefix:goal \
       > "$work/build.log" 2>&1)
   from_events="$(java -cp "$EXT_JAR" io.github.bitshiftdev.mavendetective.core.cli.Main diagnose "$work/events.jsonl" --id 2>/dev/null)"
+  cp "$work/build.log" "$LOGS/extensions-xml.log"
   if [[ -n "$version" && "$from_events" == "$rule" ]] && grep -q "Maven Detective .* Build Doctor" "$work/build.log"; then
     pass=$((pass + 1)); printf '  ✓ %-28s %s (Extension %s)\n' "extensions.xml" "$rule" "$version"
   else
@@ -128,5 +141,5 @@ XML
   fi
 fi
 
-echo "$pass bestanden, $fail fehlgeschlagen"
+echo "Maven $MAVEN_VERSION: $pass bestanden, $fail fehlgeschlagen"
 [[ $fail -eq 0 ]]
