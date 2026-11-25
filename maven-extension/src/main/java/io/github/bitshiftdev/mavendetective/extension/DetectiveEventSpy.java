@@ -14,6 +14,7 @@ import org.apache.maven.execution.ExecutionEvent;
 import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.execution.MavenExecutionResult;
 import org.apache.maven.model.building.ModelProblem;
+import org.apache.maven.plugin.AbstractMojoExecutionException;
 import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectBuildingException;
@@ -78,6 +79,8 @@ public class DetectiveEventSpy extends AbstractEventSpy {
     static final String PROP_SNAPSHOTS = "mavenDetective.snapshots";
     private static final int MAX_REPOSITORY_EVENTS = 500;
     private static final int MAX_CHAIN = 12;
+    /** Obergrenze für die ausführliche Mojo-Meldung (hunderte javac-Fehler), damit die Event-Datei klein bleibt. */
+    static final int MAX_LONG_MESSAGE = 32 * 1024;
 
     private final Logger log;
     private final List<Map<String, Object>> events = Collections.synchronizedList(new ArrayList<Map<String, Object>>());
@@ -318,6 +321,7 @@ public class DetectiveEventSpy extends AbstractEventSpy {
             e.put("mojo", m.getGroupId() + ":" + m.getArtifactId() + ":" + m.getVersion() + ":" + m.getGoal());
             e.put("execution", m.getExecutionId());
         }
+        putLongMessage(e, ee.getException());
         e.put("chain", chain(ee.getException()));
         return e;
     }
@@ -336,6 +340,7 @@ public class DetectiveEventSpy extends AbstractEventSpy {
 
     private static Map<String, Object> buildError(Throwable t) {
         Map<String, Object> e = event(EventLog.TYPE_BUILD_ERROR);
+        putLongMessage(e, t);
         e.put("chain", chain(t));
         List<Map<String, Object>> problems = new ArrayList<Map<String, Object>>();
         if (t instanceof ProjectBuildingException) {
@@ -382,6 +387,31 @@ public class DetectiveEventSpy extends AbstractEventSpy {
             }
         }
         return out;
+    }
+
+    /**
+     * Ausführliche Meldung des ersten Mojo-Fehlers in der Kette als {@code text}: Das Compiler-Plugin meldet
+     * in {@code getMessage()} nur „Compilation failure“, die javac-Zeilen stehen in {@code getLongMessage()} –
+     * Maven druckt sie ins Log, ohne sie fehlten der Diagnose aus den Events alle Compilerfehler.
+     */
+    static void putLongMessage(Map<String, Object> e, Throwable t) {
+        Map<Throwable, Boolean> seen = new IdentityHashMap<Throwable, Boolean>();
+        try {
+            while (t != null && seen.size() < MAX_CHAIN && !seen.containsKey(t)) {
+                seen.put(t, Boolean.TRUE);
+                if (t instanceof AbstractMojoExecutionException) {
+                    String longMessage = ((AbstractMojoExecutionException) t).getLongMessage();
+                    if (longMessage != null && !longMessage.trim().isEmpty() && !longMessage.equals(message(t))) {
+                        e.put("text", longMessage.length() > MAX_LONG_MESSAGE
+                                ? longMessage.substring(0, MAX_LONG_MESSAGE) : longMessage);
+                    }
+                    return;
+                }
+                t = t.getCause();
+            }
+        } catch (Throwable broken) {
+            // fremde Ausnahme wirft beim Lesen – dann eben ohne ausführliche Meldung
+        }
     }
 
     /** Meldung einer fremden Ausnahme; {@code null}, wenn {@code getMessage()} selbst scheitert. */

@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- Maven extension: compiler errors are recognised on the card in the Maven log and from the events file; the extension only kept "Compilation failure", not the `javac` lines below it, so every compiler error showed "Unknown error" there (the IDE reads the text log and was not affected).
 - Compiler errors from a `javac` running in German, Japanese or Chinese (`Package … ist nicht vorhanden`, `Symbol nicht gefunden`, …) are recognised; Maven compiles in its own JVM, so the messages follow its locale – before, the card showed "Unknown error".
 - A plugin without `<version>` that is found in no plugin repository (`Error resolving version for plugin …`) is recognised as *Plugin missing or without version* instead of "Unknown error".
 

@@ -1,5 +1,7 @@
 package io.github.bitshiftdev.mavendetective.extension;
 
+import io.github.bitshiftdev.mavendetective.core.BuildDoctor;
+import io.github.bitshiftdev.mavendetective.core.env.Environment;
 import io.github.bitshiftdev.mavendetective.core.io.EventLog;
 import io.github.bitshiftdev.mavendetective.core.io.Json;
 import io.github.bitshiftdev.mavendetective.core.model.BuildFailure;
@@ -13,7 +15,9 @@ import org.apache.maven.model.Build;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.plugin.MojoExecution;
+import org.apache.maven.lifecycle.LifecycleExecutionException;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositoryEvent;
@@ -34,6 +38,7 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Die Extension ohne Maven-Lauf: Events, Grenzen und „wirft nie“. Der echte Lauf steckt in {@code fixtureTest}. */
@@ -146,6 +151,41 @@ class DetectiveEventSpyTest {
         ErrorRecord first = read.getErrors().get(0);
         assertEquals(2, first.getChain().size(), "Ausnahme samt Ursache");
         assertTrue(first.lines().toString().contains("cannot find symbol"), first.lines().toString());
+    }
+
+    @Test
+    void carriesTheLongMessageOfACompilationFailure() throws Exception {
+        Path events = tmp.resolve("events.jsonl");
+        DetectiveEventSpy spy = new DetectiveEventSpy();
+        spy.init(context(props(events)));
+        MavenProject app = project(tmp.resolve("app"), "app");
+        // wie CompilationFailureException: kurze Meldung, javac-Zeilen nur in der ausführlichen
+        String javac = "/home/dev/app/src/main/java/App.java:[6,29] Package org.apache.commons.io ist nicht vorhanden";
+        MojoFailureException compile = new MojoFailureException(null, "Compilation failure", "Compilation failure:\n" + javac);
+        LifecycleExecutionException wrapped = new LifecycleExecutionException("Failed to execute goal", compile);
+        spy.onEvent(request());
+        spy.onEvent(event(ExecutionEvent.Type.MojoFailed, app, mojo("maven-compiler-plugin", "compile"), compile));
+        DefaultMavenExecutionResult result = new DefaultMavenExecutionResult();
+        result.addException(wrapped);
+        spy.onEvent(result);
+        spy.close();
+
+        List<Map<String, Object>> written = lines(events);
+        assertTrue(String.valueOf(written.get(1).get("text")).contains(javac), written.get(1).toString());
+        assertTrue(String.valueOf(written.get(2).get("text")).contains(javac), "buildError sucht in der Kette: " + written.get(2));
+        BuildFailure read = EventLog.read(events);
+        assertEquals("compile-missing-dependency",
+                BuildDoctor.withDefaults().diagnose(read, Environment.forBuild(read, null)).get(0).getRuleId(), read.getErrors().toString());
+    }
+
+    @Test
+    void omitsALongMessageThatOnlyRepeatsTheMessage() throws Exception {
+        Map<String, Object> e = new HashMap<>();
+        DetectiveEventSpy.putLongMessage(e, new MojoExecutionException("There are test failures."));
+        assertFalse(e.containsKey("text"), e.toString());
+        String huge = "x".repeat(DetectiveEventSpy.MAX_LONG_MESSAGE + 10);
+        DetectiveEventSpy.putLongMessage(e, new MojoFailureException(null, "kurz", huge));
+        assertEquals(DetectiveEventSpy.MAX_LONG_MESSAGE, String.valueOf(e.get("text")).length());
     }
 
     @Test
